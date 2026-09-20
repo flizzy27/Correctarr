@@ -24,17 +24,19 @@
     title, and leftover debris in the download folders.
     &#13;
     It works three ways at once: in real time through webhooks, on a short schedule
-    for the queue, and on a full pass for the library and the indexers. 26 rules, each
-    switchable between "report only" and "fix", plus a dry run switch that stops every
-    change.
+    for the queue, and on a full pass for the library and the indexers. 26 rules, and
+    you decide per rule what happens when one of them finds something &#8212; from
+    reporting it to blocklisting, importing, searching again or deleting. Conditions
+    such as "wait six hours first" or "nothing over 20 GB" narrow that down further,
+    and a single dry run switch stops every change at once.
     &#13;
     Guiding principle: when in doubt, do nothing. A rule that is not sure only
     reports. Better one finding left alone than one good file thrown away.
     &#13;
     SETUP
     Open the web interface after the first start and create an account (username and
-    password). Then add Radarr, Sonarr, SABnzbd and Prowlarr under Services, and check
-    the paths under Settings.
+    password). A setup assistant then walks you through connecting Radarr, Sonarr,
+    SABnzbd and Prowlarr, testing each one as you go, and checking the paths.
     &#13;
     IMPORTANT, ABOUT THE PATHS
     The paths have to be the same inside this container as the ones Radarr and Sonarr
