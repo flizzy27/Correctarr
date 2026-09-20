@@ -338,9 +338,14 @@ def check_stalled(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """
     threshold = int(cfg.get("stalled_minutes", 120))
     store = ctx["store"]
+    # Keyed on the connection rather than on the kind. Two Radarr instances
+    # share a kind and nothing else, and the pruning below has to be able to
+    # tell "this entry left my queue" from "this entry belongs to somebody
+    # else's queue and I have never seen it".
+    scope = f"{getattr(arr, 'service_id', None) or arr.kind}:"
     findings, active = [], set()
     for entry in ctx["queue"]:
-        key = f"{arr.kind}:{entry.get('downloadId') or entry['id']}"
+        key = f"{scope}{entry.get('downloadId') or entry['id']}"
         active.add(key)
         left, total = size_left(entry), entry.get("size") or 0
         if not total:
@@ -357,7 +362,7 @@ def check_stalled(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             data={"release": entry.get("title"), "minutes": int(minutes),
                   "percent": round(percent, 1), "gb": _gb(entry)},
         ))
-    store.prune_progress(active)
+    store.prune_progress(active, scope)
     return findings
 
 
@@ -573,6 +578,13 @@ def _from_history(name: str, ctx: dict) -> tuple[dict | None, str]:
         return None, ""
     items = {i["id"]: i for i in ctx.get("items", []) if i.get("id")}
     for entry in ctx.get("history", []):
+        # Only events whose source title is a release name. A history row for a
+        # deleted or renamed file carries a path there instead, and a path that
+        # happens to share its first characters with the folder would claim it
+        # for whatever title that file belonged to.
+        if not (compat.event_is(entry, compat.GRABBED)
+                or compat.event_is(entry, compat.IMPORTED)):
+            continue
         source = entry.get("sourceTitle") or ""
         if not source:
             continue
@@ -945,14 +957,37 @@ def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 
 
 def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
-    """Monitored, released, but no file — and never searched for."""
+    """Monitored, released, but no file — and never searched for.
+
+    The two services answer this question with different things. Radarr hands
+    back movies, where ``id`` is the movie. Sonarr hands back **episodes**,
+    where ``id`` is the episode and the series is a field on it. Reading ``id``
+    for both meant an episode id was passed to a series search: with luck a
+    different series was searched for, without it the service refused the
+    command outright. The episode ids travel with the finding instead, so the
+    search can ask for exactly the episodes that are missing.
+    """
     findings = []
     for item in ctx.get("missing", []):
-        title = item.get("title") or (item.get("series") or {}).get("title") or "?"
+        if arr.kind == "sonarr":
+            series = item.get("series") or {}
+            series_id = item.get("seriesId") or series.get("id")
+            if not series_id:
+                continue
+            season = item.get("seasonNumber")
+            number = item.get("episodeNumber")
+            label = (f"S{int(season):02d}E{int(number):02d}"
+                     if season is not None and number is not None else "")
+            title = " ".join(x for x in (series.get("title") or "?", label) if x)
+            data = {"item_id": series_id, "year": series.get("year"),
+                    "episode_ids": [item["id"]] if item.get("id") else [],
+                    "season": season}
+        else:
+            title = item.get("title") or "?"
+            data = {"item_id": item.get("id"), "year": item.get("year")}
         findings.append(Finding(
             rule="missing_items", severity="info", service=arr.kind, title=title,
-            message="finding.missing_items",
-            data={"item_id": item.get("id"), "year": item.get("year")},
+            message="finding.missing_items", data=data,
         ))
     return findings
 
@@ -1277,14 +1312,39 @@ def check_service_health(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     ) for entry in ctx.get("health", [])]
 
 
+def _holds_a_root(disk_path: str, roots: set[str]) -> bool:
+    """Does this storage location hold any of the library folders?
+
+    Not an equality test, because the two are not the same kind of thing. The
+    services answer the disk question per **mount**, and a mount is usually a
+    shorter path than the library folder sitting on it — often just ``/``. An
+    earlier build compared the two strings directly, and on any install whose
+    mounts were not spelled exactly like its root folders that silently
+    discarded every row, which switched the whole rule off.
+    """
+    disk = (disk_path or "").rstrip("/")
+    if not disk:
+        return False
+    for raw in roots:
+        root = (raw or "").rstrip("/")
+        if not root:
+            continue
+        if root == disk or root.startswith(disk + "/") or disk.startswith(root + "/"):
+            return True
+    return False
+
+
 def check_disk_space(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """Free space on a storage location is running low."""
     threshold = float(cfg.get("disk_threshold_gb", 250))
-    roots = {r.get("path") for r in ctx.get("root_folders", [])}
+    roots = {r.get("path") for r in ctx.get("root_folders", []) if r.get("path")}
+    rows = ctx.get("disk_space", [])
+    relevant = [e for e in rows if _holds_a_root(e.get("path", ""), roots)]
+    # Nothing matched at all: report on everything rather than on nothing. A
+    # warning about a drive that turns out not to matter is a small annoyance;
+    # silence about the one that does is how a library stops being written.
     findings = []
-    for entry in ctx.get("disk_space", []):
-        if roots and entry.get("path") not in roots:
-            continue
+    for entry in (relevant or rows):
         free = (entry.get("freeSpace") or 0) / 1024 ** 3
         if free >= threshold:
             continue

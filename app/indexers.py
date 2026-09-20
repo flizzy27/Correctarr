@@ -100,8 +100,14 @@ def build_views(prowlarr_indexers: list[dict], stats: list[dict],
         if view is None:
             view = by_name.setdefault(name, IndexerView(name=name))
             view.notes.append(UNKNOWN_TO_PROWLARR)
-        scores = [s for s, _ in samples if s]
-        sizes = [g for _, g in samples if g]
+        # A score of zero is a measurement, not a missing one: it means the
+        # release matched no custom format at all. Dropping it counted the
+        # sample as absent, so an indexer whose grabs all scored zero was
+        # excluded from the quality benchmark instead of being rated badly by
+        # it — and with fewer than three "samples" left it was also told it
+        # had too little history to judge, which was not true.
+        scores = [points for points, _ in samples]
+        sizes = [gb for _, gb in samples if gb]
         view.samples = len(scores)
         if scores:
             view.mean_score = statistics.mean(scores)

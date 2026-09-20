@@ -3,6 +3,59 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## Unreleased
+
+### Fixed
+
+* **A stalled download was never reported on an install with more than one
+  service.** The rule that measures whether a download is still moving keeps
+  its measurements in the store, and once per service it dropped every entry it
+  did not recognise. With two services they took turns deleting each other's
+  rows, so nothing survived to a second pass and nothing could ever be measured
+  as standing still. Measurements now belong to the connection that made them.
+* **An action could be carried out against the wrong instance.** Two Radarr
+  instances are the same *kind* and share nothing else: queue id 41 names one
+  download in the first and a different one — or none — in the second. Findings
+  now come back to the instance that produced them.
+* **Sonarr: a missing episode was searched for as if it were a series.** Sonarr
+  answers the "what is missing" question with episodes, where `id` is the
+  episode; that id was passed to a series search. Missing episodes now carry
+  their series, and the search asks for exactly the episodes that are missing
+  rather than re-searching the whole series.
+* **Sonarr: importing a file reported success and imported nothing.** Sonarr
+  imports episodes, not series. A file handed over with only a series id is
+  accepted and then quietly does nothing, so the action claimed success on
+  every run while the file stayed where it was. The episodes now travel with
+  the import.
+* **The free space rule could switch itself off.** The services answer the disk
+  question per mount, and a mount is usually a shorter path than the library
+  folder on it — often just `/`. Comparing the two for equality discarded every
+  row on such an install. Mounts and root folders are now matched by
+  containment, and when nothing matches at all everything is reported rather
+  than nothing.
+* **Blocklisting a release that had left the queue often did nothing.** The
+  recorded release name and the folder on disk shorten each other in either
+  direction, and only one of the two directions was tested.
+* **A deleted file could claim an orphaned folder.** History entries were
+  searched for a matching name without regard to what kind of event they were,
+  and a row about a deleted or renamed file carries a path rather than a
+  release name.
+* **Sonarr: searching for several series searched for one.** Sonarr's series
+  search takes a single series; the remaining ids were dropped without a word.
+* **Failed actions were counted as fixes.** The badge and the tiles counted
+  anything with a result, including `FAILED:`.
+* **An indexer whose grabs all scored zero looked like it had no history.** A
+  score of zero is a measurement, not a missing one. It was excluded from the
+  quality benchmark and additionally told it had too little data to judge.
+* The download percentage in the queue view could read below zero while a
+  repair was running.
+
+### Changed
+
+* The history is fetched once per connection per run instead of once per
+  question. Blocklisting ten orphaned files asked for the same five hundred
+  rows ten times, and a deep pass asked every service for them twice.
+
 ## 1.1.0
 
 ### Added

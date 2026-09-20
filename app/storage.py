@@ -490,18 +490,25 @@ class Store:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM runs ORDER BY at DESC LIMIT ?", (limit,)).fetchall()]
 
+    #: What counts as something having actually been changed. A dry run says
+    #: what it would have done and a failure says it could not — counting
+    #: either as work done is how the interface came to report fixes that
+    #: never happened, on a badge nobody had reason to distrust.
+    _REALLY_DONE = ("action IS NOT NULL AND action != '' "
+                    "AND action NOT LIKE 'DRY RUN%' AND action NOT LIKE 'FAILED%'")
+
     def summary(self) -> dict:
         last_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+        done = self._REALLY_DONE
         with _lock, self._conn() as c:
             total = c.execute("SELECT COUNT(*) c FROM findings").fetchone()["c"]
             fixed = c.execute(
-                "SELECT COUNT(*) c FROM findings WHERE action IS NOT NULL "
-                "AND action NOT LIKE 'DRY RUN%'").fetchone()["c"]
+                f"SELECT COUNT(*) c FROM findings WHERE {done}").fetchone()["c"]
             recent = c.execute("SELECT COUNT(*) c FROM findings WHERE at >= ?",
                                (last_24h,)).fetchone()["c"]
             recent_fixed = c.execute(
-                "SELECT COUNT(*) c FROM findings WHERE at >= ? AND action IS NOT NULL "
-                "AND action NOT LIKE 'DRY RUN%'", (last_24h,)).fetchone()["c"]
+                f"SELECT COUNT(*) c FROM findings WHERE at >= ? AND {done}",
+                (last_24h,)).fetchone()["c"]
             per_rule = c.execute("SELECT rule, COUNT(*) c FROM findings "
                                  "GROUP BY rule ORDER BY c DESC").fetchall()
         return {"total": total, "fixed": fixed,
@@ -537,11 +544,20 @@ class Store:
                 return 0.0
         return (now - since).total_seconds() / 60
 
-    def prune_progress(self, active: set[str]) -> None:
-        """Drop entries that are no longer in any queue."""
+    def prune_progress(self, active: set[str], prefix: str = "") -> None:
+        """Drop entries that are no longer in the queue they belong to.
+
+        ``prefix`` names whose queue was just looked at. Without it every
+        caller dropped every key it did not recognise — and since the rule that
+        watches for stalled downloads runs once per service, two services took
+        turns deleting each other's rows. Nothing ever survived to a second
+        pass, so nothing was ever measured as standing still, and the rule
+        could not fire at all on any install with more than one service.
+        """
         with _lock, self._conn() as c:
             known = [r["key"] for r in c.execute("SELECT key FROM progress").fetchall()]
-            gone = [(k,) for k in known if k not in active]
+            gone = [(k,) for k in known
+                    if k.startswith(prefix) and k not in active]
             if gone:
                 c.executemany("DELETE FROM progress WHERE key=?", gone)
 

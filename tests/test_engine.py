@@ -20,9 +20,12 @@ from app.storage import Store
 class FakeArr:
     """An Arr service that answers without a network."""
 
-    def __init__(self, kind="radarr", name=None, reachable=True):
+    def __init__(self, kind="radarr", name=None, reachable=True, service_id=1):
         self.kind = kind
         self.name = name or kind.capitalize()
+        # The real connection carries the row it was built from, so an action
+        # comes back to the instance that produced the finding.
+        self.service_id = service_id
         self._reachable = reachable
         self.closed = False
         self.removed = []
@@ -429,3 +432,47 @@ def test_a_fresh_install_changes_nothing_until_it_is_told_to(engine, monkeypatch
     assert service.removed == []
     assert result["fixed"] == 0
     assert result["findings"][0]["action"].startswith("DRY RUN")
+
+
+# ---------------------------------------------------------------------------
+# Two services of the same kind
+# ---------------------------------------------------------------------------
+def test_an_action_goes_back_to_the_instance_that_found_it(engine, monkeypatch):
+    """Queue ids are not comparable across instances.
+
+    Entry 42 in one Radarr is a different download — or none at all — in the
+    second. Acting on "the finding" against whichever service happened to come
+    first either did nothing or removed something nobody had asked about.
+    """
+    first, second = FakeArr(name="Radarr 4K", service_id=1), FakeArr(service_id=2)
+    # A fresh finding per call, the way a real check builds them.
+    use_rules(monkeypatch, Rule(
+        "wrong_year", "queue", lambda arr, ctx, cfg: [a_finding()],
+        actions=("report", "blocklist_and_search"),
+        default_action="blocklist_and_search"))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [first, second])
+
+    engine.run()
+    assert first.removed == [(42, True, True)]
+    assert second.removed == [(42, True, True)]
+    # Each one acted on its own finding exactly once, not twice on one of them.
+    assert len(first.removed) == 1 and len(second.removed) == 1
+
+
+def test_a_finding_from_the_other_kind_still_lands_somewhere(engine, monkeypatch):
+    """An orphaned file listed through Radarr can belong to a series.
+
+    Those name a kind the instance that produced them does not have, and they
+    have to fall back to a service of the kind they do name rather than being
+    dropped.
+    """
+    radarr, sonarr = FakeArr("radarr", service_id=1), FakeArr("sonarr", service_id=2)
+    use_rules(monkeypatch, finding_rule(
+        "wrong_year", a_finding(service="sonarr"), acts=True, scope="once"))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [radarr, sonarr])
+
+    engine.run()
+    assert sonarr.removed == [(42, True, True)]
+    assert radarr.removed == []

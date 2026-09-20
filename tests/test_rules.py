@@ -24,6 +24,7 @@ from app.rules import (
     check_leftover_files,
     check_manual_import,
     check_missing_audio_language,
+    check_missing_items,
     check_not_an_upgrade,
     check_profile_violation,
     check_stalled,
@@ -55,8 +56,9 @@ class FakeStore:
     def check_progress(self, key, bytes_left):
         return self.minutes
 
-    def prune_progress(self, active):
+    def prune_progress(self, active, prefix=""):
         self.pruned = active
+        self.prefix = prefix
 
 
 def config(**overrides):
@@ -652,3 +654,64 @@ def test_a_replaced_api_call_is_reported_before_it_breaks():
 
 def test_nothing_is_reported_while_everything_is_current():
     assert check_api_changes(FakeArr(), {}, config()) == []
+
+
+# ---------------------------------------------------------------------------
+# Storage the services report per mount, not per library folder
+# ---------------------------------------------------------------------------
+def test_disk_space_recognises_the_mount_a_root_folder_sits_on():
+    """The two are not the same kind of path.
+
+    A service answers the disk question per mount, and the mount is usually
+    shorter than the library folder on it — often just "/". Comparing the two
+    strings for equality discarded every row on such an install, which
+    switched the whole rule off without saying so.
+    """
+    ctx = {"disk_space": [{"path": "/", "freeSpace": 10 * 1024 ** 3,
+                           "totalSpace": 100 * 1024 ** 3}],
+           "root_folders": [{"path": "/mnt/user/films"}]}
+    found = check_disk_space(FakeArr(), ctx, config(disk_threshold_gb=250))
+    assert [f.title for f in found] == ["/"]
+
+
+def test_disk_space_reports_everything_when_nothing_lines_up():
+    """A filter that removes every row is not a filter, it is an off switch."""
+    ctx = {"disk_space": [{"path": "/data", "freeSpace": 1,
+                           "totalSpace": 100 * 1024 ** 3}],
+           "root_folders": [{"path": "/completely/elsewhere"}]}
+    found = check_disk_space(FakeArr(), ctx, config(disk_threshold_gb=250))
+    assert [f.title for f in found] == ["/data"]
+
+
+# ---------------------------------------------------------------------------
+# Missing items: the two services answer with different things
+# ---------------------------------------------------------------------------
+def test_missing_movies_carry_the_movie_id():
+    ctx = {"missing": [{"id": 77, "title": "The Film", "year": 2019}]}
+    found = check_missing_items(FakeArr("radarr"), ctx, config())
+    assert found[0].data["item_id"] == 77
+    assert found[0].title == "The Film"
+
+
+def test_missing_episodes_carry_the_series_id_not_the_episode_id():
+    """Sonarr answers with episodes, where ``id`` is the episode.
+
+    Reading it as a series id meant an episode id was handed to a series
+    search: with luck a different series was searched for, without it the
+    service refused the command outright.
+    """
+    ctx = {"missing": [{"id": 5001, "seriesId": 12, "seasonNumber": 2,
+                        "episodeNumber": 7,
+                        "series": {"id": 12, "title": "The Series", "year": 2016}}]}
+    found = check_missing_items(FakeArr("sonarr"), ctx, config())
+    assert found[0].data["item_id"] == 12
+    assert found[0].data["episode_ids"] == [5001]
+    assert found[0].title == "The Series S02E07"
+
+
+def test_stalled_prunes_only_its_own_service():
+    store = FakeStore(minutes=0)
+    arr = FakeArr()
+    arr.service_id = 7
+    check_stalled(arr, {"queue": [], "store": store}, config())
+    assert store.prefix == "7:"

@@ -1131,7 +1131,11 @@ def queue(_: dict = Depends(require_user)):
                     "state": entry.get("trackedDownloadState"),
                     "status": entry.get("status"),
                     "gb": round(size / 1024 ** 3, 2),
-                    "percent": (round(100 * (1 - size_left(entry) / size), 1)
+                    # Clamped: the remaining byte count is reported by the
+                    # download client and briefly exceeds the total while a
+                    # repair is running, which showed as a negative percentage.
+                    "percent": (round(min(100.0, max(0.0,
+                                100 * (1 - size_left(entry) / size))), 1)
                                 if size else None),
                     "score_then": entry.get("customFormatScore"),
                     "score_now": total, "hits": hits,

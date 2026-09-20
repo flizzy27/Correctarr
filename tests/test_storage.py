@@ -254,3 +254,40 @@ def test_changing_the_password_ends_every_session(store):
     store.end_all_sessions(user_id)
     assert store.session("one") is None
     assert store.session("two") is None
+
+
+def test_pruning_progress_leaves_another_service_alone():
+    """Two services took turns deleting each other's rows.
+
+    The rule that watches for a download standing still runs once per service,
+    and each run dropped every key it did not recognise. Nothing survived to a
+    second pass, so nothing was ever measured as standing still and the rule
+    could not fire at all on an install with more than one service.
+    """
+    import tempfile
+    from pathlib import Path as _Path
+    with tempfile.TemporaryDirectory() as folder:
+        store = Store(_Path(folder) / "s.db")
+        store.check_progress("1:abc", 500)
+        store.check_progress("2:xyz", 500)
+        # Service 1 looks at its own queue and finds it empty.
+        store.prune_progress(set(), "1:")
+        assert store.check_progress("1:abc", 500) == 0.0     # dropped, starts over
+        assert store.check_progress("2:xyz", 500) >= 0.0     # still remembered
+        assert store.check_progress("2:xyz", 400) == 0.0     # and it had a value
+
+
+def test_a_failed_action_is_not_counted_as_a_fix(store):
+    class Row:
+        rule, severity, title, service = "wrong_year", "error", "The Film", "radarr"
+        description, data = "something", {}
+        action = None
+
+    for action in ("blocklisted", "DRY RUN: would blocklist", "FAILED: service said no",
+                   None, ""):
+        row = Row()
+        row.action = action
+        store.record(row)
+    # Only the one that actually happened.
+    assert store.summary()["fixed"] == 1
+    assert store.summary()["last_24h_fixed"] == 1

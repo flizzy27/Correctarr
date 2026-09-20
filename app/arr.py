@@ -30,7 +30,8 @@ class ArrError(Exception):
 
 class Arr:
     def __init__(self, kind: str, url: str, api_key: str,
-                 timeout: float = 30.0, name: str = ""):
+                 timeout: float = 30.0, name: str = "",
+                 service_id: int | None = None):
         if kind not in KINDS:
             raise ValueError(f"Unknown kind: {kind}")
         self.kind = kind
@@ -38,10 +39,17 @@ class Arr:
         self.api_key = api_key
         self.timeout = timeout
         self.name = name or kind.capitalize()
+        #: The row this was built from. Two Radarr instances are the same
+        #: *kind* and have nothing else in common: a queue id from one names a
+        #: different entry, or none at all, in the other. Everything that has
+        #: to come back to the instance it started at goes through this.
+        self.service_id = service_id
         self._client: httpx.Client | None = None
         #: Filled in from response headers as requests happen — the version the
         #: service reports, and any part of the API it has marked as replaced.
         self.observed = compat.Observed()
+        #: History answered once per instance, see :meth:`history`.
+        self._history: dict[int, list[dict]] = {}
 
     def __repr__(self) -> str:                      # never includes the key
         return f"<Arr {self.kind} {self.url}>"
@@ -145,9 +153,22 @@ class Arr:
         return self._call("GET", "manualimport", params=params) or []
 
     def history(self, page_size: int = 200) -> list[dict]:
-        return (self._call("GET", "history", params={
+        """The most recent history entries, fetched at most once per instance.
+
+        An instance lives for exactly one run, so answering the same question
+        twice inside it can only produce the same answer at the cost of another
+        request. It was being asked a lot: the shared state asks once, the
+        indexer rating asks again, and blocklisting a release that has left the
+        queue asked once more **per finding** — ten orphaned files meant ten
+        requests for the same five hundred rows.
+        """
+        if page_size in self._history:
+            return self._history[page_size]
+        records = (self._call("GET", "history", params={
             "pageSize": page_size, "sortKey": "date",
             "sortDirection": "descending"}) or {}).get("records", [])
+        self._history[page_size] = records
+        return records
 
     def missing(self, page: int = 1, page_size: int = 200) -> list[dict]:
         """Monitored titles without a file."""
@@ -205,18 +226,46 @@ class Arr:
             "name": "ManualImport", "files": files, "importMode": "auto"}) or {}).get("id")
 
     def search(self, item_ids: list[int]) -> int | None:
+        """Search again for these titles. Returns the last command id.
+
+        The two applications do not agree on singular or plural here, and an
+        unrecognised command name is a server error rather than a refusal, so
+        the names live in one table instead of being spelled out twice.
+
+        Sonarr's series search takes **one** series, not a list. That is why
+        this loops rather than passing the first id and dropping the rest — a
+        rule that acts on four series would otherwise search for one of them
+        and report success for all four.
+        """
         if not item_ids:
             return None
-        # The two applications do not agree on singular or plural here, and an
-        # unrecognised command name is a server error rather than a refusal,
-        # so the names live in one table instead of being spelled out twice.
         if self.kind == "radarr":
-            command = {"name": compat.command_for("radarr", "search"),
-                       "movieIds": item_ids}
-        else:
-            command = {"name": compat.command_for("sonarr", "series_search"),
-                       "seriesId": item_ids[0]}
-        return (self._call("POST", "command", json=command) or {}).get("id")
+            return (self._call("POST", "command", json={
+                "name": compat.command_for("radarr", "search"),
+                "movieIds": list(item_ids)}) or {}).get("id")
+        name = compat.command_for("sonarr", "series_search")
+        last = None
+        for series_id in item_ids:
+            last = (self._call("POST", "command", json={
+                "name": name, "seriesId": series_id}) or {}).get("id")
+        return last
+
+    def search_episodes(self, episode_ids: list[int]) -> int | None:
+        """Search for individual episodes rather than a whole series.
+
+        Sonarr only. Searching the series again for one missing episode makes
+        it query every indexer for every episode it already has, which is both
+        slow and a good way to run into a daily query limit.
+        """
+        if self.kind != "sonarr" or not episode_ids:
+            return None
+        return (self._call("POST", "command", json={
+            "name": compat.command_for("sonarr", "search"),
+            "episodeIds": list(episode_ids)}) or {}).get("id")
+
+    def episodes(self, series_id: int) -> list[dict]:
+        """Every episode of one series, with its file id when it has one."""
+        return self._call("GET", "episode", params={"seriesId": series_id}) or []
 
     def command(self, name: str, **kwargs) -> int | None:
         return (self._call("POST", "command", json={"name": name, **kwargs}) or {}).get("id")

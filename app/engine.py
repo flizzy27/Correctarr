@@ -58,7 +58,8 @@ class Engine:
 
     # -- services --------------------------------------------------------------
     def arr_services(self) -> list[Arr]:
-        return [Arr(s["kind"], s["url"], s["api_key"], name=s["name"])
+        return [Arr(s["kind"], s["url"], s["api_key"], name=s["name"],
+                    service_id=s["id"])
                 for s in self.store.services(enabled_only=True)
                 if s["kind"] in ("radarr", "sonarr")]
 
@@ -262,7 +263,7 @@ class Engine:
 
         if deep and any(enabled(n) for n in ("indexer_disabled", "indexer_ineffective",
                                              "indexer_ranking", "indexer_unknown")):
-            ctx["indexer_state"] = self._indexer_state(cfg)
+            ctx["indexer_state"] = self._indexer_state(cfg, services)
         return ctx
 
     def _lead_service(self, services: list[Arr]) -> Arr | None:
@@ -278,26 +279,35 @@ class Engine:
         return services[0] if services else None
 
     # -- indexers --------------------------------------------------------------
-    def _indexer_state(self, cfg: dict) -> list[dict]:
+    def _indexer_state(self, cfg: dict,
+                       services: list[Arr] | None = None) -> list[dict]:
         """Merge Prowlarr's numbers with the history of the Arr services.
 
         Prowlarr knows how often an indexer was queried and how often that
         turned into a grab. Radarr and Sonarr know how good the grab was. Only
         together do they add up to a judgement.
+
+        ``services`` are the connections the run already has open. Passing them
+        in matters: without it this built a second set of connections and asked
+        every service for the same five hundred history rows a second time, on
+        every deep pass. Called from outside a run — the indexer page does —
+        there is nothing to reuse and it opens its own.
         """
         managers = self.indexer_managers()
         if not managers:
             return []
 
+        borrowed = services is not None
         history: dict[str, list] = collections.defaultdict(list)
-        for service in self.arr_services():
+        for service in (services if borrowed else self.arr_services()):
             try:
                 entries = service.history(500)
             except ArrError as e:
                 log.warning("Could not read the history of %s: %s", service.name, e)
                 continue
             finally:
-                service.close()
+                if not borrowed:
+                    service.close()
             for entry in entries:
                 if not compat.event_is(entry, compat.GRABBED):
                     continue
@@ -391,10 +401,18 @@ class Engine:
     def _act_search(self, arr: Arr, finding: Finding, cfg: dict,
                     dry: bool) -> str | None:
         item_id = finding.data.get("item_id")
-        if not item_id:
+        episodes = [int(e) for e in (finding.data.get("episode_ids") or [])]
+        if not item_id and not episodes:
             return None
         if dry:
-            return f"{DRY_RUN_PREFIX}: would search again"
+            return (f"{DRY_RUN_PREFIX}: would search for {len(episodes)} episode(s)"
+                    if episodes else f"{DRY_RUN_PREFIX}: would search again")
+        # Searching a whole series to fill one gap makes Sonarr query every
+        # indexer for every episode it already has. Where the finding knows
+        # which episodes are missing, ask for those.
+        if episodes and arr.kind == "sonarr":
+            arr.search_episodes(episodes)
+            return f"search started for {len(episodes)} episode(s)"
         arr.search([item_id])
         return "search for a replacement started"
 
@@ -492,7 +510,7 @@ class Engine:
         download_id = finding.data.get("downloadId")
         if not download_id:
             return None
-        files = []
+        files, blind = [], 0
         for candidate in arr.import_candidates(download_id=download_id):
             item = candidate.get("movie") or candidate.get("series") or {}
             if not item.get("id"):
@@ -500,12 +518,26 @@ class Engine:
             payload = {"path": candidate["path"], "quality": candidate.get("quality"),
                        "languages": candidate.get("languages") or [],
                        "downloadId": download_id}
-            payload["movieId" if arr.kind == "radarr" else "seriesId"] = item["id"]
+            if arr.kind == "radarr":
+                payload["movieId"] = item["id"]
+            else:
+                # Sonarr imports episodes, not series. A file handed over with
+                # only a series id is accepted and then quietly imports
+                # nothing, so the action reported success on every single run
+                # while the file stayed exactly where it was.
+                episodes = _episode_ids(candidate)
+                if not episodes:
+                    blind += 1
+                    continue
+                payload["seriesId"] = item["id"]
+                payload["episodeIds"] = episodes
             files.append(payload)
         if not files:
-            return None
+            return ("FAILED: the service did not say which episodes these files hold"
+                    if blind else None)
         arr.manual_import(files)
-        return f"{len(files)} file(s) imported"
+        done = f"{len(files)} file(s) imported"
+        return done + (f", {blind} skipped without an episode" if blind else "")
 
     def _import_match(self, arr: Arr, finding: Finding, dry: bool,
                       clean: bool) -> str | None:
@@ -527,7 +559,18 @@ class Engine:
                     + (" and clean up afterwards" if clean else ""))
         payload = {"path": path, "quality": finding.data.get("quality"),
                    "languages": finding.data.get("languages") or []}
-        payload["movieId" if arr.kind == "radarr" else "seriesId"] = item_id
+        if arr.kind == "radarr":
+            payload["movieId"] = item_id
+        else:
+            # The folder was listed through whichever service answered first,
+            # and that listing carries no episodes when the title turns out to
+            # belong to the other one. Ask the service that is about to do the
+            # import, which is the only one that can answer.
+            episodes = self._episodes_at(arr, path)
+            if not episodes:
+                return "FAILED: Sonarr did not say which episodes this file holds"
+            payload["seriesId"] = item_id
+            payload["episodeIds"] = episodes
         arr.manual_import([payload])
         if not clean:
             return f"matched and imported ({finding.data.get('gb', 0)} GB)"
@@ -537,6 +580,20 @@ class Engine:
         cleared = self._clear_client_entry(finding.title)
         return (f"matched and imported ({finding.data.get('gb', 0)} GB)"
                 + (f", {cleared} cleaned up" if cleared else ""))
+
+    def _episodes_at(self, arr: Arr, path: str) -> list[int]:
+        """Which episodes Sonarr thinks this file holds."""
+        folder = os.path.dirname(path.replace("\\", "/"))
+        try:
+            candidates = arr.import_candidates(folder=folder)
+        except ArrError as e:
+            log.warning("Could not look up the episodes for %s: %s", path, e)
+            return []
+        wanted = path.replace("\\", "/")
+        for candidate in candidates:
+            if (candidate.get("path") or "").replace("\\", "/") == wanted:
+                return _episode_ids(candidate)
+        return []
 
     def _delete_path(self, finding: Finding, cfg: dict,
                      dry: bool) -> str | None:
@@ -578,7 +635,15 @@ class Engine:
                 if not compat.event_is(entry, compat.GRABBED):
                     continue
                 source = entry.get("sourceTitle") or ""
-                if source[:45] == release[:45] or release[:45] in source:
+                if not source:
+                    continue
+                # Both directions. The recorded source title and the folder on
+                # disk differ in either direction depending on who shortened
+                # what, and testing only one of them meant a release whose
+                # history entry was the shorter of the two was never found —
+                # so the blocklist quietly did nothing.
+                if (source[:45] == release[:45] or release[:45] in source
+                        or source[:45] in release):
                     arr.mark_grab_failed(entry["id"])
                     return True
         except ArrError as e:
@@ -679,7 +744,7 @@ class Engine:
                         finding.data["_held"] = verdict.reason
                         finding.data["_held_params"] = verdict.params or {}
                     continue
-                target = next((s for s in services if s.kind == finding.service), lead)
+                target = self._target_for(finding, services, lead)
                 if target is None:
                     continue
                 try:
@@ -728,6 +793,27 @@ class Engine:
                 arr.close()
             self.running = False
 
+    def _target_for(self, finding: Finding, services: list[Arr],
+                    lead: Arr | None) -> Arr | None:
+        """The service an action on this finding has to be carried out against.
+
+        The instance it came from wins. Two Radarr instances are the same kind
+        and share nothing else: queue id 41 names one entry in the first and a
+        different entry — or none — in the second, so removing "the finding"
+        against the wrong one either does nothing or removes something nobody
+        asked about.
+
+        A finding may name a different kind than the service that produced it:
+        an orphaned file listed through Radarr can belong to a series. Those
+        fall back to the first service of the kind they name.
+        """
+        instance = finding.data.get("_instance")
+        if instance is not None:
+            exact = next((s for s in services if s.service_id == instance), None)
+            if exact is not None and exact.kind == finding.service:
+                return exact
+        return next((s for s in services if s.kind == finding.service), lead)
+
     def _apply(self, rule, arr: Arr, ctx: dict, cfg: dict,
                deep: bool, errors: list[str]) -> list[Finding]:
         rule_config = cfg["rules"].get(rule.name) or {}
@@ -743,6 +829,9 @@ class Engine:
             errors.append(f"{rule.name}: {e}")
             return []
         for finding in found:
+            # Which connection produced it, so acting on it later comes back
+            # here rather than to whichever service happens to be first.
+            finding.data["_instance"] = getattr(arr, "service_id", None)
             finding.is_new = self.store.is_new(
                 _dedup_key(finding), int(cfg.get("recheck_hours", 12)))
         return found
@@ -760,6 +849,19 @@ class Engine:
                                      days=int(cfg.get("log_days", 90)))
         except Exception:                                       # noqa: BLE001
             log.exception("Housekeeping failed")
+
+
+def _episode_ids(candidate: dict) -> list[int]:
+    """The episode ids on an import candidate, under either spelling."""
+    out = []
+    for episode in (candidate.get("episodes") or []):
+        value = episode.get("id") if isinstance(episode, dict) else episode
+        if isinstance(value, int):
+            out.append(value)
+    for value in (candidate.get("episodeIds") or []):
+        if isinstance(value, int) and value not in out:
+            out.append(value)
+    return out
 
 
 def _dedup_key(finding: Finding) -> str:
