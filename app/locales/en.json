@@ -209,8 +209,8 @@
     "hide_conditions": "Hide conditions"
   },
   "rule_badge": {
-    "deletes": "deletes",
-    "modifies": "acts",
+    "deletes": "can delete",
+    "modifies": "can act",
     "reports": "reports only",
     "deep_only": "deep run only",
     "once_per_run": "once per run",

@@ -356,7 +356,10 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 
 /* The action a rule takes sits where its on/off switch used to, so the eye
    still finds "what does this one do" in the same place. */
-.action-field { display: flex; flex-direction: column; gap: 5px; min-width: 196px; }
+/* Fixed width, not a minimum: the action names differ a lot in length,
+   and sizing to content leaves the whole right-hand column ragged. */
+.action-field { display: flex; flex-direction: column; gap: 5px;
+                flex: 0 0 216px; width: 216px; }
 .action-label {
   font-size: .74rem; font-weight: 650; letter-spacing: .06em;
   text-transform: uppercase; color: var(--faint);

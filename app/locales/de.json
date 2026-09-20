@@ -209,8 +209,8 @@
     "hide_conditions": "Bedingungen ausblenden"
   },
   "rule_badge": {
-    "deletes": "löscht",
-    "modifies": "greift ein",
+    "deletes": "kann löschen",
+    "modifies": "kann eingreifen",
     "reports": "meldet nur",
     "deep_only": "nur vollständiger Lauf",
     "once_per_run": "einmal je Durchlauf",

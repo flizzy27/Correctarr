@@ -1,0 +1,106 @@
+- generic [ref=f13e2]:
+  - generic [ref=f13e3]:
+    - generic [ref=f13e4]:
+      - generic [ref=f13e5]:
+        - generic [ref=f13e6]: Jahr passt nicht zum Titel
+        - generic [ref=f13e7]: kann eingreifen
+      - generic [ref=f13e9]: wrong_year
+      - generic [ref=f13e10]: Sperrt das Release und lässt sofort neu suchen. Namen ohne Jahr bleiben unberührt — ohne Jahr gibt es nichts zu vergleichen.
+      - generic [ref=f13e11]: Herausnehmen, künftig ablehnen und sofort nach Ersatz suchen.
+      - group [ref=f13e12]:
+        - generic "Nur wenn (beliebig)" [ref=f13e13] [cursor=pointer]
+    - generic [ref=f13e14]:
+      - generic [ref=f13e15]:
+        - generic [ref=f13e16]:
+          - checkbox [checked]
+          - generic [ref=f13e17] [cursor=pointer]
+        - text: prüfen
+      - generic [ref=f13e18]:
+        - generic [ref=f13e19]: Was passieren soll
+        - combobox "Was passieren soll" [ref=f13e20] [cursor=pointer]:
+          - option "Nur melden"
+          - option "Aus der Warteschlange nehmen"
+          - option "Sperren"
+          - option "Sperren und neu suchen" [selected]
+  - generic [ref=f13e21]:
+    - generic [ref=f13e22]:
+      - generic [ref=f13e23]:
+        - generic [ref=f13e24]: Entpacken ist wirklich gescheitert
+        - generic [ref=f13e25]:
+          - generic [ref=f13e26]: kann löschen
+          - generic [ref=f13e27]: einmal je Durchlauf
+      - generic [ref=f13e28]: unpack_failed
+      - generic [ref=f13e29]: Ein _UNPACK_-Ordner ist zunächst normal — so heißt er, WÄHREND entpackt wird. Gemeldet wird nur, was alt genug ist, kein Video enthält und dem Download-Programm nicht mehr bekannt ist.
+    - generic [ref=f13e30]:
+      - generic [ref=f13e31]:
+        - generic [ref=f13e32]:
+          - checkbox [checked]
+          - generic [ref=f13e33] [cursor=pointer]
+        - text: prüfen
+      - generic [ref=f13e34]:
+        - generic [ref=f13e35]: Was passieren soll
+        - combobox "Was passieren soll" [ref=f13e36] [cursor=pointer]:
+          - option "Nur melden" [selected]
+          - option "Von der Platte löschen"
+  - generic [ref=f13e37]:
+    - generic [ref=f13e38]:
+      - generic [ref=f13e39]:
+        - generic [ref=f13e40]: Liegen gebliebener Download-Müll
+        - generic [ref=f13e41]:
+          - generic [ref=f13e42]: kann löschen
+          - generic [ref=f13e43]: einmal je Durchlauf
+      - generic [ref=f13e44]: leftover_files
+      - generic [ref=f13e45]: "Löscht halbe RAR-Sätze, leere und fehlgeschlagene Ordner. Gelöscht wird nur, was ALLE Bedingungen erfüllt: alt genug, vom Download-Programm nicht mehr geführt, in keiner Arr-Warteschlange, kein brauchbares Video darin, innerhalb der eingestellten Ordner. Ist das Download-Programm nicht erreichbar, wird gar nichts gelöscht."
+      - generic [ref=f13e46]: Die Dateien von der Platte entfernen. Immer nur innerhalb der unter Pfade eingetragenen Ordner.
+      - generic [ref=f13e47]: Das lässt sich nicht rückgängig machen. Setze unten eine Grenze, wenn du bei den großen gefragt werden willst.
+      - group [ref=f13e48]:
+        - generic "Nur wenn" [ref=f13e49] [cursor=pointer]
+        - generic [ref=f13e50]:
+          - generic [ref=f13e51]:
+            - generic [ref=f13e52]: Mindestens warten
+            - generic [ref=f13e53]:
+              - spinbutton "0" [ref=f13e54]: "24"
+              - generic [ref=f13e55]: Stunden
+            - generic [ref=f13e56]: Vorher wird nicht eingegriffen. Ein Download, der vor zwei Minuten angekommen ist, hängt nicht — er ist neu.
+          - generic [ref=f13e57]:
+            - generic [ref=f13e58]: Höchstens
+            - generic [ref=f13e59]:
+              - spinbutton "0" [ref=f13e60]: "5"
+              - generic [ref=f13e61]: GB
+            - generic [ref=f13e62]: "Alles Größere wird nur gemeldet. Die einfache Art zu sagen: die kleinen Reste weg, bei den großen frag mich."
+    - generic [ref=f13e63]:
+      - generic [ref=f13e64]:
+        - generic [ref=f13e65]:
+          - checkbox [checked]
+          - generic [ref=f13e66] [cursor=pointer]
+        - text: prüfen
+      - generic [ref=f13e67]:
+        - generic [ref=f13e68]: Was passieren soll
+        - combobox "Was passieren soll" [ref=f13e69] [cursor=pointer]:
+          - option "Nur melden"
+          - option "Von der Platte löschen" [selected]
+  - generic [ref=f13e70]:
+    - generic [ref=f13e71]:
+      - generic [ref=f13e72]:
+        - generic [ref=f13e73]: Datei ohne Zuordnung — ordnet sie selbst zu
+        - generic [ref=f13e74]:
+          - generic [ref=f13e75]: kann eingreifen
+          - generic [ref=f13e76]: einmal je Durchlauf
+      - generic [ref=f13e77]: unmatched_files
+      - generic [ref=f13e78]: Der Parser scheitert an Kleinigkeiten wie römischen Zahlen („Crank.I“ für „Crank 1“) oder einem führenden „The“. Der Abgleich hier setzt das um und vergleicht gegen alle Alternativtitel. Importiert wird nur bei eindeutigem Treffer mit passendem Jahr UND wenn es eine Verbesserung wäre.
+      - generic [ref=f13e79]: Die Datei hereinholen und danach den Eintrag im Download-Programm samt Quellordner räumen — von einem Import hier erfährt das Programm sonst nie.
+      - group [ref=f13e80]:
+        - generic "Nur wenn (beliebig)" [ref=f13e81] [cursor=pointer]
+    - generic [ref=f13e82]:
+      - generic [ref=f13e83]:
+        - generic [ref=f13e84]:
+          - checkbox [checked]
+          - generic [ref=f13e85] [cursor=pointer]
+        - text: prüfen
+      - generic [ref=f13e86]:
+        - generic [ref=f13e87]: Was passieren soll
+        - combobox "Was passieren soll" [ref=f13e88] [cursor=pointer]:
+          - option "Nur melden"
+          - option "Importieren"
+          - option "Importieren und aufräumen" [selected]
+          - option "Sperren und neu suchen"
