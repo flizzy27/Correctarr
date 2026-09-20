@@ -583,3 +583,18 @@ def test_every_rule_survives_an_empty_context(rule):
     for finding in result:
         assert finding.describe("en")
         assert finding.describe("de")
+
+
+# ---------------------------------------------------------------------------
+# Field names that are on their way out
+# ---------------------------------------------------------------------------
+def test_both_spellings_of_the_remaining_size_are_read():
+    from app.rules import size_left
+    # What the services send today, and what they have announced as its
+    # replacement. Reading only one of the two would mean the stalled rule
+    # stops working on the day the rename lands.
+    assert size_left({"sizeleft": 1500}) == 1500.0
+    assert size_left({"sizeLeft": 1500}) == 1500.0
+    assert size_left({}) == 0.0
+    assert size_left({"sizeleft": None}) == 0.0
+    assert size_left({"sizeleft": "not a number"}) == 0.0

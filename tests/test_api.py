@@ -351,6 +351,32 @@ def test_a_webhook_with_rubbish_in_it_does_not_crash(signed_in):
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize("event_type", [
+    "Grab", "Download", "ManualInteractionRequired",
+    # The setting is called onHealthIssue but the value sent is "Health".
+    # Matching the setting name meant every health report was dropped.
+    "Health", "HealthRestored",
+])
+def test_a_webhook_event_worth_reacting_to_wakes_the_engine(signed_in, monkeypatch,
+                                                            event_type):
+    woken = []
+    monkeypatch.setattr(main_module, "_trigger_event", woken.append)
+    token = main_module.store.get("webhook_token")
+    signed_in.post(f"/api/event?token={token}", json={"eventType": event_type,
+                                                      "instanceName": "Radarr"})
+    assert woken, f"{event_type} should have woken the engine"
+
+
+def test_an_unknown_webhook_event_is_accepted_and_ignored(signed_in, monkeypatch):
+    woken = []
+    monkeypatch.setattr(main_module, "_trigger_event", woken.append)
+    token = main_module.store.get("webhook_token")
+    response = signed_in.post(f"/api/event?token={token}",
+                              json={"eventType": "SomethingNewInAFutureVersion"})
+    assert response.status_code == 200
+    assert not woken
+
+
 # ---------------------------------------------------------------------------
 # Language
 # ---------------------------------------------------------------------------

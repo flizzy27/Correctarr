@@ -187,6 +187,24 @@ def _top_folder(path: str) -> str:
 # ===========================================================================
 # Category: queue
 # ===========================================================================
+def size_left(entry: dict) -> float:
+    """How much of a queue entry is still to come.
+
+    Both spellings are read on purpose. The services carry ``sizeleft`` today
+    but have it marked as replaced by ``sizeLeft``, and a rule that watches for
+    a download standing still must not be the thing that stops working the day
+    that lands.
+    """
+    for key in ("sizeleft", "sizeLeft"):
+        value = entry.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
 def _gb(entry: dict) -> float:
     """A queue entry's size in GB, so size conditions have something to read."""
     try:
@@ -330,7 +348,7 @@ def check_stalled(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     for entry in ctx["queue"]:
         key = f"{arr.kind}:{entry.get('downloadId') or entry['id']}"
         active.add(key)
-        left, total = entry.get("sizeleft") or 0, entry.get("size") or 0
+        left, total = size_left(entry), entry.get("size") or 0
         if not total:
             continue
         minutes = store.check_progress(key, left)

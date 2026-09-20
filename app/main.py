@@ -40,7 +40,7 @@ from . import settings as S
 from .arr import Arr, ArrError
 from .engine import Engine
 from .prowlarr import Prowlarr
-from .rules import ALL, BY_NAME, CATEGORIES
+from .rules import ALL, BY_NAME, CATEGORIES, size_left
 from .sab import Sab
 from .storage import Store
 
@@ -459,6 +459,12 @@ def change_password(body: PasswordChange, request: Request, response: Response,
 # ---------------------------------------------------------------------------
 # Webhook
 # ---------------------------------------------------------------------------
+#: Webhook events worth waking up for. Everything else is recorded and
+#: otherwise ignored, so an unknown event from a future version is harmless.
+EVENTS = frozenset({"grab", "download", "manualinteractionrequired",
+                    "health", "healthissue", "healthrestored"})
+
+
 @app.post("/api/event")
 async def event(request: Request, token: str = ""):
     """Receive webhook calls from Radarr and Sonarr."""
@@ -474,7 +480,11 @@ async def event(request: Request, token: str = ""):
     log.info("Webhook: %s from %s", kind or "?", source)
     if kind == "test":
         return {"ok": True, "message": "Connection works"}
-    if kind in ("grab", "manualinteractionrequired", "download", "healthissue"):
+    # The toggle in Radarr is called onHealthIssue, but the value on the wire
+    # is "Health" — the two do not match, and matching the toggle name meant
+    # every health report was quietly dropped. "healthissue" stays in the list
+    # so nothing breaks if a future version ever sends it.
+    if kind in EVENTS:
         _trigger_event(f"{source}/{kind}")
     return {"ok": True}
 
@@ -1094,7 +1104,7 @@ def queue(_: dict = Depends(require_user)):
                     "state": entry.get("trackedDownloadState"),
                     "status": entry.get("status"),
                     "gb": round(size / 1024 ** 3, 2),
-                    "percent": (round(100 * (1 - (entry.get("sizeleft") or 0) / size), 1)
+                    "percent": (round(100 * (1 - size_left(entry) / size), 1)
                                 if size else None),
                     "score_then": entry.get("customFormatScore"),
                     "score_now": total, "hits": hits,

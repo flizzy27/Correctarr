@@ -273,13 +273,19 @@ class Arr:
                                    "configContract", "fields", "tags"}
         body = {k: v for k, v in body.items() if k in allowed}
 
+        # forceSave matters more than it looks. Saving a webhook normally makes
+        # the service send a test call to the address first and refuse to save
+        # if nothing answers — which is exactly the situation while this
+        # container is still starting up and registering its own address.
+        params = {"forceSave": "true"}
         existing = self.webhook()
         if existing:
             body["id"] = existing["id"]
-            self._call("PUT", f"notification/{existing['id']}", json=body)
+            self._call("PUT", f"notification/{existing['id']}", json=body,
+                       params=params)
             return ("adopted" if existing.get("name") != self.WEBHOOK_NAME
                     else "updated")
-        self._call("POST", "notification", json=body)
+        self._call("POST", "notification", json=body, params=params)
         return "created"
 
     def remove_webhook(self) -> bool:

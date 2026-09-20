@@ -103,7 +103,10 @@ class Sab:
         return names
 
     def status(self) -> dict:
-        return self._call("status").get("status", {})
+        # skip_dashboard is not cosmetic: without it the status call resolves
+        # the public IPv4 and IPv6 address and does a DNS lookup, every time.
+        # On a one-minute schedule that is a lot of pointless outbound traffic.
+        return self._call("status", skip_dashboard=1).get("status", {})
 
     def queue(self) -> dict:
         return self._call("queue", limit=500).get("queue", {})
