@@ -238,3 +238,22 @@ def test_an_engine_handler_exists_for_every_action_a_rule_offers():
             if action == policy.REPORT:
                 continue
             assert hasattr(Engine, "_act_" + action), f"{rule.name}: {action}"
+
+
+def test_every_action_has_its_requirement_written_down():
+    """A rule that offers an action its findings cannot satisfy is a trap.
+
+    The action appears in the menu, somebody picks it, and it then quietly does
+    nothing on every pass. Recording what each one needs is what makes that
+    checkable at all.
+    """
+    assert set(policy.REQUIRES) == set(policy.ACTIONS)
+
+
+def test_every_rule_can_actually_carry_out_what_it_offers():
+    from app.engine import Engine
+    for rule in ALL:
+        for action in rule.actions:
+            assert hasattr(Engine, "_act_" + action) or action == policy.REPORT, \
+                f"{rule.name} offers {action}, but nothing carries it out"
+            assert policy.REQUIRES[action] is not None

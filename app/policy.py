@@ -56,6 +56,27 @@ ACTIONS = (
     "resume",                # start a paused download client
 )
 
+#: What each action needs from a finding in order to do anything at all. A rule
+#: that offers an action its own findings cannot satisfy is a trap: the action
+#: appears in the menu, gets chosen, and then quietly does nothing every time.
+#:
+#: ``entry_id`` means the finding's own field; everything else is a key in
+#: ``finding.data``. Alternatives are separated, one of them is enough.
+REQUIRES: dict[str, tuple[str, ...]] = {
+    REPORT: (),
+    "remove": ("entry_id",),
+    "blocklist": ("entry_id", "release"),
+    "blocklist_and_search": ("entry_id", "release"),
+    "import": ("downloadId", "path"),
+    "import_and_clean": ("downloadId", "path"),
+    "search": ("item_id",),
+    "refresh": ("item_id",),
+    "delete": ("path",),
+    "clear_warning": ("client",),
+    "remove_entry": ("nzo_id",),
+    "resume": ("client",),
+}
+
 #: Actions that remove data. The interface marks them, and the conditions
 #: default to something cautious for any rule that offers one.
 DESTRUCTIVE = frozenset({"delete", "remove_entry"})
