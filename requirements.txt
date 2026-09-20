@@ -1,0 +1,15 @@
+# Auf feste Fassungen genagelt: ein Abbild, das heute baut, soll in einem Jahr
+# genauso bauen. Angehoben wird bewusst und im Changelog vermerkt.
+
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+httpx==0.28.1
+apscheduler==3.11.3
+pydantic==2.13.5
+
+# Bewusst 'regex' und nicht das eingebaute 're': Radarr läuft auf .NET, und die
+# Muster der Profildatenbank nutzen durchgehend Lookbehind mit variabler Breite,
+# etwa (?<=^|[\s.-])YIFY\b. Das eingebaute 're' lehnt so etwas ab — gemessen
+# scheiterten damit 523 von 814 Mustern (64 Prozent), die Bewertung war also
+# stillschweigend lückenhaft. 'regex' kann es: 814 von 814.
+regex==2026.9.10

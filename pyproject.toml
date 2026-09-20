@@ -1,0 +1,33 @@
+[project]
+name = "correctarr"
+description = "Findet und behebt Fehler in Radarr, Sonarr, SABnzbd und Prowlarr"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", ".lokal", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+  # Die Oberfläche und die Regeln leben von langen Erklärungstexten in
+  # Zeichenketten. Die umzubrechen macht sie schlechter lesbar, nicht besser.
+  "E501",
+  # Lambdas als Kurzschreibweise für Abfragen sind hier Absicht.
+  "E731",
+  # Ein weitgefasstes except ist in den Regeln gewollt: eine einzelne Regel darf
+  # nie den ganzen Durchlauf abbrechen.
+  "B904",
+  # Depends(...) im Standardwert ist die vorgesehene Schreibweise von FastAPI.
+  "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning"]

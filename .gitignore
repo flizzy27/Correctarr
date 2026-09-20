@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Never publish. This repository is public.
+# ---------------------------------------------------------------------------
+.local/
+.lokal/
+*.env
+.env
+.env.*
+*.key
+*.pem
+id_rsa*
+
+# Working notes, not shipped
+AGENTS.md
+tools/
+
+# Runtime and data
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.db
+*.db-wal
+*.db-shm
+*.backup
+config/
+.pytest_cache/
+.ruff_cache/
+
+# Editors
+.DS_Store
+.idea/
+.vscode/

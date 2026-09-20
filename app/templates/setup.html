@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Correctarr</title>
+<link rel="icon" href="static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+<div class="gate">
+  <div class="gate-card">
+    <div class="gate-brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)"/>
+        <path d="M10 16.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1 data-t="setup.welcome"></h1>
+    </div>
+    <p class="subtitle" data-t="setup.intro"></p>
+
+    <div class="notice warning" style="margin-bottom:18px" data-t="setup.warning" data-t-html></div>
+
+    <form id="form" autocomplete="on">
+      <div class="field">
+        <label for="name" data-t="label.username"></label>
+        <input type="text" id="name" name="username" autocomplete="username"
+               required autofocus spellcheck="false" minlength="3" maxlength="64">
+        <div class="help" data-t="setup.username_help"></div>
+      </div>
+      <div class="field">
+        <label for="password" data-t="label.password"></label>
+        <input type="password" id="password" name="password"
+               autocomplete="new-password" required minlength="8">
+        <div class="strength" id="strength"><span></span><span></span><span></span><span></span></div>
+        <div class="help" id="strength-text" data-t="setup.password_help"></div>
+      </div>
+      <div class="field">
+        <label for="repeat" data-t="label.repeat_password"></label>
+        <input type="password" id="repeat" autocomplete="new-password" required>
+      </div>
+      <div class="notice error" id="error" hidden></div>
+      <button type="submit" class="btn primary" id="submit" data-t="action.create_account"></button>
+    </form>
+
+    <div class="foot" data-t="setup.external_auth" data-t-html></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (selector) => document.querySelector(selector);
+let strings = {};
+const t = (key) => strings[key] ?? key;
+
+function applyText() {
+  document.querySelectorAll("[data-t]").forEach((element) => {
+    const text = t(element.dataset.t);
+    if (element.dataset.tHtml !== undefined) element.innerHTML = text;
+    else element.textContent = text;
+  });
+}
+
+function strength(password) {
+  let points = 0;
+  if (password.length >= 8) points++;
+  if (password.length >= 12) points++;
+  if (password.length >= 16) points++;
+  if (/[^a-zA-Z0-9]/.test(password) && /\d/.test(password)) points++;
+  return Math.min(4, points);
+}
+
+$("#password").addEventListener("input", (event) => {
+  const level = strength(event.target.value);
+  $("#strength").className = "strength" + (level ? " s" + level : "");
+  $("#strength-text").textContent = event.target.value.length < 8
+    ? t("setup.password_help")
+    : t("setup.strength_" + level);
+});
+
+$("#form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("#error").hidden = true;
+  if ($("#password").value !== $("#repeat").value) {
+    $("#error").textContent = t("setup.mismatch");
+    $("#error").hidden = false;
+    return;
+  }
+  const button = $("#submit");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = t("action.creating");
+  try {
+    const response = await fetch("api/auth/setup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("#name").value, password: $("#password").value }),
+    });
+    if (response.ok) {
+      window.location.assign(".");
+      return;
+    }
+    const body = await response.json().catch(() => ({}));
+    $("#error").textContent =
+      body.detail || t("setup.failed").replace("{status}", response.status);
+    $("#error").hidden = false;
+  } catch (error) {
+    $("#error").textContent = t("login.no_connection");
+    $("#error").hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+});
+
+(async function start() {
+  try {
+    const bundle = await (await fetch("api/language")).json();
+    strings = bundle.strings;
+    document.documentElement.lang = bundle.language;
+    applyText();
+  } catch (error) { /* keep the markup as it is */ }
+})();
+</script>
+</body>
+</html>

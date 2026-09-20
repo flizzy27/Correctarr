@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight" data-density="normal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Correctarr</title>
+<link rel="icon" href="static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/style.css">
+<script>
+  /* Apply the palette before the first paint, otherwise the default flashes. */
+  try {
+    var theme = localStorage.getItem("correctarr.theme");
+    var density = localStorage.getItem("correctarr.density");
+    if (theme) document.documentElement.dataset.theme = theme;
+    if (density) document.documentElement.dataset.density = density;
+  } catch (e) { /* private window: keep the default */ }
+</script>
+</head>
+<body>
+
+<div class="shell">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)"/>
+        <path d="M10 16.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <div class="name">Correctarr</div>
+        <div class="version" id="version">…</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group" data-t="nav.group_insight"></div>
+      <button class="nav-item active" data-target="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        <span data-t="nav.overview"></span>
+      </button>
+      <button class="nav-item" data-target="fixed">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        <span data-t="nav.fixed"></span> <span class="nav-count" id="count-fixed"></span>
+      </button>
+      <button class="nav-item" data-target="findings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+        <span data-t="nav.findings"></span> <span class="nav-count" id="count-findings"></span>
+      </button>
+
+      <div class="nav-group" data-t="nav.group_operations"></div>
+      <button class="nav-item" data-target="queue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <span data-t="nav.queue"></span>
+      </button>
+      <button class="nav-item" data-target="rules">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        <span data-t="nav.rules"></span> <span class="nav-count" id="count-rules"></span>
+      </button>
+      <button class="nav-item" data-target="indexers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+        <span data-t="nav.indexers"></span>
+      </button>
+
+      <div class="nav-group" data-t="nav.group_configuration"></div>
+      <button class="nav-item" data-target="services">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7L12 19"/></svg>
+        <span data-t="nav.services"></span> <span class="nav-count" id="count-services"></span>
+      </button>
+      <button class="nav-item" data-target="settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span data-t="nav.settings"></span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span class="dot" id="heartbeat"></span>
+      <span id="user">…</span>
+      <button class="btn small" id="sign-out" data-t="action.sign_out" hidden></button>
+    </div>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div>
+        <h1 id="title">Correctarr</h1>
+        <div class="subtitle" id="subtitle">…</div>
+      </div>
+      <div class="topbar-actions">
+        <span class="badge warning" id="dry-run-badge" data-t="settings.dry_run.label" hidden></span>
+        <button class="btn" id="check-fast" data-t="action.check_fast"></button>
+        <button class="btn primary" id="check-deep" data-t="action.check_deep"></button>
+      </div>
+    </header>
+
+    <main>
+      <!-- ============================================ overview -->
+      <section id="page-overview" class="page active">
+        <div class="tiles" id="tiles"></div>
+        <div class="card">
+          <h2 data-t="overview.services_title"></h2>
+          <p class="hint" data-t="overview.services_help"></p>
+          <div id="services-list"></div>
+        </div>
+        <div class="card">
+          <h2 data-t="overview.paths_title"></h2>
+          <p class="hint" data-t="overview.paths_help"></p>
+          <div id="paths-list"></div>
+        </div>
+        <div class="card">
+          <h2 data-t="overview.runs_title"></h2>
+          <div class="table-wrap">
+            <table class="table" id="runs-table">
+              <thead><tr>
+                <th data-t="label.time"></th>
+                <th data-t="label.trigger"></th>
+                <th data-t="label.extent"></th>
+                <th class="num" data-t="label.duration"></th>
+                <th class="num" data-t="label.found"></th>
+                <th class="num" data-t="label.fixed"></th>
+                <th data-t="label.error"></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ fixed -->
+      <section id="page-fixed" class="page">
+        <div class="card">
+          <h2 data-t="fixed_page.title"></h2>
+          <p class="hint" data-t="fixed_page.help"></p>
+          <div class="toolbar">
+            <input type="search" id="fixed-search" class="grow"
+                   data-t-placeholder="label.filter_findings">
+            <button class="btn small" id="fixed-reload" data-t="action.reload"></button>
+          </div>
+          <div id="fixed-list" class="entries"></div>
+        </div>
+      </section>
+
+      <!-- ============================================ findings -->
+      <section id="page-findings" class="page">
+        <div class="card">
+          <h2 data-t="findings_page.title"></h2>
+          <p class="hint" data-t="findings_page.help"></p>
+          <div class="toolbar">
+            <select id="findings-rule" style="max-width:280px"></select>
+            <input type="search" id="findings-search" class="grow"
+                   data-t-placeholder="label.filter">
+            <label class="toggle-field">
+              <span class="toggle"><input type="checkbox" id="findings-fixed-only"><span class="track"></span></span>
+              <span data-t="label.only_fixed"></span>
+            </label>
+          </div>
+          <div id="findings-list" class="entries"></div>
+        </div>
+      </section>
+
+      <!-- ============================================ queue -->
+      <section id="page-queue" class="page">
+        <div class="card">
+          <h2><span data-t="queue_page.title"></span>
+              <span class="muted" data-t="queue_page.subtitle"></span></h2>
+          <p class="hint" data-t="queue_page.help"></p>
+          <div class="toolbar">
+            <input type="search" id="queue-search" class="grow"
+                   data-t-placeholder="label.filter_by_title">
+            <label class="toggle-field">
+              <span class="toggle"><input type="checkbox" id="queue-problems"><span class="track"></span></span>
+              <span data-t="label.only_problems"></span>
+            </label>
+          </div>
+          <div class="table-wrap">
+            <table class="table" id="queue-table">
+              <thead><tr>
+                <th data-t="label.title"></th>
+                <th data-t="label.release"></th>
+                <th class="num">GB</th>
+                <th class="num">%</th>
+                <th data-t="label.state"></th>
+                <th class="num" data-t="label.then"></th>
+                <th class="num" data-t="label.now"></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ rules -->
+      <section id="page-rules" class="page">
+        <div class="card">
+          <h2 data-t="rules_page.title"></h2>
+          <p class="hint" data-t="rules_page.help" data-t-html></p>
+          <div class="toolbar">
+            <input type="search" id="rules-search" class="grow"
+                   data-t-placeholder="label.search_rules">
+            <button class="btn small" id="rules-report-only" data-t="action.report_only"></button>
+            <button class="btn small" id="rules-defaults" data-t="action.restore_defaults"></button>
+          </div>
+          <div id="rules-list"></div>
+        </div>
+      </section>
+
+      <!-- ============================================ indexers -->
+      <section id="page-indexers" class="page">
+        <div class="card">
+          <h2><span data-t="indexers_page.title"></span>
+              <span class="muted" data-t="indexers_page.subtitle"></span></h2>
+          <p class="hint" data-t="indexers_page.help" data-t-html></p>
+          <div id="indexers-content"></div>
+        </div>
+      </section>
+
+      <!-- ============================================ services -->
+      <section id="page-services" class="page">
+        <div class="card">
+          <h2 data-t="services_page.title"></h2>
+          <p class="hint" data-t="services_page.help"></p>
+          <div id="services-editor"></div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="add-service" data-t="action.add_service"></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================ settings -->
+      <section id="page-settings" class="page">
+        <div class="toolbar">
+          <label class="toggle-field">
+            <span class="toggle"><input type="checkbox" id="show-advanced"><span class="track"></span></span>
+            <span data-t="action.show_advanced"></span>
+          </label>
+        </div>
+        <div id="settings-groups"></div>
+        <div class="card">
+          <h2 data-t="label.account"></h2>
+          <div id="account"></div>
+        </div>
+        <div class="card">
+          <h2 data-t="label.maintenance"></h2>
+          <p class="hint" data-t="settings_page.group_maintenance_help"></p>
+          <div id="maintenance"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="static/app.js"></script>
+</body>
+</html>

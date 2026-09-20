@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Correctarr</title>
+<link rel="icon" href="static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/style.css">
+<script>
+  try {
+    var theme = localStorage.getItem("correctarr.theme");
+    if (theme) document.documentElement.dataset.theme = theme;
+  } catch (e) { /* private window */ }
+</script>
+</head>
+<body>
+<div class="gate">
+  <div class="gate-card">
+    <div class="gate-brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent-soft)"/>
+        <path d="M10 16.5l4 4 8-9" stroke="var(--accent)" stroke-width="2.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1>Correctarr</h1>
+    </div>
+    <p class="subtitle" data-t="login.prompt"></p>
+
+    <form id="form" autocomplete="on">
+      <div class="field">
+        <label for="name" data-t="label.username"></label>
+        <input type="text" id="name" name="username" autocomplete="username"
+               required autofocus spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="password" data-t="label.password"></label>
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required>
+      </div>
+      <div class="notice error" id="error" hidden></div>
+      <button type="submit" class="btn primary" id="submit" data-t="action.sign_in"></button>
+    </form>
+
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (selector) => document.querySelector(selector);
+let strings = {};
+const t = (key) => strings[key] ?? key;
+
+function showError(text) {
+  $("#error").textContent = text;
+  $("#error").hidden = false;
+}
+
+function applyText() {
+  document.querySelectorAll("[data-t]").forEach((element) => {
+    element.textContent = t(element.dataset.t);
+  });
+}
+
+$("#form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("#error").hidden = true;
+  const button = $("#submit");
+  const original = button.textContent;
+  button.disabled = true;
+  try {
+    const response = await fetch("api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("#name").value, password: $("#password").value }),
+    });
+    if (response.ok) {
+      // A full navigation rather than a fetch redirect, so the session cookie
+      // is definitely picked up.
+      window.location.assign(".");
+      return;
+    }
+    const body = await response.json().catch(() => ({}));
+    showError(body.detail || t("login.failed").replace("{status}", response.status));
+    $("#password").value = "";
+    $("#password").focus();
+  } catch (error) {
+    showError(t("login.no_connection"));
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+});
+
+(async function start() {
+  try {
+    const bundle = await (await fetch("api/language")).json();
+    strings = bundle.strings;
+    document.documentElement.lang = bundle.language;
+    applyText();
+  } catch (error) { /* keep the markup as it is */ }
+  try {
+    const state = await (await fetch("api/auth/state")).json();
+    $("#foot").textContent = "Correctarr " + (state.version || "");
+    if (state.signed_in) window.location.assign(".");
+  } catch (error) { /* ignore */ }
+})();
+</script>
+</body>
+</html>

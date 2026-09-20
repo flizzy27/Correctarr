@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Correctarr</Name>
+  <Repository>ghcr.io/flizzy27/correctarr:latest</Repository>
+  <Registry>https://github.com/flizzy27/Correctarr/pkgs/container/correctarr</Registry>
+  <Support>https://github.com/flizzy27/Correctarr/issues</Support>
+  <Project>https://github.com/flizzy27/Correctarr</Project>
+  <Branch>
+    <Tag>latest</Tag>
+    <TagDescription>Stable. Follows the most recent release.</TagDescription>
+  </Branch>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Category>Downloaders: MediaApp:Video Tools:Utilities:</Category>
+  <WebUI>http://[IP]:[PORT:8099]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/flizzy27/Correctarr/main/docs/icon.png</Icon>
+  <ExtraSearchTerms>radarr sonarr sabnzbd prowlarr automation cleanup import repair</ExtraSearchTerms>
+
+  <Overview>
+    Correctarr finds and fixes the problems Radarr, Sonarr, SABnzbd and Prowlarr leave
+    lying around because nobody is looking: wrongly matched releases, downloads that
+    break today's profile rules, stuck imports, files that cannot be matched to a
+    title, and leftover debris in the download folders.
+    &#13;
+    It works three ways at once: in real time through webhooks, on a short schedule
+    for the queue, and on a full pass for the library and the indexers. 26 rules, each
+    switchable between "report only" and "fix", plus a dry run switch that stops every
+    change.
+    &#13;
+    Guiding principle: when in doubt, do nothing. A rule that is not sure only
+    reports. Better one finding left alone than one good file thrown away.
+    &#13;
+    SETUP
+    Open the web interface after the first start and create an account (username and
+    password). Then add Radarr, Sonarr, SABnzbd and Prowlarr under Services, and check
+    the paths under Settings.
+    &#13;
+    IMPORTANT, ABOUT THE PATHS
+    The paths have to be the same inside this container as the ones Radarr and Sonarr
+    see. Mount the download folders exactly the way you mounted them there. The
+    overview page tells you whether that worked.
+    &#13;
+    LANGUAGES
+    The interface is available in English and German and follows your browser by
+    default.
+    &#13;
+    SECURITY
+    The interface has its own login. If you already run Authelia, Authentik or basic
+    auth in a reverse proxy in front of it, you can turn it off with AUTH=off. Without
+    one of the two, the port does not belong on the open internet.
+  </Overview>
+
+  <Config Name="Web interface" Target="8099" Default="8099" Mode="tcp" Type="Port"
+          Display="always" Required="true"
+          Description="The port the interface is reachable on in a browser. If it clashes with something, put a different number here; the WebUI button follows automatically.">8099</Config>
+
+  <Config Name="Configuration and history" Target="/config"
+          Default="/mnt/user/appdata/correctarr" Mode="rw" Type="Path"
+          Display="always" Required="true"
+          Description="Holds the database, the settings, the services and the history. This directory survives a container update and must not be deleted.">/mnt/user/appdata/correctarr</Config>
+
+  <Config Name="Finished downloads" Target="/downloads" Default="" Mode="rw" Type="Path"
+          Display="always" Required="true"
+          Description="The folder SABnzbd puts finished downloads in. This MUST be the same one Radarr and Sonarr see, otherwise Correctarr cannot find the files. Write access is needed for cleanup."/>
+
+  <Config Name="Incomplete downloads" Target="/incomplete" Default="" Mode="rw" Type="Path"
+          Display="always" Required="false"
+          Description="The working folder of SABnzbd. Leave empty if there is no separate one."/>
+
+  <Config Name="Movies" Target="/movies" Default="" Mode="ro" Type="Path"
+          Display="always" Required="false"
+          Description="The movie library. Read only. Optional — without it a few details are missing from the overview."/>
+
+  <Config Name="Series" Target="/series" Default="" Mode="ro" Type="Path"
+          Display="always" Required="false"
+          Description="The series library. Read only. Optional."/>
+
+  <Config Name="Authentication" Target="AUTH" Default="on" Type="Variable"
+          Display="always" Required="false"
+          Description="on = built-in login with username and password (recommended). off = no login; only sensible when Authelia, Authentik or basic auth in a reverse proxy already handles it.">on</Config>
+
+  <Config Name="Timezone" Target="TZ" Default="Europe/Berlin" Type="Variable"
+          Display="always" Required="false"
+          Description="Used for timestamps and scheduling, for example Europe/Berlin or America/New_York.">Europe/Berlin</Config>
+
+  <Config Name="Sub path behind a reverse proxy" Target="BASE_URL" Default=""
+          Type="Variable" Display="advanced" Required="false"
+          Description="Only needed when the interface runs under a sub path such as /correctarr. Leave empty when it has its own hostname or is reached directly on the port."/>
+
+  <Config Name="PUID" Target="PUID" Default="99" Type="Variable"
+          Display="advanced" Required="false"
+          Description="User id the service runs as. On Unraid 99 (nobody) is correct.">99</Config>
+
+  <Config Name="PGID" Target="PGID" Default="100" Type="Variable"
+          Display="advanced" Required="false"
+          Description="Group id. On Unraid 100 (users) is correct.">100</Config>
+
+  <Config Name="UMASK" Target="UMASK" Default="022" Type="Variable"
+          Display="advanced" Required="false"
+          Description="Permission mask for newly created files.">022</Config>
+
+  <Config Name="Log level" Target="LOGLEVEL" Default="INFO" Type="Variable"
+          Display="advanced" Required="false"
+          Description="INFO in normal operation. DEBUG for troubleshooting only, it gets very chatty. Credentials are redacted either way.">INFO</Config>
+
+  <Config Name="Radarr address (first run only)" Target="RADARR_URL" Default=""
+          Type="Variable" Display="advanced" Required="false"
+          Description="For the very first start only: adopts the service automatically. Everything is managed in the interface afterwards and this variable is ignored."/>
+
+  <Config Name="Radarr API key (first run only)" Target="RADARR_API_KEY" Default=""
+          Type="Variable" Display="advanced" Required="false" Mask="true"
+          Description="For the very first start only. Found in Radarr under Settings, General."/>
+
+  <Config Name="Sonarr address (first run only)" Target="SONARR_URL" Default=""
+          Type="Variable" Display="advanced" Required="false"
+          Description="For the very first start only."/>
+
+  <Config Name="Sonarr API key (first run only)" Target="SONARR_API_KEY" Default=""
+          Type="Variable" Display="advanced" Required="false" Mask="true"
+          Description="For the very first start only."/>
+
+  <Config Name="SABnzbd address (first run only)" Target="SAB_URL" Default=""
+          Type="Variable" Display="advanced" Required="false"
+          Description="For the very first start only. Without SABnzbd nothing is classified as debris and nothing is deleted."/>
+
+  <Config Name="SABnzbd API key (first run only)" Target="SAB_API_KEY" Default=""
+          Type="Variable" Display="advanced" Required="false" Mask="true"
+          Description="For the very first start only."/>
+
+  <Config Name="Prowlarr address (first run only)" Target="PROWLARR_URL" Default=""
+          Type="Variable" Display="advanced" Required="false"
+          Description="For the very first start only. Optional — without Prowlarr there is no indexer rating."/>
+
+  <Config Name="Prowlarr API key (first run only)" Target="PROWLARR_API_KEY" Default=""
+          Type="Variable" Display="advanced" Required="false" Mask="true"
+          Description="For the very first start only."/>
+</Container>

@@ -1,0 +1,674 @@
+{
+  "app": {
+    "name": "Correctarr",
+    "tagline": "Finds and fixes what Radarr and Sonarr leave lying around"
+  },
+  "nav": {
+    "overview": "Overview",
+    "fixed": "Fixed",
+    "findings": "Findings",
+    "queue": "Queue",
+    "rules": "Rules",
+    "indexers": "Indexers",
+    "services": "Services",
+    "settings": "Settings",
+    "group_insight": "Insight",
+    "group_operations": "Operations",
+    "group_configuration": "Configuration"
+  },
+  "page": {
+    "overview": "How things stand",
+    "fixed": "What was actually changed",
+    "findings": "Everything found, fixed or not",
+    "queue": "Waiting downloads, scored against today's rules",
+    "rules": "What gets checked and what gets fixed",
+    "indexers": "Measured performance per source",
+    "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
+    "settings": "Schedule, paths, thresholds, appearance"
+  },
+  "action": {
+    "check_fast": "Quick check",
+    "check_deep": "Check everything",
+    "checking": "checking…",
+    "checking_deep": "checking everything…",
+    "save": "Save",
+    "saving": "saving…",
+    "test": "Test connection",
+    "testing": "testing…",
+    "remove": "Remove",
+    "add_service": "Add a service",
+    "sign_in": "Sign in",
+    "sign_out": "Sign out",
+    "create_account": "Create account",
+    "creating": "creating…",
+    "reload": "Reload",
+    "report_only": "Set everything to report only",
+    "restore_defaults": "Restore defaults",
+    "compact": "Trim and compact now",
+    "compacting": "compacting…",
+    "change_password": "Change password",
+    "send_test": "Send a test notification",
+    "show_advanced": "Show advanced settings"
+  },
+  "label": {
+    "name": "Name",
+    "kind": "Kind",
+    "url": "Address",
+    "api_key": "API key",
+    "enabled": "enabled",
+    "webhook": "Set up webhook",
+    "check": "check",
+    "fix": "fix",
+    "username": "Username",
+    "password": "Password",
+    "current_password": "Current password",
+    "new_password": "New password",
+    "repeat_password": "Repeat the new password",
+    "time": "Time",
+    "trigger": "Trigger",
+    "extent": "Extent",
+    "duration": "Duration",
+    "found": "Found",
+    "fixed": "Fixed",
+    "error": "Error",
+    "title": "Title",
+    "release": "Release",
+    "state": "State",
+    "then": "then",
+    "now": "now",
+    "indexer": "Indexer",
+    "priority": "Priority",
+    "queries": "Queries",
+    "grabs": "Grabs",
+    "yield": "Yield",
+    "mean_score": "Mean score",
+    "samples": "Samples",
+    "rating": "Rating",
+    "store": "Store",
+    "account": "Account",
+    "maintenance": "Maintenance",
+    "language": "Language",
+    "theme": "Theme",
+    "working_folder": "working folder",
+    "finished_folder": "finished folder",
+    "filter": "Filter…",
+    "search_rules": "Search rules…",
+    "filter_by_title": "Filter by title or release…",
+    "filter_findings": "Filter by title or rule…",
+    "all_rules": "all rules",
+    "only_problems": "only problems",
+    "only_fixed": "only fixed"
+  },
+  "unit": {
+    "seconds": "seconds",
+    "minutes": "minutes",
+    "hours": "hours",
+    "days": "days",
+    "years": "years",
+    "grabs": "grabs",
+    "queries": "queries",
+    "places": "places",
+    "entries": "entries",
+    "percent": "%",
+    "gb": "GB",
+    "mb": "MB"
+  },
+  "severity": {
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info"
+  },
+  "direction": {
+    "higher": "low",
+    "lower": "high"
+  },
+  "category": {
+    "queue": "Queue",
+    "import": "Import",
+    "library": "Library",
+    "downloader": "Download client",
+    "indexers": "Indexers",
+    "system": "System"
+  },
+  "theme": {
+    "midnight": "Midnight",
+    "deepsea": "Deep sea",
+    "slate": "Slate",
+    "amber": "Amber",
+    "violet": "Violet",
+    "moss": "Moss",
+    "charcoal": "Charcoal"
+  },
+  "density": {
+    "spacious": "Spacious",
+    "normal": "Normal",
+    "compact": "Compact"
+  },
+  "choice": {
+    "auto": "Follow the browser",
+    "en": "English",
+    "de": "Deutsch",
+    "info": "Info and above",
+    "warning": "Warning and above",
+    "error": "Errors only"
+  },
+  "tile": {
+    "found_24h": "found in 24 hours",
+    "fixed_24h": "of those fixed",
+    "last_run": "on the last run",
+    "services_up": "services reachable",
+    "total": "{count} in total",
+    "ready": "ready",
+    "busy": "checking…"
+  },
+  "overview": {
+    "services_title": "Services",
+    "services_help": "Every service is actually contacted when this page loads. Anything green here really answers.",
+    "paths_title": "Paths",
+    "paths_help": "The most common setup mistake: the paths inside this container do not match the ones Radarr sees. The file rules then stay quiet although they should be finding something.",
+    "runs_title": "Recent runs",
+    "cleanup_in": "Cleanup runs in:",
+    "cleanup_none": "No cleanup directory configured — the leftover files rule stays quiet.",
+    "no_services": "No service configured yet — add one under Services.",
+    "no_runs": "No run yet"
+  },
+  "fixed_page": {
+    "title": "What was fixed",
+    "help": "Only changes that actually happened — plain reports and dry runs are not listed here. This is the record of the work done.",
+    "empty": "Nothing has been changed yet. That is good news to start with.",
+    "no_match": "Nothing matches."
+  },
+  "findings_page": {
+    "title": "Findings",
+    "help": "Everything that was found, fixed or not.",
+    "empty": "Nothing recorded yet.",
+    "reported_only": "reported only"
+  },
+  "queue_page": {
+    "title": "Queue",
+    "subtitle": "scored against today's rules",
+    "help": "A release is scored only once, when it is grabbed. This view re-scores every waiting entry against the rules that apply today. A large gap between \"then\" and \"now\" means the profile changed after the grab.",
+    "empty": "The queue is empty.",
+    "blocked": "blocked"
+  },
+  "rules_page": {
+    "title": "Rules",
+    "help": "Turning off <b>check</b> means the rule does not run at all. Turning off <b>fix</b> means findings are reported but nothing is touched. The number on the right shows how often a rule has matched so far.",
+    "active_count": "{active} of {total} active",
+    "found_count": "{count} found",
+    "no_match": "No rule matches that search.",
+    "confirm_report_only": "Turn off \"fix\" for every rule? Problems will still be found, but nothing will be changed.",
+    "confirm_defaults": "Reset every rule to its default?",
+    "report_only_done": "Every rule is now set to report only",
+    "defaults_done": "Restored"
+  },
+  "rule_badge": {
+    "deletes": "deletes",
+    "modifies": "acts",
+    "reports": "reports only",
+    "deep_only": "deep run only",
+    "once_per_run": "once per run",
+    "only_kinds": "{kinds} only"
+  },
+  "indexers_page": {
+    "title": "Indexer ratings",
+    "subtitle": "read only",
+    "help": "Prowlarr knows how often an indexer was queried and how often that turned into a grab. Radarr and Sonarr know <i>how good</i> the grab was. Together that makes the rating. Nothing is changed here — a wrongly set priority is easy to make and hard to notice later.",
+    "weights": "Weighting:",
+    "none": "No Prowlarr configured — add one under Services.",
+    "calculating": "calculating…",
+    "deviation": "Ranked {actual} by configuration, {target} by measurement — priority {priority} would be better at {suggested}",
+    "disabled": "off"
+  },
+  "services_page": {
+    "title": "Services",
+    "help": "Radarr, Sonarr, SABnzbd and Prowlarr. Each Arr service can get a webhook connection so it reports the moment it grabs something or needs manual work. That requires the public address of this interface under Settings.",
+    "empty": "No service configured yet.",
+    "key_hint": "Leave the placeholder as it is to keep the stored key.",
+    "not_saved": "not saved yet",
+    "confirm_remove": "Really remove the service \"{name}\"?",
+    "removed": "Removed"
+  },
+  "settings_page": {
+    "group_schedule": "Schedule",
+    "group_schedule_help": "How often things are checked. The fast pass only walks the queue and takes seconds; the deep pass additionally walks the whole library and the indexers.",
+    "group_paths": "Paths",
+    "group_paths_help": "Where the files are, as seen from inside this container rather than from the host. They have to match the mounts Radarr, Sonarr and the download client see.",
+    "group_detection": "Detection",
+    "group_detection_help": "The thresholds at which a rule reacts. Higher means more cautious: fewer findings, but safer ones.",
+    "group_cleanup": "Cleanup",
+    "group_cleanup_help": "The only rule that deletes irreversibly. It deletes only when every condition holds at once — and never without a reachable download client.",
+    "group_indexers": "Indexers",
+    "group_indexers_help": "Indexer rating is read only. Nothing is changed, only suggested.",
+    "group_notifications": "Notifications",
+    "group_notifications_help": "Reports are bundled at the end of a run, never sent one by one.",
+    "group_appearance": "Appearance",
+    "group_appearance_help": "How the interface looks and where it can be reached.",
+    "group_maintenance": "Maintenance",
+    "group_maintenance_help": "How long findings are kept. Without a limit the store grows without bound.",
+    "theme_help": "Every theme is dark — this runs next to Radarr and Sonarr, and so are they.",
+    "reschedules": "reschedules",
+    "store_line": "{mb} MB · {findings} findings · schema version {schema}",
+    "compact_help": "Applies the limits from the Maintenance group immediately.",
+    "account_disabled": "Authentication is disabled through <code>AUTH=off</code>. There is no account to manage — and the interface is reachable by anyone who can reach the port.",
+    "sessions_note": "All other sessions will be ended."
+  },
+  "login": {
+    "prompt": "Please sign in to continue.",
+    "failed": "Sign-in failed ({status})",
+    "no_connection": "No connection to the service."
+  },
+  "setup": {
+    "welcome": "Welcome",
+    "intro": "Create the account you will sign in with from now on. Services come next.",
+    "warning": "The password can only be changed through this interface later. There is no way to reset it without access to the file under <code>/config</code>.",
+    "username_help": "At least 3 characters.",
+    "password_help": "At least 8 characters. Length matters more than special characters.",
+    "mismatch": "The two passwords do not match.",
+    "failed": "Failed ({status})",
+    "external_auth": "Running behind your own authentication, such as Authelia or Authentik? Then this one can be turned off with the environment variable <code>AUTH=off</code>.",
+    "strength_1": "short",
+    "strength_2": "usable",
+    "strength_3": "good",
+    "strength_4": "very good"
+  },
+  "path": {
+    "unset_required": "Without this path the file rules stay inactive.",
+    "unset_optional": "Not set — fine if that folder does not exist.",
+    "missing": "{path} does not exist inside this container. Is the mount missing?",
+    "ok": "{count} entries",
+    "read_only": "read only, cleanup will not work"
+  },
+  "time": {
+    "just_now": "just now",
+    "in_a_moment": "in a moment",
+    "minutes_ago": "{count} min ago",
+    "hours_ago": "{count} h ago",
+    "days_ago": "{count} d ago",
+    "never": "—"
+  },
+  "run": {
+    "fast": "fast",
+    "deep": "deep",
+    "trigger_schedule": "schedule",
+    "trigger_manual": "manual",
+    "result": "{found} finding(s)",
+    "result_fixed": "{count} fixed",
+    "result_errors": "{count} error(s)",
+    "already_running": "A run is already in progress"
+  },
+  "message": {
+    "saved": "Saved",
+    "password_changed": "Password changed. Other sessions have been ended.",
+    "compacted": "{removed} entries removed, {freed} MB freed",
+    "test_notification": "Test notification — the connection works.",
+    "webhook_created": "Webhook created",
+    "webhook_updated": "Webhook updated",
+    "webhook_adopted": "Webhook adopted and renamed",
+    "webhook_failed": "Webhook failed: {error}",
+    "webhook_needs_url": "Webhook skipped: the public address of this interface is missing under Settings, Appearance.",
+    "connection_ok": "The connection works: {info}",
+    "rule_toggled": "{rule}: {field} {state}",
+    "on": "on",
+    "off": "off"
+  },
+  "notify": {
+    "title": "{count} new finding(s)",
+    "title_fixed": ", {count} fixed",
+    "and_more": "… and {count} more",
+    "truncated": "… truncated",
+    "open": "Open in Correctarr"
+  },
+  "error": {
+    "password_too_short": "The password needs at least {min} characters.",
+    "password_whitespace": "The password must not start or end with a space.",
+    "password_is_username": "The password and the username must not be the same.",
+    "password_obvious": "That password is too obvious.",
+    "username_too_short": "The username needs at least 3 characters.",
+    "username_too_long": "The username may be at most 64 characters.",
+    "username_bad_characters": "The username contains characters that are not allowed.",
+    "bad_credentials": "That username or password is not right",
+    "current_password_wrong": "The current password is not right",
+    "too_many_attempts": "Too many failed attempts. Please wait {seconds} seconds.",
+    "already_set_up": "An account already exists",
+    "auth_disabled": "Authentication is disabled (AUTH=off)",
+    "not_a_number": "\"{field}\" needs a number.",
+    "below_minimum": "\"{field}\" must not be below {value}.",
+    "above_maximum": "\"{field}\" must not be above {value}.",
+    "not_a_choice": "\"{field}\" only accepts: {value}.",
+    "not_a_list": "\"{field}\" needs a list.",
+    "not_absolute": "\"{field}\" has to be a full path starting with /.",
+    "too_long": "\"{field}\" is too long.",
+    "unknown_kind": "Unknown kind. Possible values: {kinds}.",
+    "unknown_setting": "Unknown setting: {key}",
+    "bad_settings_body": "Expected {key, value} or {values: {…}}",
+    "bad_rules_body": "Expected {rules: {name: {enabled, fix}}}",
+    "no_such_rule": "No such rule: {name}",
+    "rule_cannot_fix": "\"{name}\" cannot fix anything — the rule only reports.",
+    "no_such_service": "No such service",
+    "url_scheme": "The address has to start with http:// or https://",
+    "api_key_missing": "The API key is missing",
+    "no_services": "No service is configured. Add at least Radarr or Sonarr under Services.",
+    "already_running": "A run is already in progress",
+    "pushover_not_configured": "The application and user keys are missing",
+    "generic": "Something went wrong"
+  },
+  "reason": {
+    "marked_failed": "marked as failed",
+    "empty_folder": "empty folder",
+    "archives_only": "archive remnants only ({count} files, nothing unpacked)",
+    "partial_video": "partial video file only ({mb} MB)",
+    "no_video": "no video, {count} leftover files"
+  },
+  "finding": {
+    "wrong_year": "The release says {found}, but the title is from {expected}. That is a different item.",
+    "wrong_title": "The release name resembles none of the {count} known titles for this item (best match {percent}). Probably matched to the wrong thing.",
+    "profile_violation": "Under today's rules of \"{profile}\" this release is blocked: {reason}. It was grabbed before the rule existed.",
+    "not_an_upgrade": "Not an upgrade over the existing file. It will never be imported.",
+    "stalled": "Unchanged for {minutes} minutes at {percent} percent.",
+    "grab_loop": "{count} grabs in {hours} hours. Probably no available release satisfies the profile — that can only be solved in the profile.",
+    "manual_import": "Manual work is being demanded although the title and year line up.",
+    "unpack_failed": "Unpacking failed: no usable video file, untouched for {hours} hours, and the download client no longer knows the job.",
+    "detached_folder": "{service} reports {count} file(s) in {path}, but the same folder looks empty here. The service is working in a detached directory: invisible from outside, still occupying space, and its contents would be lost on the next container restart. Back the contents up, then restart the container.",
+    "matched_by_history": "grab history says {title}",
+    "unmatched_importable": "The file is not matched to any title, {reason}. Importing it would be an improvement ({comparison}).",
+    "unmatched_no_gain": "A match is possible ({reason}), but importing would be no improvement ({comparison}). Left alone.",
+    "unmatched_giving_up": "Cannot be matched to any title: {reason}. It has been sitting for {hours} hours — the release will be blocklisted and searched for again.",
+    "unmatched_waiting": "Cannot be matched to any title: {reason}. It has been sitting for {hours} hours, still waiting.",
+    "cleanup_suspended_title": "Cleanup suspended",
+    "cleanup_no_paths": "No cleanup directory is configured. Set the finished and incomplete download paths under Settings, Paths.",
+    "cleanup_no_downloader": "No download client is configured. Without comparing against its queue nothing is classified as debris — a folder can be untouched for hours and be perfectly fine. Add a SABnzbd entry under Services.",
+    "cleanup_downloader_down": "The download client is not answering. Without comparing against its queue nothing is classified as debris — a folder can be untouched for hours and be perfectly fine.",
+    "leftover_files": "{reason}, untouched for {days} days, {mb} MB. Neither the download client nor the Arr services know it any more.",
+    "missing_audio_language": "The existing file has none of the wanted audio languages (found: {found}, wanted: {wanted}).",
+    "unreadable_file": "No media information could be read from this file. That points at a damaged or incomplete file.",
+    "below_profile": "Under today's rules of \"{profile}\" the existing file would be blocked: {reason}.",
+    "missing_items": "Monitored and released, but no file present.",
+    "downloader_stale_entry": "The file is already in the library as \"{title}\" ({gb} GB). The entry in {client} can go, along with its source folder.",
+    "downloader_paused": "The download client is paused while {waiting} entries are waiting. Nothing is arriving although grabbing continues.",
+    "disk_low": "Only {free} GB free.",
+    "downloader_update": "Running {current}, {available} is available.",
+    "indexer_disabled": "Prowlarr has switched the indexer off until {until} because of errors. Last error: {last_error}.",
+    "indexer_ineffective": "{queries} queries, only {grabs} grabs out of them ({percent} percent). The indexer costs time and quota on every search and contributes nothing.",
+    "indexer_ranking": "Ranked {actual} by configuration, {target} by measurement (rating {rating}). Priority {actual_priority} would be better at {suggested}.",
+    "indexer_unknown": "The indexer shows up in the history (mean score {score}) but Prowlarr does not know it. Either it is configured directly in the Arr service, or it has since been removed from Prowlarr.",
+    "disk_space": "Only {free} GB free out of {total} GB.",
+    "passthrough": "{text}"
+  },
+  "rules": {
+    "wrong_year": {
+      "title": "Year does not match the title",
+      "help": "Blocklists the release and searches again immediately. Names without a year are left alone — there is nothing to compare."
+    },
+    "wrong_title": {
+      "title": "Release name resembles no known title",
+      "help": "Compares against localised distribution titles as well — otherwise every translated release would be a false alarm. Those titles only exist in the full item list, so this rule runs in the deep pass only."
+    },
+    "profile_violation": {
+      "title": "Download breaks today's profile rules",
+      "help": "Re-scores waiting downloads against the rules that apply now. Also catches 3D releases that Radarr cannot detect itself, because its parser swallows markers placed before the year."
+    },
+    "not_an_upgrade": {
+      "title": "Import would not be an upgrade",
+      "help": "Blocklists the release without searching again — the existing file is better after all."
+    },
+    "stalled": {
+      "title": "A started download stopped moving",
+      "help": "Only downloads that started and then stopped. Entries that have not begun are normal and are never reported."
+    },
+    "grab_loop": {
+      "title": "The same title is grabbed over and over",
+      "help": "Reports only: the cause sits in the profile, and that is where it has to be fixed."
+    },
+    "manual_import": {
+      "title": "Import waiting on manual work, but the match is right",
+      "help": "Imports only when BOTH the year and the title similarity check out. Everything else belongs to the wrong year and wrong title rules."
+    },
+    "unpack_failed": {
+      "title": "Unpacking really failed",
+      "help": "An _UNPACK_ folder is normal at first — that is what it is called WHILE unpacking. Only reported when it is old enough, holds no video, and the download client no longer knows the job."
+    },
+    "detached_folder": {
+      "title": "Service and container see different download folders",
+      "help": "Happens when the directory on the host is recreated while a container holds it mounted. The occupied space shows up nowhere, and the contents would be lost on the next restart."
+    },
+    "leftover_files": {
+      "title": "Leftover download debris",
+      "help": "Deletes half RAR sets, empty and failed folders. It deletes only what satisfies EVERY condition: old enough, no longer tracked by the download client, in no Arr queue, no usable video inside, and within the configured directories. If the download client is unreachable, nothing is deleted at all."
+    },
+    "unmatched_files": {
+      "title": "File without a match — matches it itself",
+      "help": "The parser trips over small things such as Roman numerals (\"Crank.I\" for \"Crank 1\") or a leading \"The\". The matching here handles those and compares against every alternate title. It imports only on an unambiguous match with a fitting year AND when it would be an improvement."
+    },
+    "missing_audio_language": {
+      "title": "Existing file lacks the wanted audio language",
+      "help": "Checked against the real audio tracks of the file, not the file name — the most reliable language evidence there is. Does nothing until you name the languages you want."
+    },
+    "unreadable_file": {
+      "title": "File cannot be read",
+      "help": "Missing media information points at a damaged file. Fixed by rescanning it."
+    },
+    "below_profile": {
+      "title": "Existing file would be blocked today",
+      "help": "Reports only substantive violations such as 3D, mic dubs, AAC or Xvid. Pure size shortfalls are left out — they affect almost the whole library and say nothing about its quality."
+    },
+    "missing_items": {
+      "title": "Monitored and released, but no file",
+      "help": "Reports only — a bulk search can cost a lot of disk space."
+    },
+    "downloader_warning": {
+      "title": "The download client is reporting a warning",
+      "help": "Records the warning and then clears it, so it does not sit there forever. The cause itself — a broken NZB, say — is resolved by the service searching again."
+    },
+    "downloader_stale_entry": {
+      "title": "Entry finished, file long since imported",
+      "help": "After a manual import the download client never finds out — the entry and its source folder stay. Detected by a file size matching to within one percent AND by the title; size alone is not enough, several films happen to be the same size."
+    },
+    "downloader_paused": {
+      "title": "The download client is paused",
+      "help": "Easy to miss for a long time: the queue grows but nothing arrives. Deliberately set to report only — a pause is often intentional."
+    },
+    "downloader_disk_space": {
+      "title": "The download client is reporting little free space",
+      "help": "Threshold under Settings, Detection."
+    },
+    "downloader_update": {
+      "title": "A new version of the download client is available",
+      "help": ""
+    },
+    "indexer_disabled": {
+      "title": "Prowlarr has switched an indexer off",
+      "help": "Takes effect immediately: every search reaches one source fewer."
+    },
+    "indexer_ineffective": {
+      "title": "Indexer delivers nothing despite many queries",
+      "help": "Costs time and quota. Reported only — it may cover a rare niche."
+    },
+    "indexer_ranking": {
+      "title": "The order contradicts the measured usefulness",
+      "help": "Rating made of yield (40%), quality of the grabs (35%), reliability (15%) and speed (10%). A suggestion only — nothing is changed."
+    },
+    "indexer_unknown": {
+      "title": "Indexer bypasses Prowlarr",
+      "help": "Either configured directly in the Arr service, or removed from Prowlarr since."
+    },
+    "service_health": {
+      "title": "The service reports a problem about itself",
+      "help": "Passes the health messages from Radarr and Sonarr through."
+    },
+    "disk_space": {
+      "title": "Free space is running low",
+      "help": "Only looks at the locations configured as root folders."
+    }
+  },
+  "settings": {
+    "fast_seconds": {
+      "label": "Check the queue every",
+      "help": "The fast pass. Walks the queue only and takes a few seconds. It cannot be set below 20 seconds — the Arr services have work to do as well."
+    },
+    "deep_minutes": {
+      "label": "Check the library every",
+      "help": "The deep pass walks every title and the indexers. On large libraries that takes noticeably longer."
+    },
+    "event_debounce": {
+      "label": "Minimum gap after an event",
+      "help": "Bundles webhook calls: several in quick succession trigger a single pass. Without it a search wave would start a hundred passes in parallel."
+    },
+    "events_enabled": {
+      "label": "React to webhooks",
+      "help": "Radarr and Sonarr report the moment they grab something or need manual work. Off means checks happen on the schedule only."
+    },
+    "dry_run": {
+      "label": "Dry run",
+      "help": "On: problems are found and reported, but nothing is changed. The safe way to try out a new setting."
+    },
+    "path_downloads": {
+      "label": "Finished downloads",
+      "help": "The folder the download client puts finished downloads in. It has to be the same one Radarr and Sonarr see."
+    },
+    "path_incomplete": {
+      "label": "Incomplete downloads",
+      "help": "The working folder of the download client. Leave empty if there is no separate one."
+    },
+    "path_movies": {
+      "label": "Movies",
+      "help": "The movie library. Read only."
+    },
+    "path_series": {
+      "label": "Series",
+      "help": "The series library. Read only."
+    },
+    "extra_cleanup_paths": {
+      "label": "Additional cleanup directories",
+      "help": "One path per line. Finished and incomplete downloads are included automatically and do not need to be listed here."
+    },
+    "year_tolerance": {
+      "label": "Year tolerance",
+      "help": "How far the year may differ before a release counts as the wrong item. One year is sensible: cinema and home release often fall either side of new year."
+    },
+    "title_similarity": {
+      "label": "Minimum title similarity",
+      "help": "Below this a release name counts as not matching the title. 0.45 is a good compromise — localised distribution titles differ a lot."
+    },
+    "stalled_minutes": {
+      "label": "Stalled after",
+      "help": "When a started download counts as stuck. Downloads that have not begun are normal and never reported."
+    },
+    "loop_grabs": {
+      "label": "Grabs before it counts as a loop",
+      "help": "How often the same title may be grabbed before it is worth mentioning."
+    },
+    "loop_hours": {
+      "label": "Window for counting grabs",
+      "help": "Grabs are counted within this period."
+    },
+    "disk_threshold_gb": {
+      "label": "Warn when free space drops below",
+      "help": "Below half of this it is reported as an error rather than a warning."
+    },
+    "give_up_hours": {
+      "label": "Give up on an unmatched file after",
+      "help": "How long to wait before an unmatchable release is blocklisted and searched for again. 0 disables giving up — the file then stays where it is."
+    },
+    "unpack_timeout_hours": {
+      "label": "Unpacking counts as failed after",
+      "help": "An _UNPACK_ folder is entirely normal at first — that is what the download client calls a folder while it is unpacking. It is only reported once it is this old, holds no video, and the client no longer knows the job."
+    },
+    "downloader_done_hours": {
+      "label": "Check finished entries after",
+      "help": "How long a completed entry has to sit in the download client before it is checked against the library."
+    },
+    "audio_languages": {
+      "label": "Wanted audio languages",
+      "help": "Comma separated, as they appear in the media information, for example \"German, English\". Leave empty to switch the check off — there is no sensible default."
+    },
+    "trash_age_hours": {
+      "label": "Untouched for at least",
+      "help": "How long nothing may have changed in a folder before it can count as debris. Measured on the folder, not the files — unpacked files carry the timestamp from inside the archive, which can be years old."
+    },
+    "trash_empty_hours": {
+      "label": "Empty folders already after",
+      "help": "An empty folder is unambiguously debris and does not need the full waiting time."
+    },
+    "trash_video_mb": {
+      "label": "A video counts as usable from",
+      "help": "If a video file of at least this size is in the folder, nothing is touched."
+    },
+    "indexer_days": {
+      "label": "Period to look at",
+      "help": "How far back the statistics are fetched from Prowlarr."
+    },
+    "indexer_min_queries": {
+      "label": "Minimum queries for a judgement",
+      "help": "Below this any statement is chance, and nothing is said."
+    },
+    "indexer_min_yield": {
+      "label": "Yield counts as too low below",
+      "help": "Share of queries that turned into a grab, in percent."
+    },
+    "indexer_rank_tolerance": {
+      "label": "Report deviations from",
+      "help": "How many places an indexer may be out of position without it being reported. With 1, five of six indexers came up in testing — pure noise."
+    },
+    "pushover_enabled": {
+      "label": "Enable Pushover",
+      "help": ""
+    },
+    "pushover_app": {
+      "label": "Application key",
+      "help": "From your Pushover application."
+    },
+    "pushover_user": {
+      "label": "User key",
+      "help": "Shown on your Pushover home page."
+    },
+    "pushover_devices": {
+      "label": "Devices",
+      "help": "Comma separated. Empty means every device."
+    },
+    "pushover_sound": {
+      "label": "Sound",
+      "help": "The name of a Pushover sound."
+    },
+    "pushover_min_severity": {
+      "label": "Report from this severity",
+      "help": "\"Warning and above\" skips plain informational findings."
+    },
+    "pushover_fixed_only": {
+      "label": "Report fixed findings only",
+      "help": "On: plain reports stay silent, only what was actually changed comes through."
+    },
+    "pushover_cooldown": {
+      "label": "Cooldown",
+      "help": "How long it stays quiet after a message, even when something new turns up. Protects against floods."
+    },
+    "recheck_hours": {
+      "label": "Report the same finding again after",
+      "help": "Every finding is remembered. A long-running problem reports itself again no sooner than this."
+    },
+    "language": {
+      "label": "Language",
+      "help": "\"Follow the browser\" uses whatever your browser asks for."
+    },
+    "theme": {
+      "label": "Theme",
+      "help": "Every theme is dark."
+    },
+    "density": {
+      "label": "Density",
+      "help": "How tightly the interface is laid out."
+    },
+    "public_url": {
+      "label": "Public address of this interface",
+      "help": "Needed by Radarr to send the webhook here, and by Pushover for the link in the message. Behind a reverse proxy, enter the public address rather than the internal one."
+    },
+    "log_keep": {
+      "label": "Findings to keep",
+      "help": "Older entries are removed. On a one minute schedule more than a thousand a day pile up easily — without a limit the store grows without bound."
+    },
+    "log_days": {
+      "label": "Keep findings at most",
+      "help": "In addition to the count. 0 switches the age limit off."
+    }
+  }
+}
