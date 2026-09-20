@@ -410,6 +410,8 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .field > label { font-size: .88em; font-weight: 540; }
 .field .help { color: var(--muted); font-size: .81em; line-height: 1.45; }
+.field .help.warn { color: var(--bad); }
+.field .help.act  { color: var(--good); }
 .field .unit { color: var(--faint); font-size: .8em; }
 .field.wide { grid-column: 1 / -1; }
 .field-row { display: flex; align-items: center; gap: 9px; }

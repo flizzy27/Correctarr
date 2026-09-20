@@ -283,7 +283,8 @@
     "unset_optional": "Nicht gesetzt — in Ordnung, wenn es den Ordner nicht gibt.",
     "missing": "{path} gibt es in diesem Container nicht. Fehlt die Einbindung?",
     "ok": "{count} Einträge",
-    "read_only": "nur lesbar, Aufräumen geht nicht"
+    "read_only": "nur lesbar, Aufräumen geht nicht",
+    "write_needed": "hier werden Schreibrechte gebraucht, weil {rules} löschen darf"
   },
   "time": {
     "just_now": "gerade eben",

@@ -283,7 +283,8 @@
     "unset_optional": "Not set — fine if that folder does not exist.",
     "missing": "{path} does not exist inside this container. Is the mount missing?",
     "ok": "{count} entries",
-    "read_only": "read only, cleanup will not work"
+    "read_only": "read only, cleanup will not work",
+    "write_needed": "write access is needed here, because {rules} may delete"
   },
   "time": {
     "just_now": "just now",

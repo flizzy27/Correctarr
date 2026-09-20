@@ -539,3 +539,44 @@ def test_the_proxy_prefix_is_taken_off(monkeypatch, base, incoming, expected):
             path = incoming
 
     assert main_module._route_path(FakeRequest()) == expected
+
+
+def test_write_access_is_only_demanded_when_something_would_delete(signed_in, tmp_path):
+    """Read only is fine until a rule is actually set to remove files.
+
+    Saying "read only" about a folder nothing writes to is noise; staying
+    quiet when something is set to delete and cannot is worse than noise.
+    """
+    folder = tmp_path / "downloads"
+    folder.mkdir()
+    signed_in.post("/api/settings", json={"key": "path_downloads",
+                                          "value": str(folder)})
+
+    signed_in.post("/api/rules/leftover_files", json={"action": "report"})
+    signed_in.post("/api/rules/unpack_failed", json={"action": "report"})
+    signed_in.post("/api/rules/downloader_stale_entry", json={"action": "report"})
+    body = signed_in.get("/api/paths").json()
+    assert body["deleting_rules"] == []
+    downloads = next(p for p in body["paths"] if p["key"] == "path_downloads")
+    assert downloads["needs_write"] is False
+
+    signed_in.post("/api/rules/leftover_files", json={"action": "delete"})
+    body = signed_in.get("/api/paths").json()
+    assert body["deleting_rules"] == ["leftover_files"]
+    downloads = next(p for p in body["paths"] if p["key"] == "path_downloads")
+    assert downloads["needs_write"] is True
+
+
+def test_a_library_path_is_never_asked_to_be_writable(signed_in):
+    signed_in.post("/api/rules/leftover_files", json={"action": "delete"})
+    for entry in signed_in.get("/api/paths").json()["paths"]:
+        if entry["key"] in ("path_movies", "path_series"):
+            assert entry["needs_write"] is False, entry["key"]
+
+
+def test_a_disabled_rule_does_not_demand_anything(signed_in):
+    signed_in.post("/api/rules/leftover_files", json={"action": "delete"})
+    signed_in.post("/api/rules/unpack_failed", json={"action": "report"})
+    signed_in.post("/api/rules/downloader_stale_entry", json={"action": "report"})
+    signed_in.post("/api/rules/leftover_files", json={"enabled": False})
+    assert signed_in.get("/api/paths").json()["deleting_rules"] == []

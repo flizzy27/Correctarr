@@ -185,8 +185,10 @@ async function loadOverview() {
   const [runs, paths] = await Promise.all([api("api/runs?limit=15"), api("api/paths")]);
 
   $("#paths-list").innerHTML = paths.paths.map((p) => {
+    // "no_write" is a real problem, not a detail: something is set to delete
+    // here and cannot. It has to read as loudly as a missing folder.
     const kind = p.state === "ok" ? "good"
-      : p.state === "missing" || p.state === "unset" ? "bad" : "";
+      : ["missing", "unset", "no_write"].includes(p.state) ? "bad" : "";
     return `<div class="path-row">
       <span class="dot ${kind}"></span>
       <span class="what">${esc(t("settings." + p.key + ".label"))}</span>
@@ -1326,12 +1328,13 @@ const wizard = {
         ${["path_downloads", "path_incomplete", "path_movies", "path_series"].map((key) => {
           const state = paths.paths.find((p) => p.key === key) || {};
           const good = state.state === "ok";
+          const bad = ["missing", "no_write", "unreadable"].includes(state.state);
           return `<div class="field">
             <label for="w-${key}">${esc(t("settings." + key + ".label"))}</label>
             <input type="text" id="w-${key}" data-w="${key}" spellcheck="false"
                    value="${esc(settingsValues[key] || "")}">
-            <div class="help ${good ? "" : ""}" data-note="${key}">${
-              esc(state.note || "")}</div>
+            <div class="help ${bad ? "warn" : good ? "act" : ""}"
+                 data-note="${key}">${esc(state.note || "")}</div>
           </div>`;
         }).join("")}
       </div>

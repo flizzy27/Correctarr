@@ -673,11 +673,19 @@ def paths(request: Request, _: dict = Depends(require_user)):
     """
     cfg = engine.config()
     language = language_for(request)
+    # Which rules are actually set to remove something. Read access is always
+    # needed; write access only matters if something is meant to be deleted,
+    # and saying "read only" about a path nothing writes to is just noise.
+    deleting = _rules_that_delete()
     out = []
     for key, required in (("path_downloads", True), ("path_incomplete", False),
                           ("path_movies", False), ("path_series", False)):
         path = cfg.get(key) or ""
-        entry: dict[str, Any] = {"key": key, "path": path, "required": required}
+        # Only the download folders are ever written to. The libraries are
+        # mounted read only on purpose and should stay that way.
+        needs_write = bool(deleting) and key in ("path_downloads", "path_incomplete")
+        entry: dict[str, Any] = {"key": key, "path": path, "required": required,
+                                 "needs_write": needs_write}
         if not path:
             entry |= {"state": "unset",
                       "note": i18n.t("path.unset_required" if required
@@ -689,14 +697,33 @@ def paths(request: Request, _: dict = Depends(require_user)):
             try:
                 count = len(os.listdir(path))
                 writable = os.access(path, os.W_OK)
-                entry |= {"state": "ok", "entries": count, "writable": writable,
-                          "note": i18n.t("path.ok", language, count=count)
-                                  + ("" if writable else
-                                     " — " + i18n.t("path.read_only", language))}
+                note = i18n.t("path.ok", language, count=count)
+                if not writable and needs_write:
+                    # The one combination that is a genuine problem: something
+                    # is set to delete here and cannot. Name the rule, so the
+                    # answer is either "mount it rw" or "stop it deleting".
+                    entry["state"] = "no_write"
+                    note += " — " + i18n.t(
+                        "path.write_needed", language,
+                        rules=", ".join(i18n.t(f"rules.{n}.title", language)
+                                        for n in deleting))
+                elif not writable:
+                    note += " — " + i18n.t("path.read_only", language)
+                entry |= {"entries": count, "writable": writable, "note": note}
+                entry.setdefault("state", "ok")
             except OSError as e:
                 entry |= {"state": "unreadable", "note": str(e)}
         out.append(entry)
-    return {"paths": out, "cleanup": cfg.get("cleanup_paths", [])}
+    return {"paths": out, "cleanup": cfg.get("cleanup_paths", []),
+            "deleting_rules": deleting}
+
+
+def _rules_that_delete() -> list[str]:
+    """Rules currently enabled AND set to an action that removes files."""
+    settings = engine.rule_settings()
+    return [r.name for r in ALL
+            if settings[r.name]["enabled"]
+            and settings[r.name]["action"] in policy.DESTRUCTIVE]
 
 
 # ---------------------------------------------------------------------------
