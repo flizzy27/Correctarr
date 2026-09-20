@@ -3,7 +3,74 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
-## Unreleased
+## 1.1.0
+
+### Added
+
+* **An action per rule, instead of a switch.** Every rule now declares what it
+  is allowed to do and you pick from that: report only, remove from the queue,
+  blocklist, blocklist and search again, import, import and clean up, search,
+  read the file again, delete, acknowledge a warning, remove an entry, resume.
+* **Conditions.** A rule can be told to wait a minimum age, to leave anything
+  over a size alone, or to act only above a confidence. A finding that fails a
+  condition is still reported, with the reason recorded next to it. A rule only
+  offers the conditions its own findings can answer.
+* **Five more notification channels.** Telegram, Discord, ntfy, Gotify and a
+  plain webhook, alongside Pushover. Each connection filters for itself by
+  severity, rule, category or "only what was changed", so several can run side
+  by side without either becoming noise.
+* **A setup assistant**, opening by itself on a fresh install: services with a
+  connection test each, paths, the callback address, notifications, and a dry
+  run to finish on.
+* **`api_changes` rule.** The services mark parts of their API as replaced
+  before removing them. That notice is now surfaced as an ordinary finding,
+  months before anything stops working.
+* **Permissions are explained.** The paths page works out which rules are set
+  to remove files and asks for write access only where that matters, naming the
+  rules.
+* **`ca_profile.xml`**, required for a Community Applications submission.
+
+### Changed
+
+* **A fresh install starts in dry run.** Two rules delete by default and nobody
+  installing for the first time has agreed to that yet. Everything is found and
+  reported, nothing is touched, until the switch is turned off deliberately. An
+  existing installation keeps whatever it was set to.
+* **The year check was rebuilt.** It was a subtraction, and wrong both ways. A
+  title that is itself a number supplied its own year, so
+  `1917.German.DL.1080p` — which states no release year at all — was compared
+  against 2019; the same for `2012`, `Blade Runner 2049` and a resolution
+  written out as `1920x1080`. In the other direction it rejected legitimate
+  differences: a festival premiere one year and cinemas the next, a limited
+  December run with a March disc, a home release a year ahead of the Western
+  one. It now discounts numbers belonging to the title and accepts the premiere
+  year and the release dates the service already holds, reporting a confidence
+  so a near miss and a twenty year gap can be treated differently.
+* Acting is dispatched on the chosen action rather than the rule name, so four
+  queue rules share one blocklist implementation instead of four copies.
+* Searching the rules list no longer refetches from the server on every
+  keystroke.
+
+### Fixed
+
+* **Health webhooks never arrived.** The setting is called `onHealthIssue` but
+  the value sent on the wire is `Health`, and the receiver matched the setting
+  name.
+* **Registering a webhook could fail at startup.** The services send a test
+  call to the address before storing it, which nothing answers while this
+  container is still coming up. The save is now forced.
+* The remaining size of a queue entry is read under both its current and its
+  announced future spelling, so the stalled rule survives that rename.
+* The download client status call no longer asks for the dashboard, which was
+  resolving public addresses and doing a DNS lookup on every pass.
+* History events are matched by name rather than by numbers that mean
+  different things in each application.
+* A service that answers "still starting up" is asked again instead of being
+  reported as an outage.
+
+---
+
+## 1.0.0
 
 First public release.
 
