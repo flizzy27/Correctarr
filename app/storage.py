@@ -29,6 +29,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from . import policy
+
 log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
@@ -490,12 +492,17 @@ class Store:
             return [dict(r) for r in c.execute(
                 "SELECT * FROM runs ORDER BY at DESC LIMIT ?", (limit,)).fetchall()]
 
-    #: What counts as something having actually been changed. A dry run says
-    #: what it would have done and a failure says it could not — counting
-    #: either as work done is how the interface came to report fixes that
-    #: never happened, on a badge nobody had reason to distrust.
+    #: What counts as something having actually been changed, in SQL. A dry run
+    #: says what it would have done and a failure says it could not — counting
+    #: either as work done is how the interface came to report fixes that never
+    #: happened, on a badge nobody had reason to distrust.
+    #:
+    #: The prefixes are taken from :mod:`app.policy` rather than spelled out,
+    #: so this and ``policy.really_happened`` cannot drift apart. They are
+    #: always English in the column, whatever language the interface is in.
     _REALLY_DONE = ("action IS NOT NULL AND action != '' "
-                    "AND action NOT LIKE 'DRY RUN%' AND action NOT LIKE 'FAILED%'")
+                    f"AND action NOT LIKE '{policy.DRY_PREFIX}%' "
+                    f"AND action NOT LIKE '{policy.FAILED_PREFIX}%'")
 
     def summary(self) -> dict:
         last_24h = (datetime.now(UTC) - timedelta(hours=24)).isoformat()

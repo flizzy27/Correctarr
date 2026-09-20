@@ -15,6 +15,9 @@ AGENTS.md
 tools/
 logo.png
 
+# Browser tooling output. It has been committed by accident once already.
+.playwright-mcp/
+
 # Runtime and data
 __pycache__/
 *.py[cod]

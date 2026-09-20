@@ -31,10 +31,31 @@ simply not acted on, and the reason is recorded so it is visible why.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from .i18n import t
+
 log = logging.getLogger(__name__)
+
+#: What the store writes in front of a result that did not really happen. These
+#: two strings are English wherever they are stored, on purpose: the database
+#: is queried for them, and a row written while the interface was in German
+#: would otherwise be counted as work done.
+DRY_PREFIX = "DRY RUN"
+FAILED_PREFIX = "FAILED"
+
+
+def really_happened(action: Any) -> bool:
+    """Did this result describe a change that was actually made?
+
+    One definition, in one place. There were three copies of it — here, in the
+    store's counting and in the notification filter — and they did not agree:
+    two of them let `FAILED:` through, so a failure was counted and reported as
+    work done.
+    """
+    text = str(action or "")
+    return bool(text) and not text.startswith((DRY_PREFIX, FAILED_PREFIX))
 
 #: Doing nothing is always available and is always the safe default.
 REPORT = "report"
@@ -103,6 +124,58 @@ class Policy:
     def as_dict(self) -> dict[str, Any]:
         return {"action": self.action, "min_age_hours": self.min_age_hours,
                 "max_gb": self.max_gb, "min_confidence": self.min_confidence}
+
+
+@dataclass(frozen=True)
+class Outcome:
+    """What carrying out one action came to.
+
+    Not a sentence. A sentence can only be written in one language, and an
+    action's result is the line a person actually reads on the findings page —
+    the German interface was showing "blocklisted, new search started" in
+    English because that string was built where the action ran and never
+    translated afterwards.
+
+    So: a key, its parameters, and which of the three things happened. The
+    store keeps the English rendering as well, because it is queried for the
+    prefixes and because an older client reads that column directly.
+    """
+    state: str                         # "done" | "dry" | "failed"
+    key: str
+    params: dict = field(default_factory=dict)
+
+    def text(self, language: str = "en") -> str:
+        body = t(self.key, language, **self.params)
+        if self.state == "dry":
+            return f"{DRY_PREFIX}: {body}" if language == "en" else (
+                f"{t('action.dry_prefix', language)}: {body}")
+        if self.state == "failed":
+            return f"{FAILED_PREFIX}: {body}" if language == "en" else (
+                f"{t('action.failed_prefix', language)}: {body}")
+        return body
+
+    def as_dict(self) -> dict:
+        return {"state": self.state, "key": self.key, "params": self.params}
+
+
+def done(key: str, **params: Any) -> Outcome:
+    return Outcome("done", key, params)
+
+
+def dry(key: str, **params: Any) -> Outcome:
+    return Outcome("dry", key, params)
+
+
+def failed(key: str, **params: Any) -> Outcome:
+    return Outcome("failed", key, params)
+
+
+def render(stored: Any, language: str) -> str | None:
+    """Re-render a stored outcome. ``None`` when there is nothing stored."""
+    if not isinstance(stored, dict) or not stored.get("key"):
+        return None
+    return Outcome(str(stored.get("state") or "done"), str(stored["key"]),
+                   dict(stored.get("params") or {})).text(language)
 
 
 @dataclass(frozen=True)

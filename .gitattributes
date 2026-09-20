@@ -1,6 +1,6 @@
-# Im Abbild läuft Linux. Würde Git beim Auschecken unter Windows auf CRLF
-# umstellen, scheiterte das Einstiegsskript im Container mit
-# „/bin/sh^M: bad interpreter“ — ein Fehler, der sich nur schwer zuordnen lässt.
+# The image runs Linux. If Git switched to CRLF when checking out on Windows,
+# the entry script would fail inside the container with "/bin/sh^M: bad
+# interpreter" — an error that is hard to trace back to its cause.
 * text=auto eol=lf
 
 *.sh        text eol=lf

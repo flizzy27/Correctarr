@@ -44,7 +44,11 @@ log = logging.getLogger(__name__)
 # 60 second schedule.
 HOUSEKEEP_EVERY = 120
 
-DRY_RUN_PREFIX = "DRY RUN"
+#: Kept for anything reading this module by name. The prefixes themselves now
+#: live in :mod:`app.policy`, next to the value that carries them.
+DRY_RUN_PREFIX = policy.DRY_PREFIX
+
+done, dry, failed = policy.done, policy.dry, policy.failed
 
 
 class Engine:
@@ -367,7 +371,7 @@ class Engine:
 
     # -- acting ----------------------------------------------------------------
     def _perform(self, action: str, arr: Arr, finding: Finding,
-                 cfg: dict) -> str | None:
+                 cfg: dict) -> policy.Outcome | None:
         """Carry out one action on one finding.
 
         Looked up by name rather than decided by a chain of ``if`` statements on
@@ -386,66 +390,68 @@ class Engine:
             return None
         return handler(arr, finding, cfg, bool(cfg.get("dry_run")))
 
-    # Every handler returns a sentence saying what it did, or None when there
-    # was nothing to do. A result starting with FAILED counts as an error, one
-    # starting with the dry run prefix counts as no change.
+    # Every handler hands back an Outcome — a translation key, its parameters
+    # and which of the three things happened — or None when there was nothing
+    # to do. Not a sentence: the result is the line somebody reads on the
+    # findings page, and a sentence built here can only be in one language.
 
     def _act_remove(self, arr: Arr, finding: Finding, cfg: dict,
-                    dry: bool) -> str | None:
+                    is_dry: bool) -> policy.Outcome | None:
         """Out of the queue, but not blocklisted — it may be grabbed again."""
         if finding.entry_id is None:
             return None
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would remove from the queue"
+        if is_dry:
+            return dry("action.dry.remove")
         arr.remove_from_queue(finding.entry_id, blocklist=False, search_again=False)
-        return "removed from the queue"
+        return done("action.result.removed")
 
     def _act_blocklist(self, arr: Arr, finding: Finding, cfg: dict,
-                       dry: bool) -> str | None:
+                       is_dry: bool) -> policy.Outcome | None:
         if finding.entry_id is None:
-            return self._blocklist_by_history(arr, finding, dry, search=False)
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would blocklist"
+            return self._blocklist_by_history(arr, finding, is_dry, search=False)
+        if is_dry:
+            return dry("action.dry.blocklist")
         arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=False)
-        return "blocklisted"
+        return done("action.result.blocklisted")
 
     def _act_blocklist_and_search(self, arr: Arr, finding: Finding, cfg: dict,
-                                  dry: bool) -> str | None:
+                                  is_dry: bool) -> policy.Outcome | None:
         # A finding that was never in the queue has no entry to remove — an
         # unmatched file, for instance, left it long ago. The grab is still in
         # the history though, and marking that failed has the same effect.
         if finding.entry_id is None:
-            return self._blocklist_by_history(arr, finding, dry, search=True)
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would blocklist and search again"
+            return self._blocklist_by_history(arr, finding, is_dry, search=True)
+        if is_dry:
+            return dry("action.dry.blocklist_and_search")
         arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=True)
-        return "blocklisted, new search started"
+        return done("action.result.blocklisted_searched")
 
     def _act_search(self, arr: Arr, finding: Finding, cfg: dict,
-                    dry: bool) -> str | None:
+                    is_dry: bool) -> policy.Outcome | None:
         item_id = finding.data.get("item_id")
         episodes = [int(e) for e in (finding.data.get("episode_ids") or [])]
+        by_episode = bool(episodes) and arr.kind == "sonarr"
         if not item_id and not episodes:
             return None
-        if dry:
-            return (f"{DRY_RUN_PREFIX}: would search for {len(episodes)} episode(s)"
-                    if episodes else f"{DRY_RUN_PREFIX}: would search again")
+        if is_dry:
+            return (dry("action.dry.search_episodes", count=len(episodes))
+                    if by_episode else dry("action.dry.search"))
         # Searching a whole series to fill one gap makes Sonarr query every
         # indexer for every episode it already has. Where the finding knows
         # which episodes are missing, ask for those.
-        if episodes and arr.kind == "sonarr":
+        if by_episode:
             arr.search_episodes(episodes)
-            return f"search started for {len(episodes)} episode(s)"
+            return done("action.result.search_episodes", count=len(episodes))
         arr.search([item_id])
-        return "search for a replacement started"
+        return done("action.result.search_started")
 
     def _act_refresh(self, arr: Arr, finding: Finding, cfg: dict,
-                     dry: bool) -> str | None:
+                     is_dry: bool) -> policy.Outcome | None:
         item_id = finding.data.get("item_id")
         if not item_id:
             return None
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would rescan"
+        if is_dry:
+            return dry("action.dry.refresh")
         name = compat.command_for(arr.kind, "refresh")
         if not name:
             return None
@@ -453,44 +459,44 @@ class Engine:
             arr.command(name, movieIds=[item_id])
         else:
             arr.command(name, seriesId=item_id)
-        return "rescanned"
+        return done("action.result.rescanned")
 
     def _act_import(self, arr: Arr, finding: Finding, cfg: dict,
-                    dry: bool) -> str | None:
+                    is_dry: bool) -> policy.Outcome | None:
         if finding.rule == "unmatched_files":
-            return self._import_match(arr, finding, dry, clean=False)
-        return self._import_waiting(arr, finding, dry)
+            return self._import_match(arr, finding, is_dry, clean=False)
+        return self._import_waiting(arr, finding, is_dry)
 
     def _act_import_and_clean(self, arr: Arr, finding: Finding, cfg: dict,
-                              dry: bool) -> str | None:
+                              is_dry: bool) -> policy.Outcome | None:
         if finding.rule == "unmatched_files":
-            return self._import_match(arr, finding, dry, clean=True)
-        return self._import_waiting(arr, finding, dry)
+            return self._import_match(arr, finding, is_dry, clean=True)
+        return self._import_waiting(arr, finding, is_dry)
 
     def _act_delete(self, arr: Arr, finding: Finding, cfg: dict,
-                    dry: bool) -> str | None:
-        return self._delete_path(finding, cfg, dry)
+                    is_dry: bool) -> policy.Outcome | None:
+        return self._delete_path(finding, cfg, is_dry)
 
     def _act_clear_warning(self, arr: Arr, finding: Finding, cfg: dict,
-                           dry: bool) -> str | None:
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would clear the warning"
-        return self._on_client(finding, lambda c: (c.clear_warnings(),
-                                                   "recorded and cleared")[1])
+                           is_dry: bool) -> policy.Outcome | None:
+        if is_dry:
+            return dry("action.dry.clear_warning")
+        return self._on_client(finding, lambda c: (
+            c.clear_warnings(), done("action.result.warning_cleared"))[1])
 
     def _act_remove_entry(self, arr: Arr, finding: Finding, cfg: dict,
-                          dry: bool) -> str | None:
+                          is_dry: bool) -> policy.Outcome | None:
         if not finding.data.get("nzo_id"):
             return None
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would remove the entry and its source folder"
+        if is_dry:
+            return dry("action.dry.remove_entry")
         gb = finding.data.get("gb")
         return self._on_client(finding, lambda c: (
             c.delete_history_entry(finding.data["nzo_id"], with_files=True),
-            f"entry and source folder removed ({gb} GB)")[1])
+            done("action.result.entry_removed", gb=gb))[1])
 
     def _act_unblocklist(self, arr: Arr, finding: Finding, cfg: dict,
-                         dry: bool) -> str | None:
+                         is_dry: bool) -> policy.Outcome | None:
         """Let a release that was refused long ago be tried again.
 
         Removing the entry on its own changes nothing — the blocklist is only
@@ -501,39 +507,41 @@ class Engine:
         entry_id = finding.data.get("blocklist_id")
         if not entry_id:
             return None
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would take this off the blocklist and search again"
+        if is_dry:
+            return dry("action.dry.unblocklist")
         arr.remove_from_blocklist(int(entry_id))
         item_id = finding.data.get("item_id")
         if item_id:
             arr.search([item_id])
-            return "taken off the blocklist, new search started"
-        return "taken off the blocklist"
+            return done("action.result.unblocklisted_searched")
+        return done("action.result.unblocklisted")
 
     def _act_resume(self, arr: Arr, finding: Finding, cfg: dict,
-                    dry: bool) -> str | None:
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would resume"
-        return self._on_client(finding, lambda c: (c.resume(), "resumed")[1])
+                    is_dry: bool) -> policy.Outcome | None:
+        if is_dry:
+            return dry("action.dry.resume")
+        return self._on_client(finding, lambda c: (
+            c.resume(), done("action.result.resumed"))[1])
 
-    def _blocklist_by_history(self, arr: Arr, finding: Finding, dry: bool,
-                              search: bool) -> str | None:
+    def _blocklist_by_history(self, arr: Arr, finding: Finding, is_dry: bool,
+                              search: bool) -> policy.Outcome | None:
         """Blocklist something that is no longer in the queue."""
         release = finding.data.get("release") or finding.title
         item_id = finding.data.get("item_id")
-        if dry:
-            return (f"{DRY_RUN_PREFIX}: would blocklist and search again" if search
-                    else f"{DRY_RUN_PREFIX}: would blocklist")
+        if is_dry:
+            return dry("action.dry.blocklist_and_search" if search
+                       else "action.dry.blocklist")
         blocked = self._blocklist_release(arr, release)
         if search and item_id:
             arr.search([item_id])
         self._clear_client_entry(release)
         if not search:
-            return "blocklisted" if blocked else "source folder cleared"
-        return ("blocklisted, new search started" if blocked
-                else "source folder cleared, new search started")
+            return done("action.result.blocklisted" if blocked
+                        else "action.result.folder_cleared")
+        return done("action.result.blocklisted_searched" if blocked
+                    else "action.result.folder_cleared_searched")
 
-    def _on_client(self, finding: Finding, action) -> str | None:
+    def _on_client(self, finding: Finding, action) -> policy.Outcome | None:
         """Run something against the download client that reported this."""
         for entry in self.store.services(enabled_only=True):
             if entry["kind"] == "sabnzbd" and entry["name"] == finding.data.get("client"):
@@ -541,16 +549,16 @@ class Engine:
                 try:
                     return action(client)
                 except SabError as e:
-                    return f"FAILED: {e}"
+                    return failed("action.result.client_refused", error=str(e)[:200])
                 finally:
                     client.close()
         return None
 
     def _import_waiting(self, arr: Arr, finding: Finding,
-                        dry: bool) -> str | None:
+                        is_dry: bool) -> policy.Outcome | None:
         """Import what the service is holding back and waiting on."""
-        if dry:
-            return f"{DRY_RUN_PREFIX}: would import"
+        if is_dry:
+            return dry("action.dry.import")
         download_id = finding.data.get("downloadId")
         if not download_id:
             return None
@@ -577,14 +585,15 @@ class Engine:
                 payload["episodeIds"] = episodes
             files.append(payload)
         if not files:
-            return ("FAILED: the service did not say which episodes these files hold"
-                    if blind else None)
+            return failed("action.result.no_episodes") if blind else None
         arr.manual_import(files)
-        done = f"{len(files)} file(s) imported"
-        return done + (f", {blind} skipped without an episode" if blind else "")
+        if blind:
+            return done("action.result.imported_partly",
+                        count=len(files), skipped=blind)
+        return done("action.result.imported", count=len(files))
 
-    def _import_match(self, arr: Arr, finding: Finding, dry: bool,
-                      clean: bool) -> str | None:
+    def _import_match(self, arr: Arr, finding: Finding, is_dry: bool,
+                      clean: bool) -> policy.Outcome | None:
         """Import a file this build matched to a title itself.
 
         ``todo`` is set by the check and says what is actually possible for this
@@ -598,9 +607,9 @@ class Engine:
         path = finding.data.get("path")
         if not item_id or not path:
             return None
-        if dry:
-            return (f"{DRY_RUN_PREFIX}: would import as item {item_id}"
-                    + (" and clean up afterwards" if clean else ""))
+        if is_dry:
+            return dry("action.dry.import_and_clean" if clean
+                       else "action.dry.import")
         payload = {"path": path, "quality": finding.data.get("quality"),
                    "languages": finding.data.get("languages") or []}
         if arr.kind == "radarr":
@@ -612,18 +621,20 @@ class Engine:
             # import, which is the only one that can answer.
             episodes = self._episodes_at(arr, path)
             if not episodes:
-                return "FAILED: Sonarr did not say which episodes this file holds"
+                return failed("action.result.no_episodes")
             payload["seriesId"] = item_id
             payload["episodeIds"] = episodes
         arr.manual_import([payload])
+        gb = finding.data.get("gb", 0)
         if not clean:
-            return f"matched and imported ({finding.data.get('gb', 0)} GB)"
+            return done("action.result.matched_imported", gb=gb)
         # The download client never learns about a manual import — its entry and
         # source folder would stay. Observed on Crank and Transporter, both of
         # which were still in the history afterwards.
         cleared = self._clear_client_entry(finding.title)
-        return (f"matched and imported ({finding.data.get('gb', 0)} GB)"
-                + (f", {cleared} cleaned up" if cleared else ""))
+        return done("action.result.matched_imported_cleaned", gb=gb,
+                    client=cleared) if cleared else done(
+                        "action.result.matched_imported", gb=gb)
 
     def _episodes_at(self, arr: Arr, path: str) -> list[int]:
         """Which episodes Sonarr thinks this file holds."""
@@ -640,30 +651,30 @@ class Engine:
         return []
 
     def _delete_path(self, finding: Finding, cfg: dict,
-                     dry: bool) -> str | None:
+                     is_dry: bool) -> policy.Outcome | None:
         """Delete a file or folder — the only action that cannot be undone."""
         path = finding.data.get("path")
         if not path:
             return None
-        if dry:
+        if is_dry:
             size = finding.data.get("mb")
-            return (f"{DRY_RUN_PREFIX}: would delete {size} MB" if size is not None
-                    else f"{DRY_RUN_PREFIX}: would delete {os.path.basename(path)}")
+            return (dry("action.dry.delete", what=f"{size} MB") if size is not None
+                    else dry("action.dry.delete", what=os.path.basename(path)))
         # Last guard immediately before deleting: the path must still sit below
         # a configured directory. Checked twice, on detection and here — minutes
         # can pass between the two.
         allowed = [os.path.realpath(p) for p in (cfg.get("cleanup_paths") or [])]
         real = os.path.realpath(path)
         if not allowed or not any(real.startswith(a + os.sep) for a in allowed):
-            return "FAILED: path lies outside the configured directories"
+            return failed("action.result.outside_paths")
         try:
             if os.path.isdir(real) and not os.path.islink(real):
                 shutil.rmtree(real)
             else:
                 os.remove(real)
         except OSError as e:
-            return f"FAILED to delete: {e}"
-        return f"deleted, {finding.data.get('mb', 0)} MB freed"
+            return failed("action.result.delete_failed", error=str(e)[:200])
+        return done("action.result.deleted", mb=finding.data.get("mb", 0))
 
     def _blocklist_release(self, arr: Arr, release: str) -> bool:
         """Put a release on the blocklist so it does not come back.
@@ -792,17 +803,24 @@ class Engine:
                 if target is None:
                     continue
                 try:
-                    finding.action = self._perform(verdict.action, target, finding, cfg)
-                    if finding.action and not str(finding.action).startswith(
-                            (DRY_RUN_PREFIX, "FAILED")):
-                        fixed += 1
+                    outcome = self._perform(verdict.action, target, finding, cfg)
                 except ArrError as e:
-                    finding.action = f"FAILED: {e}"
+                    outcome = failed("action.result.service_refused",
+                                     error=str(e)[:200])
                     errors.append(str(e))
                 except Exception as e:                          # noqa: BLE001
                     log.exception("Acting on %s failed", finding.rule)
-                    finding.action = f"FAILED: {e}"
+                    outcome = failed("action.result.service_refused",
+                                     error=str(e)[:200])
                     errors.append(f"{finding.rule}: {e}")
+                if outcome is not None:
+                    # The English rendering goes in the column that is queried
+                    # for the prefixes; the key travels beside it so the same
+                    # line can be read back in another language later.
+                    finding.action = outcome.text("en")
+                    finding.data["_action"] = outcome.as_dict()
+                    if outcome.state == "done":
+                        fixed += 1
 
             # 4. record
             for finding in findings:

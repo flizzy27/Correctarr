@@ -343,8 +343,8 @@ def test_deleting_refuses_a_path_outside_the_configured_directories(engine, tmp_
     finding = Finding(rule="leftover_files", severity="warning", title="x",
                       message="finding.leftover_files",
                       data={"path": str(victim), "mb": 0})
-    result = engine._delete_path(finding, cfg, dry=False)
-    assert "FAILED" in result
+    result = engine._delete_path(finding, cfg, is_dry=False)
+    assert result.state == "failed"
     assert victim.exists(), "a file outside the configured area must survive"
 
 
@@ -353,10 +353,10 @@ def test_deleting_refuses_when_nothing_is_configured(engine, tmp_path):
     victim.write_bytes(b"\0")
     cfg = S.defaults()
     cfg["cleanup_paths"] = []
-    assert "FAILED" in engine._delete_path(
+    assert engine._delete_path(
         Finding(rule="leftover_files", severity="warning", title="x",
                 message="finding.leftover_files", data={"path": str(victim)}),
-        cfg, dry=False)
+        cfg, is_dry=False).state == "failed"
     assert victim.exists()
 
 
@@ -371,8 +371,9 @@ def test_deleting_works_inside_the_configured_directory(engine, tmp_path):
     finding = Finding(rule="leftover_files", severity="warning", title="junk",
                       message="finding.leftover_files",
                       data={"path": str(junk), "mb": 1})
-    result = engine._delete_path(finding, cfg, dry=False)
-    assert "deleted" in result
+    result = engine._delete_path(finding, cfg, is_dry=False)
+    assert result.state == "done"
+    assert "deleted" in result.text("en")
     assert not junk.exists()
 
 
@@ -386,7 +387,8 @@ def test_a_dry_run_never_deletes(engine, tmp_path):
     finding = Finding(rule="leftover_files", severity="warning", title="junk",
                       message="finding.leftover_files",
                       data={"path": str(junk), "mb": 1})
-    assert engine._delete_path(finding, cfg, dry=True).startswith("DRY RUN")
+    assert engine._delete_path(finding, cfg, is_dry=True).text("en").startswith(
+        "DRY RUN")
     assert junk.exists()
 
 

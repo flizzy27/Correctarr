@@ -106,11 +106,19 @@ const post = (path, body, method = "POST") =>
   api(path, { method, body: JSON.stringify(body) });
 
 /* ----------------------------------------------------------------- toasts */
+const TOAST_LIMIT = 4;
+
 function toast(text, kind = "") {
+  const stack = $("#toasts");
   const element = document.createElement("div");
   element.className = "toast " + kind;
+  element.setAttribute("role", kind === "bad" ? "alert" : "status");
   element.textContent = text;
-  $("#toasts").appendChild(element);
+  stack.appendChild(element);
+  // A run that reports three errors used to show one: they were all at the
+  // same fixed corner, stacked exactly on top of each other. They queue now,
+  // and the oldest gives way once there are more than a handful.
+  while (stack.children.length > TOAST_LIMIT) stack.firstElementChild.remove();
   setTimeout(() => element.remove(), kind === "bad" ? 8000 : 4500);
 }
 
@@ -242,19 +250,31 @@ function renderFixed() {
     : `<p class="empty">${esc(t(fixedData.length ? "fixed_page.no_match" : "fixed_page.empty"))}</p>`;
 }
 
+/* The severity was a three pixel stripe down the left edge and nothing else:
+   the only difference between "worth knowing" and "something is broken" was a
+   colour, which is no difference at all to a fair number of people. It is
+   written out now as well. */
+const SEVERITY_BADGE = { error: "error", warning: "warning", info: "info" };
+
 function entryHtml(entry) {
   const action = String(entry.action || "");
-  const kind = action.startsWith("FAILED") ? "failed"
-    : action.startsWith("DRY RUN") ? "dry"
-    : action ? "" : "none";
+  // The server says which of the three happened. It used to be worked out here
+  // by reading the first word of an English sentence, which stopped being true
+  // the moment the sentence was translated.
+  const state = entry.action_state || (action ? "done" : "");
+  const kind = state === "failed" ? "failed" : state === "dry" ? "dry"
+    : state === "done" ? "" : "none";
   return `<div class="entry ${esc(entry.severity)}">
     <div class="head">
+      <span class="badge ${esc(SEVERITY_BADGE[entry.severity] || "neutral")}">${
+        esc(t("severity." + entry.severity))}</span>
       <span class="tag">${esc(entry.rule)}</span>
       <span class="title">${esc(entry.title)}</span>
       <span class="time" title="${esc(exactly(entry.at))}">${esc(when(entry.at))}</span>
     </div>
     <div class="text">${esc(entry.description)}</div>
     <div class="action ${kind}">${esc(action || t("findings_page.reported_only"))}</div>
+    ${entry.held_back ? `<div class="held">${esc(entry.held_back)}</div>` : ""}
   </div>`;
 }
 
@@ -262,6 +282,7 @@ function entryHtml(entry) {
 async function loadFindings() {
   const fixedOnly = $("#findings-fixed-only").checked;
   findingData = await api(`api/findings?limit=400${fixedOnly ? "&fixed_only=true" : ""}`);
+  fillSeverityPicker();
   const rules = [...new Set(findingData.map((e) => e.rule))].sort();
   const select = $("#findings-rule");
   const previous = select.value;
@@ -271,11 +292,21 @@ async function loadFindings() {
   renderFindings();
 }
 
+function fillSeverityPicker() {
+  const picker = $("#findings-severity");
+  if (picker.options.length) return;
+  picker.innerHTML = `<option value="">${esc(t("findings_page.severity_filter"))}</option>` +
+    ["error", "warning", "info"].map((s) =>
+      `<option value="${s}">${esc(t("severity." + s))}</option>`).join("");
+}
+
 function renderFindings() {
   const rule = $("#findings-rule").value;
+  const severity = $("#findings-severity").value;
   const search = ($("#findings-search").value || "").toLowerCase();
   const rows = findingData.filter(
     (e) => (!rule || e.rule === rule) &&
+           (!severity || e.severity === severity) &&
            (!search || (e.title + e.description).toLowerCase().includes(search)));
   $("#findings-list").innerHTML = rows.length
     ? rows.map(entryHtml).join("")
@@ -1100,6 +1131,28 @@ function renderMaintenance() {
   });
 }
 
+/* Keep Tab inside one element. Deliberately computed each time rather than
+   collected when the dialog opens: the wizard replaces its own body on every
+   step, so a list taken once is a list of elements that no longer exist. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), ' +
+  'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function keepFocusInside(event, container) {
+  if (!container) return;
+  const stops = [...container.querySelectorAll(FOCUSABLE)]
+    .filter((element) => element.offsetParent !== null);
+  if (!stops.length) return;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 /* ============================================================ appearance */
 function applyAppearance(theme, density) {
   const root = document.documentElement;
@@ -1129,6 +1182,7 @@ const wizard = {
   step: 0,
   services: [],
   open: false,
+  returnFocusTo: null,
 
   steps: [
     "welcome", "services", "paths", "address", "notifications", "dry_run", "done",
@@ -1141,9 +1195,11 @@ const wizard = {
       try { channelKinds = await api("api/notifications/kinds"); } catch (e) { /* later */ }
     }
     await this.loadServices();
+    this.returnFocusTo = document.activeElement;
     $("#wizard").hidden = false;
     document.body.style.overflow = "hidden";
     this.render();
+    $("#wizard-next").focus();
     if (fromButton) history.replaceState(null, "", "#" + ($(".page.active")?.id?.replace("page-", "") || "overview"));
   },
 
@@ -1151,6 +1207,11 @@ const wizard = {
     this.open = false;
     $("#wizard").hidden = true;
     document.body.style.overflow = "";
+    // Back to whatever opened it, rather than to the top of the page.
+    if (this.returnFocusTo && this.returnFocusTo.isConnected) {
+      this.returnFocusTo.focus();
+    }
+    this.returnFocusTo = null;
   },
 
   async finish() {
@@ -1519,11 +1580,23 @@ const LOADERS = {
 
 async function go(target, remember = true) {
   if (!LOADERS[target]) target = "overview";
-  $$(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.target === target));
+  $$(".nav-item").forEach((b) => {
+    const active = b.dataset.target === target;
+    b.classList.toggle("active", active);
+    // Says which view you are on to anything that is not looking at the
+    // colours — a screen reader, mostly.
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  });
   $$(".page").forEach((p) => p.classList.toggle("active", p.id === "page-" + target));
   $("#title").textContent = t("nav." + target);
   if (target !== "overview") $("#subtitle").textContent = t("page." + target);
-  if (remember) history.replaceState(null, "", "#" + target);
+  // pushState, not replaceState: with replaceState the back button left the
+  // page it was on and walked out of the application altogether, which is not
+  // what anybody means by it.
+  if (remember && location.hash.slice(1) !== target) {
+    history.pushState({ view: target }, "", "#" + target);
+  }
   try { await LOADERS[target](); } catch (error) { failed(error); }
 }
 
@@ -1585,8 +1658,25 @@ function wire() {
     if (event.target.id === "wizard") wizard.close();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && wizard.open) wizard.close();
+    if (event.key === "Escape" && wizard.open) { wizard.close(); return; }
+    // Tab has to stay inside an open dialog. Outside one it walked into the
+    // page behind, where every control is hidden from the eye but not from
+    // the keyboard, and there was no way back except the mouse.
+    if (event.key === "Tab" && wizard.open) keepFocusInside(event, $(".modal"));
   });
+
+  const followTheAddressBar = () => {
+    if (wizard.open) { wizard.close(); return; }
+    const wanted = (location.hash || "#overview").slice(1);
+    if ($(".page.active")?.id === "page-" + wanted) return;
+    go(wanted, false).catch(failed);
+  };
+  // Both, and they are not the same event. Back and forward fire popstate;
+  // a link to another view, or an address pasted into the bar of a page that
+  // is already open, fires only hashchange — and listening for the first
+  // alone meant the address changed and the page did not.
+  window.addEventListener("popstate", followTheAddressBar);
+  window.addEventListener("hashchange", followTheAddressBar);
 
   $("#sign-out").addEventListener("click", async () => {
     try { await api("api/auth/signout", { method: "POST" }); } catch (e) { /* ignore */ }
@@ -1596,6 +1686,7 @@ function wire() {
   $("#queue-search").addEventListener("input", renderQueue);
   $("#queue-problems").addEventListener("change", renderQueue);
   $("#findings-rule").addEventListener("change", renderFindings);
+  $("#findings-severity").addEventListener("change", renderFindings);
   $("#findings-search").addEventListener("input", renderFindings);
   $("#findings-fixed-only").addEventListener("change", () => loadFindings().catch(failed));
   $("#fixed-search").addEventListener("input", renderFixed);
@@ -1663,7 +1754,12 @@ function wire() {
 
   try {
     const state = await api("api/auth/state");
-    $("#user").textContent = state.user || "—";
+    // With the login switched off the server answers with a stand-in account
+    // called "open". That is a fact about the configuration, not a person, and
+    // printing it where a name belongs read as though somebody were signed in
+    // under that name — in both languages, untranslated.
+    $("#user").textContent = state.mode === "off"
+      ? t("label.no_sign_in") : (state.user || "—");
     $("#sign-out").hidden = state.mode === "off";
   } catch (error) { /* redirected */ }
 

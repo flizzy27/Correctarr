@@ -887,14 +887,17 @@ def configure_rules(request: Request, body: dict = Body(...),
 # Findings and runs
 # ---------------------------------------------------------------------------
 def _localise(rows: list[dict], language: str) -> list[dict]:
-    """Re-render the stored description in the requested language.
+    """Re-render everything a stored finding says, in the requested language.
 
-    The store keeps the English text plus the message key and its parameters, so
-    an entry written months ago still shows up in whatever language is active
-    now.
+    The store keeps the English text plus the keys and their parameters, so an
+    entry written months ago still shows up in whatever language is active now.
+
+    Three things are rendered, not one. The description was always translated.
+    The **result of the action** was not — it was built where the action ran
+    and stored as a sentence, so the German interface read "blocklisted, new
+    search started" in English. And the reason a finding was *not* acted on was
+    recorded and then never shown to anybody at all.
     """
-    if language == i18n.DEFAULT:
-        return rows
     out = []
     for row in rows:
         data = row.get("data")
@@ -903,12 +906,46 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
                 data = json.loads(data)
             except (ValueError, TypeError):
                 data = {}
-        key = (data or {}).get("_msg")
-        if key:
-            row = {**row, "description": i18n.t(key, language,
-                                                **((data or {}).get("_params") or {}))}
+        data = data or {}
+        row = {**row, "data": data}
+
+        key = data.get("_msg")
+        if key and language != i18n.DEFAULT:
+            row["description"] = i18n.t(key, language, **(data.get("_params") or {}))
+
+        rendered = policy.render(data.get("_action"), language)
+        if rendered:
+            row["action"] = rendered
+        row["action_state"] = _action_state(data, row.get("action"))
+
+        held = data.get("_held")
+        if held:
+            row["held_back"] = i18n.t(
+                "findings_page.held_back", language,
+                reason=i18n.t(held, language, **(data.get("_held_params") or {})))
         out.append(row)
     return out
+
+
+def _action_state(data: dict, action: str | None) -> str:
+    """"done", "dry", "failed" or "" — for something written today or in 2024.
+
+    Rows from before the result carried a key are still in the store, and the
+    only thing they have is the English sentence. Reading the prefix off that
+    is exactly what the interface used to do, which is why it stays here as the
+    fallback rather than in the interface.
+    """
+    stored = data.get("_action")
+    if isinstance(stored, dict) and stored.get("state"):
+        return str(stored["state"])
+    text = str(action or "")
+    if not text:
+        return ""
+    if text.startswith(policy.DRY_PREFIX):
+        return "dry"
+    if text.startswith(policy.FAILED_PREFIX):
+        return "failed"
+    return "done"
 
 
 @app.get("/api/findings")
@@ -923,8 +960,7 @@ def findings(request: Request, limit: int = 200, rule: str | None = None,
 def fixed(request: Request, limit: int = 100, _: dict = Depends(require_user)):
     """Only what was actually changed — the record of work done."""
     rows = store.findings(limit=max(1, min(limit, 1000)), fixed_only=True)
-    rows = [r for r in rows
-            if not str(r.get("action") or "").startswith(("DRY RUN", "FAILED"))]
+    rows = [r for r in rows if policy.really_happened(r.get("action"))]
     return _localise(rows, language_for(request))
 
 

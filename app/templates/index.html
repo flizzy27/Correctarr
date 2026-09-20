@@ -158,7 +158,8 @@
           <h2 data-t="findings_page.title"></h2>
           <p class="hint" data-t="findings_page.help"></p>
           <div class="toolbar">
-            <select id="findings-rule" style="max-width:280px"></select>
+            <select id="findings-rule" class="picker wide"></select>
+            <select id="findings-severity" class="picker"></select>
             <input type="search" id="findings-search" class="grow"
                    data-t-placeholder="label.filter">
             <label class="toggle-field">
@@ -245,7 +246,7 @@
           <p class="hint" data-t="notifications_page.help"></p>
           <div id="notification-list"></div>
           <div class="row" style="margin-top:12px">
-            <select id="new-channel-kind" style="max-width:220px"></select>
+            <select id="new-channel-kind" class="picker"></select>
             <button class="btn primary" id="add-notification"
                     data-t="notifications_page.add"></button>
           </div>
@@ -294,7 +295,7 @@
   </div>
 </div>
 
-<div id="toasts"></div>
+<div id="toasts" aria-live="polite"></div>
 <script src="static/app.js"></script>
 </body>
 </html>

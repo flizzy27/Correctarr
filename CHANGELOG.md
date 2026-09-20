@@ -7,6 +7,15 @@ that break an existing installation.
 
 ### Added
 
+* **A finding that was held back now says why.** A rule can be told to wait for
+  an age, to leave anything over a size alone, or to act only above a
+  confidence. When one of those stops it, the reason has been recorded since
+  the day conditions were added — and shown to nobody. A rule waiting out its
+  own age limit looked exactly like a rule that had done nothing.
+* **Severity is written out, not only coloured.** It was a three pixel stripe
+  down the left edge of a finding and nothing else, which is no difference at
+  all to a fair number of people.
+* **A severity filter on the findings page**, beside the rule filter.
 * **Five more rules, and Sonarr stops being a second-class citizen.** The
   library rules that read a file — missing audio language, unreadable file,
   below the profile — used to say "Radarr only". That was never a statement
@@ -41,12 +50,50 @@ that break an existing installation.
 
 ### Changed
 
+* **The result of an action is translated.** It used to be a sentence, built
+  where the action ran and stored as written, so the German interface read
+  "blocklisted, new search started" in English — on the one line that says what
+  actually happened to somebody's files. Results now travel as a key and are
+  rendered when they are read, including for rows written months ago. The
+  English wording is kept in the store as well, because that column is queried
+  for the dry run and failure markers and those queries are not localised.
+* **One definition of "this really happened".** There were three copies of it —
+  in the store's counting, in the notification filter and in the interface —
+  and they did not agree about `FAILED:`.
 * The history is fetched once per connection per run instead of once per
   question. Blocklisting ten orphaned files asked for the same five hundred
   rows ten times, and a deep pass asked every service for them twice.
 
 ### Fixed
 
+* **Several messages at once showed as one.** The strip they appear in had no
+  styling of its own, so every message was positioned at the same fixed corner
+  and landed exactly on top of the one before it. A run reporting three errors
+  showed the third.
+* **The sidebar could not be scrolled on a short window.** A flex child does
+  not shrink below its content unless it is told to, so on a laptop at 125 %
+  or a phone turned sideways the list grew past the bottom of the screen and
+  took the sign-out button with it.
+* **Full height was measured against the wrong thing on a phone.** A phone's
+  toolbars slide in and out, and `100vh` is the height without them — so a
+  full-height element was taller than the visible area and its last row sat
+  under the address bar.
+* **The back button left the application.** Views replaced each other in the
+  address bar instead of stacking, so going back from the fourth page left the
+  site altogether. An address pasted into the bar of a page that was already
+  open did nothing at all.
+* **Tab escaped the setup dialog** into the page behind it, where every control
+  is hidden from the eye but not from the keyboard, with no way back except the
+  mouse. The dialog also takes the focus when it opens and returns it when it
+  closes.
+* **"open" appeared where a name belongs.** With the login switched off the
+  server answers with a stand-in account by that name; printed in the sidebar
+  it read as though somebody were signed in under it, untranslated in both
+  languages.
+* A table that continues past the edge of the screen now says so.
+* The filters on the findings page were given their widths in the markup,
+  which a narrow screen cannot argue with: two filters side by side came out
+  different lengths for no visible reason.
 * **A stalled download was never reported on an install with more than one
   service.** The rule that measures whether a download is still moving keeps
   its measurements in the store, and once per service it dropped every entry it

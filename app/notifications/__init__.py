@@ -22,6 +22,7 @@ import threading
 import time
 from typing import Any
 
+from ..policy import really_happened
 from .base import (
     SEVERITY_RANK,
     Channel,
@@ -97,10 +98,9 @@ def selects(connection: dict, finding) -> bool:
     if SEVERITY_RANK.get(finding.severity, 1) < threshold:
         return False
 
-    if connection.get("fixed_only"):
-        action = str(getattr(finding, "action", "") or "")
-        if not action or action.startswith(("DRY RUN", "FAILED")):
-            return False
+    if connection.get("fixed_only") and not really_happened(
+            getattr(finding, "action", "")):
+        return False
 
     # An empty list means everything. Naming rules is the exception, not the
     # rule, so the default has to be "all" — otherwise a new rule would be
@@ -171,7 +171,7 @@ def dispatch(connections: list[dict], findings: list, *, language: str = "en",
             groups=group_findings(selected),
             total=len(selected),
             fixed=sum(1 for f in selected
-                      if f.action and not str(f.action).startswith(("DRY RUN", "FAILED"))),
+                      if really_happened(f.action)),
             language=language, url=url, dry_run=dry_run)
 
         try:

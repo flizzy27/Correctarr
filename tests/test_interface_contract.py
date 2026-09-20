@@ -407,3 +407,95 @@ def test_touch_targets_are_raised_on_phones():
 
 def test_a_list_box_is_not_dressed_up_as_a_drop_down():
     assert "select[multiple]" in CSS and "background-image: none" in CSS
+
+
+# ---------------------------------------------------------------------------
+# What an action reports
+# ---------------------------------------------------------------------------
+ENGINE = (APP / "engine.py").read_text(encoding="utf-8")
+
+
+def _outcome_keys() -> set[str]:
+    """Every key an action can hand back, read out of the engine itself.
+
+    These are not passed to ``t()`` where they are written — they travel as
+    data and are rendered much later, possibly in another language and
+    possibly months after the run. So nothing else would catch a missing one:
+    it would surface as a bare ``action.result.something`` on the findings
+    page of whoever happened to hit that outcome.
+    """
+    return set(re.findall(r'"(action\.(?:result|dry)\.[a-z0-9_]+)"', ENGINE))
+
+
+def test_the_engine_names_outcomes_that_exist():
+    found = _outcome_keys()
+    assert len(found) > 20, "the outcome keys are no longer where this looks"
+    for code in i18n.AVAILABLE:
+        bundle = set(i18n.bundle(code))
+        missing = sorted(found - bundle)
+        assert not missing, f"{code} has no string for: {missing}"
+
+
+def test_every_action_can_say_what_it_would_have_done():
+    """A dry run that says nothing is a dry run nobody can judge."""
+    from app import policy
+    for action in policy.ACTIONS:
+        if action == policy.REPORT:
+            continue
+        assert f"action.dry.{action}" in ENGINE, (
+            f"{action} has no dry run text, so a dry run of it says nothing")
+
+
+def test_the_prefixes_stay_english_wherever_they_are_stored():
+    """The store is queried for them with LIKE, and the query is not localised.
+
+    A row written while the interface was in German would otherwise be counted
+    as work done by every tile, badge and notification that asks the store.
+    """
+    from app import policy
+    from app.storage import Store
+    assert policy.DRY_PREFIX in Store._REALLY_DONE
+    assert policy.FAILED_PREFIX in Store._REALLY_DONE
+    assert policy.really_happened("blocklisted") is True
+    assert policy.really_happened(f"{policy.DRY_PREFIX}: would blocklist") is False
+    assert policy.really_happened(f"{policy.FAILED_PREFIX}: no") is False
+    assert policy.really_happened("") is False
+    assert policy.really_happened(None) is False
+
+
+def test_a_result_reads_in_both_languages():
+    from app import policy
+    outcome = policy.done("action.result.blocklisted_searched")
+    assert outcome.text("en") != outcome.text("de")
+    dry = policy.dry("action.dry.delete", what="412 MB")
+    assert dry.text("en").startswith(policy.DRY_PREFIX)
+    assert "412 MB" in dry.text("de")
+    assert not dry.text("de").startswith(policy.DRY_PREFIX)
+
+
+# ---------------------------------------------------------------------------
+# Layout, continued
+# ---------------------------------------------------------------------------
+def test_full_height_is_measured_against_what_is_on_screen():
+    """A phone's toolbars slide in and out. 100vh is the height without them,
+    so a full-height element is taller than the visible area and its last row
+    sits under the address bar with no way to reach it."""
+    for selector in (".shell", ".sidebar", ".gate"):
+        block = CSS.split(selector, 1)[1][:400]
+        assert "100dvh" in block, f"{selector} still measures against 100vh only"
+
+
+def test_the_navigation_can_scroll_on_a_short_window():
+    """A flex child refuses to shrink below its content unless told to, and a
+    list that grows past the bottom of a short window takes the sign-out button
+    with it."""
+    block = CSS.split(".nav {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in block
+    assert "min-height: 0" in block
+
+
+def test_messages_queue_rather_than_stack_on_top_of_each_other():
+    assert "#toasts {" in CSS, "the message strip has no styling of its own"
+    block = CSS.split("#toasts {", 1)[1].split("}", 1)[0]
+    assert "flex-direction: column" in block
+    assert "position: fixed" in block

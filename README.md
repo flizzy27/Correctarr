@@ -129,6 +129,10 @@ reports. Better one finding left alone than one good file thrown away. And a
 fresh install starts with the **dry run on**: everything is found and reported,
 nothing is touched, until you have seen the findings and turned it off.
 
+A finding that was found and then *not* acted on says why — "not acted on: only
+1.4 h old, waiting for 6 h" — so a rule held back by its own condition never
+looks the same as a rule that did nothing.
+
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
 Every rule shows what it does before you turn it on: whether it only reports,
@@ -145,7 +149,8 @@ screen and there is no separate mobile version to fall behind. Below 620 pixels
 the columns stack, the navigation becomes a row of tabs across the top, and
 every control you tap grows to a size you can hit without aiming. It has been
 checked from 320 pixels up to 4K, on every page, with nothing running off the
-side at any width.
+side at any width, and heights are measured against what is actually on screen
+rather than against a viewport that ignores the browser's own toolbars.
 
 <br clear="right">
 

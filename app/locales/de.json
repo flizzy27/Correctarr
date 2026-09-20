@@ -50,7 +50,49 @@
     "compacting": "verdichtet …",
     "change_password": "Passwort ändern",
     "send_test": "Testnachricht senden",
-    "show_advanced": "Auch Fortgeschrittenes zeigen"
+    "show_advanced": "Auch Fortgeschrittenes zeigen",
+    "dry_prefix": "PROBELAUF",
+    "failed_prefix": "FEHLGESCHLAGEN",
+    "dry": {
+      "remove": "würde aus der Warteschlange genommen",
+      "blocklist": "würde gesperrt",
+      "blocklist_and_search": "würde gesperrt und neu gesucht",
+      "import": "würde importiert",
+      "import_and_clean": "würde importiert und der Eintrag im Download-Programm gelöscht",
+      "search": "würde nach Ersatz suchen",
+      "search_episodes": "würde nach {count} Folge(n) suchen",
+      "refresh": "würde die Datei neu einlesen",
+      "delete": "würde {what} löschen",
+      "clear_warning": "würde die Warnung bestätigen",
+      "remove_entry": "würde den Eintrag und seinen Quellordner entfernen",
+      "resume": "würde das Download-Programm fortsetzen",
+      "unblocklist": "würde die Sperre aufheben und neu suchen"
+    },
+    "result": {
+      "removed": "aus der Warteschlange genommen",
+      "blocklisted": "gesperrt",
+      "blocklisted_searched": "gesperrt, neue Suche gestartet",
+      "folder_cleared": "Quellordner geleert",
+      "folder_cleared_searched": "Quellordner geleert, neue Suche gestartet",
+      "search_started": "Suche nach Ersatz gestartet",
+      "search_episodes": "Suche nach {count} Folge(n) gestartet",
+      "rescanned": "neu eingelesen",
+      "imported": "{count} Datei(en) importiert",
+      "imported_partly": "{count} Datei(en) importiert, {skipped} übersprungen, weil der Dienst nicht sagt, welche Folgen darin stecken",
+      "matched_imported": "zugeordnet und importiert ({gb} GB)",
+      "matched_imported_cleaned": "zugeordnet und importiert ({gb} GB), {client} aufgeräumt",
+      "deleted": "gelöscht, {mb} MB frei geworden",
+      "warning_cleared": "vermerkt und bestätigt",
+      "entry_removed": "Eintrag und Quellordner entfernt ({gb} GB)",
+      "resumed": "fortgesetzt",
+      "unblocklisted": "Sperre aufgehoben",
+      "unblocklisted_searched": "Sperre aufgehoben, neue Suche gestartet",
+      "no_episodes": "der Dienst sagt nicht, welche Folgen in dieser Datei stecken",
+      "outside_paths": "der Pfad liegt außerhalb der eingestellten Verzeichnisse",
+      "delete_failed": "konnte nicht gelöscht werden: {error}",
+      "client_refused": "das Download-Programm hat abgelehnt: {error}",
+      "service_refused": "der Dienst hat abgelehnt: {error}"
+    }
   },
   "label": {
     "name": "Name",
@@ -100,7 +142,8 @@
     "all_rules": "alle Regeln",
     "only_problems": "nur Auffälligkeiten",
     "only_fixed": "nur behobene",
-    "optional": "optional"
+    "optional": "optional",
+    "no_sign_in": "Ohne Anmeldung"
   },
   "unit": {
     "seconds": "Sekunden",
@@ -186,7 +229,9 @@
     "title": "Funde",
     "help": "Alles, was gefunden wurde — behoben oder nicht.",
     "empty": "Noch nichts protokolliert.",
-    "reported_only": "nur gemeldet"
+    "reported_only": "nur gemeldet",
+    "held_back": "Nicht ausgeführt: {reason}",
+    "severity_filter": "Jede Dringlichkeit"
   },
   "queue_page": {
     "title": "Warteschlange",

@@ -50,7 +50,49 @@
     "compacting": "compacting…",
     "change_password": "Change password",
     "send_test": "Send a test notification",
-    "show_advanced": "Show advanced settings"
+    "show_advanced": "Show advanced settings",
+    "dry_prefix": "DRY RUN",
+    "failed_prefix": "FAILED",
+    "dry": {
+      "remove": "would take it out of the queue",
+      "blocklist": "would blocklist it",
+      "blocklist_and_search": "would blocklist it and search again",
+      "import": "would import it",
+      "import_and_clean": "would import it and clear the download client entry",
+      "search": "would search for a replacement",
+      "search_episodes": "would search for {count} episode(s)",
+      "refresh": "would read the file again",
+      "delete": "would delete {what}",
+      "clear_warning": "would acknowledge the warning",
+      "remove_entry": "would remove the entry and its source folder",
+      "resume": "would resume the download client",
+      "unblocklist": "would take it off the blocklist and search again"
+    },
+    "result": {
+      "removed": "taken out of the queue",
+      "blocklisted": "blocklisted",
+      "blocklisted_searched": "blocklisted, new search started",
+      "folder_cleared": "source folder cleared",
+      "folder_cleared_searched": "source folder cleared, new search started",
+      "search_started": "search for a replacement started",
+      "search_episodes": "search started for {count} episode(s)",
+      "rescanned": "read again",
+      "imported": "{count} file(s) imported",
+      "imported_partly": "{count} file(s) imported, {skipped} skipped because the service did not say which episodes they hold",
+      "matched_imported": "matched and imported ({gb} GB)",
+      "matched_imported_cleaned": "matched and imported ({gb} GB), {client} cleaned up",
+      "deleted": "deleted, {mb} MB freed",
+      "warning_cleared": "recorded and acknowledged",
+      "entry_removed": "entry and source folder removed ({gb} GB)",
+      "resumed": "resumed",
+      "unblocklisted": "taken off the blocklist",
+      "unblocklisted_searched": "taken off the blocklist, new search started",
+      "no_episodes": "the service did not say which episodes this file holds",
+      "outside_paths": "the path lies outside the configured directories",
+      "delete_failed": "could not delete it: {error}",
+      "client_refused": "the download client refused: {error}",
+      "service_refused": "the service refused: {error}"
+    }
   },
   "label": {
     "name": "Name",
@@ -100,7 +142,8 @@
     "all_rules": "all rules",
     "only_problems": "only problems",
     "only_fixed": "only fixed",
-    "optional": "optional"
+    "optional": "optional",
+    "no_sign_in": "No sign-in"
   },
   "unit": {
     "seconds": "seconds",
@@ -186,7 +229,9 @@
     "title": "Findings",
     "help": "Everything that was found, fixed or not.",
     "empty": "Nothing recorded yet.",
-    "reported_only": "reported only"
+    "reported_only": "reported only",
+    "held_back": "Not acted on: {reason}",
+    "severity_filter": "Every severity"
   },
   "queue_page": {
     "title": "Queue",
