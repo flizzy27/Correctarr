@@ -200,20 +200,24 @@ def _library_files(arr: Arr, ctx: dict):
     marked as applying to Radarr only — not because the question does not
     apply to a series, but because nothing had fetched the answer. This is
     where that stops.
-    """
-    if arr.kind != "sonarr":
-        for item in ctx.get("items", []):
-            info = item.get("movieFile")
-            if info:
-                yield item, info, item.get("title", "?")
-        return
 
+    What decides is the shape of the data, not ``arr.kind``. The shared state
+    holds the libraries of every service at once, so a list that is all one
+    kind is the exception there rather than the rule, and a helper that picks
+    a branch from the connection it was handed would answer for one of them
+    and stay silent about the rest.
+    """
     by_series: dict[int, list[dict]] = {}
     for info in ctx.get("files", []):
         series_id = info.get("seriesId")
         if series_id:
             by_series.setdefault(series_id, []).append(info)
+
     for item in ctx.get("items", []):
+        movie_file = item.get("movieFile")
+        if movie_file:
+            yield item, movie_file, item.get("title", "?")
+            continue
         for info in by_series.get(item.get("id"), []):
             yield item, info, f"{item.get('title', '?')} — {_file_label(info)}"
 

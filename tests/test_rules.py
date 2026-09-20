@@ -936,3 +936,19 @@ def test_an_episode_release_does_not_have_to_state_a_year():
     entry.pop("movie", None)
     found = check_manual_import(FakeArr("sonarr"), {"queue": [entry]}, config())
     assert len(found) == 1
+
+
+def test_a_mixed_library_yields_both_kinds_of_file():
+    """The shared state holds every service's library at once.
+
+    A helper that picked its branch from the connection it was handed would
+    answer for one kind and stay silent about the other, which is the whole
+    failure this replaced.
+    """
+    from app.rules import _library_files
+    ctx = {"items": [{"id": 1, "title": "The Film",
+                      "movieFile": {"relativePath": "film.mkv"}},
+                     _series()],
+           "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv"}]}
+    labels = [label for _item, _file, label in _library_files(FakeArr(), ctx)]
+    assert labels == ["The Film", "The Series — ep01.mkv"]

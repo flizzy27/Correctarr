@@ -188,12 +188,17 @@ class Engine:
 
         # Only Sonarr, and only when something is going to read them. A movie
         # carries its file in the list above; a series carries none of them, so
-        # the files are a call of their own — one per thirty series, which is
-        # worth paying for a rule that is actually switched on and nothing
-        # else.
+        # the files are a call of their own — one request per thirty series,
+        # which is worth paying for a rule that is actually switched on and
+        # nothing else.
+        #
+        # Deliberately not listed here: downloader_stale_entry. It runs once
+        # per pass against the shared state, not against this one, so a fetch
+        # made here would be paid for and never read. Matching a finished
+        # download against episode files would mean fetching them for every
+        # series on every deep pass, and that rule is on by default.
         needs_files = any(enabled(n) for n in ("missing_audio_language",
-                                               "unreadable_file", "below_profile",
-                                               "downloader_stale_entry"))
+                                               "unreadable_file", "below_profile"))
         if deep and arr.kind == "sonarr" and needs_files and ctx["items"]:
             ids = [i["id"] for i in ctx["items"] if i.get("id")]
             safe("episode files", lambda: arr.files(ids), "files")
@@ -632,9 +637,10 @@ class Engine:
         # source folder would stay. Observed on Crank and Transporter, both of
         # which were still in the history afterwards.
         cleared = self._clear_client_entry(finding.title)
+        if not cleared:
+            return done("action.result.matched_imported", gb=gb)
         return done("action.result.matched_imported_cleaned", gb=gb,
-                    client=cleared) if cleared else done(
-                        "action.result.matched_imported", gb=gb)
+                    client=cleared)
 
     def _episodes_at(self, arr: Arr, path: str) -> list[int]:
         """Which episodes Sonarr thinks this file holds."""
