@@ -176,16 +176,10 @@ FIELDS: tuple[Field, ...] = (
           minimum=1, maximum=20, unit="unit.places"),
 
     # -- notifications ------------------------------------------------------
-    Field("pushover_enabled", "switch", "notifications", False),
-    Field("pushover_app", "secret", "notifications", ""),
-    Field("pushover_user", "secret", "notifications", ""),
-    Field("pushover_devices", "text", "notifications", ""),
-    Field("pushover_sound", "text", "notifications", "pianobar"),
-    Field("pushover_min_severity", "choice", "notifications", "warning",
-          choices=("info", "warning", "error")),
-    Field("pushover_fixed_only", "switch", "notifications", False),
-    Field("pushover_cooldown", "number", "notifications", 5,
-          minimum=0, maximum=1440, unit="unit.minutes"),
+    # Where things get sent is configured per connection, not here. This is the
+    # one setting that is genuinely global: it decides when a long-running
+    # problem counts as news again, and that has to be the same for every
+    # channel or the same finding arrives on one and not the other.
     Field("recheck_hours", "number", "notifications", 12,
           minimum=1, maximum=720, unit="unit.hours"),
 

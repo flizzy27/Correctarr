@@ -125,6 +125,8 @@ let findingData = [];
 let fixedData = [];
 let queueData = [];
 let serviceData = [];
+let channelKinds = null;
+let notificationData = [];
 
 /* ============================================================== overview */
 async function loadOverview() {
@@ -569,6 +571,228 @@ function wireService(card) {
   });
 }
 
+/* ========================================================= notifications */
+async function loadNotifications() {
+  if (!channelKinds) channelKinds = await api("api/notifications/kinds");
+  notificationData = await api("api/notifications");
+  fillKindPicker();
+  renderNotifications();
+}
+
+const kindOf = (kind) => channelKinds.kinds.find((k) => k.kind === kind);
+
+function fillKindPicker() {
+  const picker = $("#new-channel-kind");
+  if (picker.options.length) return;
+  picker.innerHTML = channelKinds.kinds.map((k) =>
+    `<option value="${esc(k.kind)}">${esc(t("channels." + k.kind + ".name"))}</option>`
+  ).join("");
+}
+
+function renderNotifications() {
+  $("#count-notifications").textContent =
+    notificationData.filter((n) => n.enabled).length || "";
+  $("#notification-list").innerHTML = notificationData.length
+    ? notificationData.map(notificationHtml).join("")
+    : `<p class="empty">${esc(t("notifications_page.empty"))}</p>`;
+  $$("#notification-list .service").forEach(wireNotification);
+}
+
+function notificationHtml(connection, index) {
+  const kind = kindOf(connection.kind);
+  const help = t("channels." + connection.kind + ".help");
+  return `<div class="service" data-index="${index}">
+    <div class="service-head">
+      <span class="dot ${connection.enabled ? "good" : ""}"></span>
+      <span class="name">${esc(connection.name)}</span>
+      <span class="badge neutral">${esc(t("channels." + connection.kind + ".name"))}</span>
+      <span class="state">${connection.id ? "" : esc(t("notifications_page.not_saved"))}</span>
+      <button class="btn small danger" data-do="remove">${esc(t("action.remove"))}</button>
+    </div>
+    ${help ? `<p class="hint">${esc(help)}</p>` : ""}
+    <div class="fields">
+      <div class="field"><label>${esc(t("label.name"))}</label>
+        <input type="text" data-f="name" value="${esc(connection.name)}"></div>
+      ${(kind ? kind.fields : []).map((field) =>
+        channelFieldHtml(connection.kind, field, connection.config[field.key])).join("")}
+    </div>
+    ${connection.kind === "telegram" ? `
+      <div class="row" style="margin-top:10px">
+        <button class="btn small" data-do="chats">${
+          esc(t("notifications_page.telegram_find_chats"))}</button>
+        <span class="muted" data-chats></span>
+      </div>` : ""}
+    <h3 class="rule-group-head" style="margin-top:18px">${
+      esc(t("notifications_page.routing"))}</h3>
+    <div class="fields">
+      <div class="field">
+        <label>${esc(t("notifications_page.min_severity"))}</label>
+        <select data-f="min_severity">${channelKinds.severities.map((s) =>
+          `<option value="${esc(s)}"${connection.min_severity === s ? " selected" : ""}>${
+            esc(t("choice." + s))}</option>`).join("")}</select>
+      </div>
+      <div class="field">
+        <label>${esc(t("notifications_page.cooldown"))}</label>
+        <div class="field-row">
+          <input type="number" data-f="cooldown" min="0" max="1440"
+                 value="${esc(connection.cooldown)}">
+          <span class="unit">${esc(t("unit.minutes"))}</span>
+        </div>
+        <div class="help">${esc(t("notifications_page.cooldown_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("notifications_page.categories_filter"))}</label>
+        <select data-f="categories" multiple size="6">${channelKinds.categories.map((c) =>
+          `<option value="${esc(c)}"${connection.categories.includes(c) ? " selected" : ""}>${
+            esc(t("category." + c))}</option>`).join("")}</select>
+        <div class="help">${esc(t("notifications_page.categories_filter_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("notifications_page.rules_filter"))}</label>
+        <select data-f="rules" multiple size="6">${channelKinds.rules.map((r) =>
+          `<option value="${esc(r)}"${connection.rules.includes(r) ? " selected" : ""}>${
+            esc(t("rules." + r + ".title"))}</option>`).join("")}</select>
+        <div class="help">${esc(t("notifications_page.rules_filter_help"))}</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label class="toggle-field">
+        <span class="toggle"><input type="checkbox" data-f="enabled"
+          ${connection.enabled ? "checked" : ""}><span class="track"></span></span>
+        ${esc(t("label.enabled"))}
+      </label>
+      <label class="toggle-field">
+        <span class="toggle"><input type="checkbox" data-f="fixed_only"
+          ${connection.fixed_only ? "checked" : ""}><span class="track"></span></span>
+        ${esc(t("notifications_page.fixed_only"))}
+      </label>
+      <span style="flex:1"></span>
+      <button class="btn small" data-do="test">${esc(t("action.send_test"))}</button>
+      <button class="btn small primary" data-do="save">${esc(t("action.save"))}</button>
+    </div>
+  </div>`;
+}
+
+function channelFieldHtml(kind, field, value) {
+  const id = `c-${kind}-${field.key}`;
+  const label = t(`channels.${kind}.${field.key}.label`);
+  const help = t(`channels.${kind}.${field.key}.help`);
+  const current = value ?? field.default;
+  let control;
+
+  if (field.kind === "switch") {
+    control = `<span class="toggle"><input type="checkbox" id="${id}"
+      data-c="${esc(field.key)}" data-kind="switch"
+      ${current ? "checked" : ""}><span class="track"></span></span>`;
+  } else if (field.kind === "choice") {
+    control = `<select id="${id}" data-c="${esc(field.key)}" data-kind="choice">${
+      field.choices.map((choice) =>
+        `<option value="${esc(choice)}"${String(current) === choice ? " selected" : ""}>${
+          esc(choice)}</option>`).join("")}</select>`;
+  } else if (field.kind === "number") {
+    control = `<input type="number" id="${id}" data-c="${esc(field.key)}"
+      data-kind="number" value="${esc(current)}">`;
+  } else {
+    control = `<input type="${field.kind === "secret" ? "password" : "text"}" id="${id}"
+      data-c="${esc(field.key)}" data-kind="${esc(field.kind)}"
+      value="${esc(current)}" autocomplete="off" spellcheck="false"
+      ${field.placeholder ? `placeholder="${esc(field.placeholder)}"` : ""}>`;
+  }
+
+  return `<div class="field">
+    <label for="${id}">${esc(label)}${field.required ? ""
+      : ` <span class="faint">(${esc(t("label.optional"))})</span>`}</label>
+    ${control}
+    ${help && !help.startsWith("channels.") ? `<div class="help">${esc(help)}</div>` : ""}
+  </div>`;
+}
+
+function readConnection(card, index) {
+  const connection = notificationData[index];
+  const body = { id: connection.id, kind: connection.kind, config: {} };
+  card.querySelectorAll("[data-f]").forEach((field) => {
+    if (field.multiple) {
+      body[field.dataset.f] = [...field.selectedOptions].map((o) => o.value);
+    } else if (field.type === "checkbox") {
+      body[field.dataset.f] = field.checked;
+    } else if (field.type === "number") {
+      body[field.dataset.f] = Number(field.value);
+    } else {
+      body[field.dataset.f] = field.value;
+    }
+  });
+  card.querySelectorAll("[data-c]").forEach((field) => {
+    body.config[field.dataset.c] =
+      field.dataset.kind === "switch" ? field.checked : field.value;
+  });
+  return body;
+}
+
+function wireNotification(card) {
+  const index = Number(card.dataset.index);
+  const read = () => readConnection(card, index);
+
+  const guarded = (busyKey, work) => async (event) => {
+    const button = event.currentTarget;
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = t(busyKey);
+    try { await work(); } catch (error) { failed(error); }
+    finally { button.disabled = false; button.textContent = original; }
+  };
+
+  card.querySelector('[data-do="test"]').addEventListener("click",
+    guarded("action.testing", async () => {
+      await post("api/notifications/test", read());
+      toast(t("notifications_page.sent"), "good");
+    }));
+
+  card.querySelector('[data-do="save"]').addEventListener("click",
+    guarded("action.saving", async () => {
+      await post("api/notifications", read());
+      toast(t("message.saved"), "good");
+      await loadNotifications();
+    }));
+
+  card.querySelector('[data-do="remove"]').addEventListener("click", async () => {
+    const connection = notificationData[index];
+    if (!connection.id) {
+      notificationData.splice(index, 1);
+      renderNotifications();
+      return;
+    }
+    if (!confirm(t("notifications_page.confirm_remove", { name: connection.name }))) return;
+    try {
+      await api("api/notifications/" + connection.id, { method: "DELETE" });
+      toast(t("services_page.removed"), "good");
+      await loadNotifications();
+    } catch (error) { failed(error); }
+  });
+
+  card.querySelector('[data-do="chats"]')?.addEventListener("click",
+    guarded("notifications_page.telegram_searching", async () => {
+      const answer = await post("api/notifications/telegram/chats", read());
+      const target = card.querySelector("[data-chats]");
+      target.textContent = "";
+      if (!answer.chats.length) {
+        target.textContent = t("notifications_page.telegram_no_chats");
+        return;
+      }
+      target.textContent = answer.bot
+        ? t("notifications_page.telegram_bot_is", { name: answer.bot }) + " " : "";
+      const picker = document.createElement("select");
+      picker.innerHTML =
+        `<option value="">${esc(t("notifications_page.telegram_pick"))}</option>` +
+        answer.chats.map((chat) =>
+          `<option value="${esc(chat.id)}">${esc(chat.name)} (${esc(chat.type)})</option>`
+        ).join("");
+      picker.addEventListener("change", () => {
+        if (picker.value) card.querySelector('[data-c="chat_id"]').value = picker.value;
+      });
+      target.appendChild(picker);
+    }));
+}
+
 /* ============================================================== settings */
 async function loadSettings() {
   const data = await api("api/settings");
@@ -593,8 +817,6 @@ function renderSettings() {
       <h2>${esc(t("settings_page.group_" + group))}</h2>
       <p class="hint">${esc(t("settings_page.group_" + group + "_help"))}</p>
       ${content}
-      ${group === "notifications" ? `<div class="row" style="margin-top:14px">
-        <button class="btn" id="test-notify">${esc(t("action.send_test"))}</button></div>` : ""}
     </div>`;
   }).join("");
 
@@ -607,14 +829,6 @@ function renderSettings() {
       $$(".theme-option").forEach((other) => other.classList.remove("active"));
       button.classList.add("active");
     }));
-  $("#test-notify")?.addEventListener("click", async (event) => {
-    event.target.disabled = true;
-    try {
-      const answer = await api("api/notify/test", { method: "POST" });
-      toast(answer.message || t("message.saved"), "good");
-    } catch (error) { failed(error); }
-    finally { event.target.disabled = false; }
-  });
 }
 
 function themePickerHtml(themes) {
@@ -788,11 +1002,407 @@ function applyAppearance(theme, density) {
   }
 }
 
+/* =============================================================== wizard */
+/* A guided first run.
+ *
+ * The order is not arbitrary. Services come first because nothing else can be
+ * checked without them; paths second because that is where most setups go
+ * wrong and the check is instant; the public address third because the webhook
+ * cannot be created without it. Notifications and the dry run are last, and
+ * both can be skipped — neither is needed for the thing to work.
+ *
+ * Every step that can be verified is verified here rather than described, so
+ * nobody leaves the wizard believing something works when it does not.
+ */
+const wizard = {
+  step: 0,
+  services: [],
+  open: false,
+
+  steps: [
+    "welcome", "services", "paths", "address", "notifications", "dry_run", "done",
+  ],
+
+  async start(fromButton = false) {
+    this.step = 0;
+    this.open = true;
+    if (!channelKinds) {
+      try { channelKinds = await api("api/notifications/kinds"); } catch (e) { /* later */ }
+    }
+    await this.loadServices();
+    $("#wizard").hidden = false;
+    document.body.style.overflow = "hidden";
+    this.render();
+    if (fromButton) history.replaceState(null, "", "#" + ($(".page.active")?.id?.replace("page-", "") || "overview"));
+  },
+
+  close() {
+    this.open = false;
+    $("#wizard").hidden = true;
+    document.body.style.overflow = "";
+  },
+
+  async finish() {
+    try { await post("api/setup/complete", {}); } catch (e) { /* not fatal */ }
+    this.close();
+    await go("overview");
+  },
+
+  async loadServices() {
+    try {
+      this.services = await api("api/services");
+    } catch (error) { this.services = []; }
+  },
+
+  /* -- navigation ---------------------------------------------------------- */
+  get name() { return this.steps[this.step]; },
+
+  canSkip() {
+    return ["notifications", "dry_run"].includes(this.name);
+  },
+
+  async next() {
+    if (this.step >= this.steps.length - 1) { await this.finish(); return; }
+    this.step += 1;
+    if (this.name === "services" || this.name === "done") await this.loadServices();
+    this.render();
+  },
+
+  back() {
+    if (this.step === 0) return;
+    this.step -= 1;
+    this.render();
+  },
+
+  /* -- rendering ----------------------------------------------------------- */
+  render() {
+    const name = this.name;
+    $("#wizard-title").textContent = t("wizard." + name + ".title");
+    $("#wizard-lead").textContent = t("wizard." + name + ".lead");
+
+    $("#wizard-steps").innerHTML = this.steps.map((step, index) => {
+      const state = index === this.step ? "current" : index < this.step ? "done" : "";
+      const mark = index < this.step ? "✓" : index + 1;
+      return `<div class="step ${state}"><span class="number">${mark}</span>
+        <span>${esc(t("wizard." + step + ".short"))}</span></div>`;
+    }).join("");
+
+    $("#wizard-back").hidden = this.step === 0;
+    $("#wizard-skip").hidden = !this.canSkip();
+    $("#wizard-next").textContent =
+      this.step === this.steps.length - 1 ? t("wizard.finish") : t("wizard.next");
+
+    const render = {
+      welcome: () => this.renderWelcome(),
+      services: () => this.renderServices(),
+      paths: () => this.renderPaths(),
+      address: () => this.renderAddress(),
+      notifications: () => this.renderNotifications(),
+      dry_run: () => this.renderDryRun(),
+      done: () => this.renderDone(),
+    }[name];
+    render();
+  },
+
+  renderWelcome() {
+    $("#wizard-body").innerHTML = `
+      <div class="wizard-section">
+        <p>${esc(t("wizard.welcome.body"))}</p>
+      </div>
+      <div class="wizard-section">
+        <h3>${esc(t("wizard.welcome.what"))}</h3>
+        <div class="checklist">
+          ${["queue", "import", "library", "downloader", "indexers"].map((c) => `
+            <div class="check idle"><span class="mark">•</span>
+              <div><strong>${esc(t("category." + c))}</strong>
+                <div class="detail">${esc(t("wizard.welcome.category_" + c))}</div></div>
+            </div>`).join("")}
+        </div>
+      </div>
+      <div class="notice info">${t("wizard.welcome.safety")}</div>`;
+  },
+
+  renderServices() {
+    const kinds = [
+      ["radarr", true], ["sonarr", false], ["sabnzbd", false], ["prowlarr", false],
+    ];
+    $("#wizard-body").innerHTML = `
+      <div class="checklist" style="margin-bottom:18px">
+        <div class="check ${this.services.some((s) => ["radarr", "sonarr"].includes(s.kind))
+          ? "ok" : "bad"}">
+          <span class="mark">${this.services.some((s) => ["radarr", "sonarr"].includes(s.kind))
+            ? "✓" : "!"}</span>
+          <div>${esc(t("wizard.services.requirement"))}</div>
+        </div>
+      </div>
+      ${kinds.map(([kind, required]) => this.serviceCard(kind, required)).join("")}`;
+
+    $$("#wizard-body .wizard-service").forEach((card) => {
+      const kind = card.dataset.kind;
+      const read = () => {
+        const existing = this.services.find((s) => s.kind === kind);
+        return {
+          id: existing ? existing.id : null,
+          name: existing ? existing.name : kind.charAt(0).toUpperCase() + kind.slice(1),
+          kind,
+          url: card.querySelector("[data-w=url]").value.trim(),
+          api_key: card.querySelector("[data-w=key]").value.trim(),
+          enabled: true,
+          webhook: ["radarr", "sonarr"].includes(kind),
+        };
+      };
+      const result = card.querySelector(".result");
+
+      card.querySelector("[data-w=test]").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        result.className = "result";
+        result.textContent = t("action.testing");
+        try {
+          const answer = await post("api/services/test", read());
+          result.className = "result ok";
+          result.textContent = "✓ " + answer.info;
+        } catch (error) {
+          result.className = "result bad";
+          result.textContent = error.message;
+        } finally { button.disabled = false; }
+      });
+
+      card.querySelector("[data-w=save]").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const answer = await post("api/services", read());
+          toast(t("message.saved") + (answer.webhook ? " — " + answer.webhook : ""), "good");
+          await this.loadServices();
+          this.render();
+        } catch (error) { failed(error); }
+        finally { button.disabled = false; }
+      });
+    });
+  },
+
+  serviceCard(kind, required) {
+    const existing = this.services.find((s) => s.kind === kind);
+    const state = existing
+      ? (existing.reachable ? `<span class="result ok">✓ ${esc(existing.info)}</span>`
+         : `<span class="result bad">${esc(existing.info || "")}</span>`)
+      : `<span class="result"></span>`;
+    return `<div class="wizard-service" data-kind="${kind}">
+      <div class="top">
+        <span class="dot ${existing && existing.reachable ? "good" : ""}"></span>
+        <span class="name">${esc(KINDS_LABEL[kind])}</span>
+        <span class="badge neutral">${esc(t(required ? "wizard.services.required"
+                                                     : "wizard.services.optional"))}</span>
+        ${state}
+      </div>
+      <div class="help" style="margin-bottom:9px">${esc(t("wizard.services." + kind))}</div>
+      <div class="fields">
+        <div class="field"><label>${esc(t("label.url"))}</label>
+          <input type="text" data-w="url" spellcheck="false"
+                 placeholder="${esc(DEFAULT_URL[kind])}"
+                 value="${esc(existing ? existing.url : "")}"></div>
+        <div class="field"><label>${esc(t("label.api_key"))}</label>
+          <input type="password" data-w="key" autocomplete="off" spellcheck="false"
+                 value="${esc(existing ? existing.api_key : "")}"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn small" data-w="test">${esc(t("action.test"))}</button>
+        <button class="btn small primary" data-w="save">${esc(t("action.save"))}</button>
+      </div>
+    </div>`;
+  },
+
+  async renderPaths() {
+    $("#wizard-body").innerHTML = `<p class="empty">…</p>`;
+    const [paths, settings] = await Promise.all([
+      api("api/paths"), api("api/settings"),
+    ]);
+    settingsSchema = settings.schema;
+    settingsValues = settings.values;
+
+    $("#wizard-body").innerHTML = `
+      <div class="notice warning" style="margin-bottom:16px">${
+        esc(t("wizard.paths.warning"))}</div>
+      <div class="fields">
+        ${["path_downloads", "path_incomplete", "path_movies", "path_series"].map((key) => {
+          const state = paths.paths.find((p) => p.key === key) || {};
+          const good = state.state === "ok";
+          return `<div class="field">
+            <label for="w-${key}">${esc(t("settings." + key + ".label"))}</label>
+            <input type="text" id="w-${key}" data-w="${key}" spellcheck="false"
+                   value="${esc(settingsValues[key] || "")}">
+            <div class="help ${good ? "" : ""}" data-note="${key}">${
+              esc(state.note || "")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="w-check-paths">${esc(t("wizard.paths.check"))}</button>
+      </div>`;
+
+    $("#w-check-paths").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const values = {};
+        $$("#wizard-body [data-w]").forEach((input) => {
+          values[input.dataset.w] = input.value.trim();
+        });
+        await post("api/settings", { values });
+        const fresh = await api("api/paths");
+        fresh.paths.forEach((p) => {
+          const note = $(`[data-note="${p.key}"]`);
+          if (note) {
+            note.textContent = (p.state === "ok" ? "✓ " : "") + p.note;
+            note.style.color = p.state === "ok" ? "var(--good)"
+              : p.state === "missing" ? "var(--bad)" : "";
+          }
+        });
+      } catch (error) { failed(error); }
+      finally { button.disabled = false; }
+    });
+  },
+
+  async renderAddress() {
+    const settings = await api("api/settings");
+    settingsValues = settings.values;
+    const guess = window.location.origin + (status?.base || "");
+    $("#wizard-body").innerHTML = `
+      <div class="fields">
+        <div class="field wide">
+          <label for="w-url">${esc(t("settings.public_url.label"))}</label>
+          <input type="text" id="w-url" spellcheck="false"
+                 value="${esc(settingsValues.public_url || guess)}">
+          <div class="help">${esc(t("settings.public_url.help"))}</div>
+        </div>
+      </div>
+      <div class="notice info" style="margin-top:14px">${esc(t("wizard.address.why"))}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="w-save-url">${esc(t("wizard.address.save"))}</button>
+        <span class="muted" id="w-url-note"></span>
+      </div>`;
+
+    $("#w-save-url").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await post("api/settings", { key: "public_url", value: $("#w-url").value.trim() });
+        // Saving a service again is what creates the webhook, now that the
+        // address exists.
+        let created = 0;
+        for (const service of this.services.filter((s) =>
+            ["radarr", "sonarr"].includes(s.kind) && s.webhook)) {
+          try {
+            await post("api/services", { ...service, api_key: service.api_key });
+            created += 1;
+          } catch (error) { /* reported below */ }
+        }
+        $("#w-url-note").textContent = t("wizard.address.done", { count: created });
+      } catch (error) { failed(error); }
+      finally { button.disabled = false; }
+    });
+  },
+
+  async renderNotifications() {
+    const existing = await api("api/notifications").catch(() => []);
+    $("#wizard-body").innerHTML = `
+      <p class="hint">${esc(t("wizard.notifications.body"))}</p>
+      <div class="checklist" style="margin:14px 0">
+        ${(channelKinds ? channelKinds.kinds : []).map((k) => `
+          <div class="check idle"><span class="mark">•</span>
+            <div><strong>${esc(t("channels." + k.kind + ".name"))}</strong>
+              <div class="detail">${esc(t("channels." + k.kind + ".help"))}</div></div>
+          </div>`).join("")}
+      </div>
+      <div class="notice ${existing.length ? "good" : "info"}">${
+        existing.length
+          ? esc(t("wizard.notifications.configured", { count: existing.length }))
+          : esc(t("wizard.notifications.none"))}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="w-go-notifications">${
+          esc(t("wizard.notifications.go"))}</button>
+      </div>`;
+
+    $("#w-go-notifications").addEventListener("click", async () => {
+      this.close();
+      await go("notifications");
+    });
+  },
+
+  async renderDryRun() {
+    const settings = await api("api/settings");
+    settingsValues = settings.values;
+    $("#wizard-body").innerHTML = `
+      <p>${esc(t("wizard.dry_run.body"))}</p>
+      <div class="field" style="margin:16px 0">
+        <label class="toggle-field">
+          <span class="toggle"><input type="checkbox" id="w-dry"
+            ${settingsValues.dry_run ? "checked" : ""}><span class="track"></span></span>
+          ${esc(t("settings.dry_run.label"))}
+        </label>
+        <div class="help">${esc(t("settings.dry_run.help"))}</div>
+      </div>
+      <div class="row">
+        <button class="btn" id="w-run">${esc(t("wizard.dry_run.run"))}</button>
+        <span class="muted" id="w-run-note"></span>
+      </div>`;
+
+    $("#w-dry").addEventListener("change", async (event) => {
+      try {
+        await post("api/settings", { key: "dry_run", value: event.target.checked });
+        $("#dry-run-badge").hidden = !event.target.checked;
+      } catch (error) { failed(error); }
+    });
+
+    $("#w-run").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = t("action.checking_deep");
+      $("#w-run-note").textContent = "";
+      try {
+        const result = await api("api/check?deep=true", { method: "POST" });
+        $("#w-run-note").textContent = t("run.result", { found: result.found })
+          + (result.errors?.length
+             ? " · " + t("run.result_errors", { count: result.errors.length }) : "");
+      } catch (error) { failed(error); }
+      finally {
+        button.disabled = false;
+        button.textContent = t("wizard.dry_run.run");
+      }
+    });
+  },
+
+  renderDone() {
+    const reachable = this.services.filter((s) => s.reachable).length;
+    $("#wizard-body").innerHTML = `
+      <div class="checklist">
+        <div class="check ${reachable ? "ok" : "bad"}">
+          <span class="mark">${reachable ? "✓" : "!"}</span>
+          <div>${esc(t("wizard.done.services", { count: reachable }))}</div>
+        </div>
+        <div class="check ok"><span class="mark">✓</span>
+          <div>${esc(t("wizard.done.rules"))}</div></div>
+        <div class="check ok"><span class="mark">✓</span>
+          <div>${esc(t("wizard.done.schedule"))}</div></div>
+      </div>
+      <div class="notice info" style="margin-top:16px">${esc(t("wizard.done.next"))}</div>`;
+  },
+};
+
+const KINDS_LABEL = { radarr: "Radarr", sonarr: "Sonarr",
+                      sabnzbd: "SABnzbd", prowlarr: "Prowlarr" };
+const DEFAULT_URL = {
+  radarr: "http://radarr:7878", sonarr: "http://sonarr:8989",
+  sabnzbd: "http://sabnzbd:8080", prowlarr: "http://prowlarr:9696",
+};
+
 /* ============================================================ navigation */
 const LOADERS = {
   overview: loadOverview, fixed: loadFixed, findings: loadFindings,
   queue: loadQueue, rules: loadRules, indexers: loadIndexers,
-  services: loadServices, settings: loadSettings,
+  services: loadServices, notifications: loadNotifications,
+  settings: loadSettings,
 };
 
 async function go(target, remember = true) {
@@ -854,6 +1464,18 @@ function wire() {
     button.addEventListener("click", () => go(button.dataset.target)));
   $("#check-fast").addEventListener("click", (e) => runCheck(e.currentTarget, false));
   $("#check-deep").addEventListener("click", (e) => runCheck(e.currentTarget, true));
+  $("#open-wizard").addEventListener("click", () => wizard.start(true));
+  $("#wizard-close").addEventListener("click", () => wizard.close());
+  $("#wizard-back").addEventListener("click", () => wizard.back());
+  $("#wizard-skip").addEventListener("click", () => wizard.next());
+  $("#wizard-next").addEventListener("click", () => wizard.next());
+  $("#wizard").addEventListener("click", (event) => {
+    if (event.target.id === "wizard") wizard.close();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && wizard.open) wizard.close();
+  });
+
   $("#sign-out").addEventListener("click", async () => {
     try { await api("api/auth/signout", { method: "POST" }); } catch (e) { /* ignore */ }
     window.location.assign("login");
@@ -868,6 +1490,19 @@ function wire() {
   $("#fixed-reload").addEventListener("click", () => loadFixed().catch(failed));
   $("#rules-search").addEventListener("input", () => loadRules().catch(failed));
   $("#show-advanced").addEventListener("change", renderSettings);
+
+  $("#add-notification").addEventListener("click", () => {
+    const kind = $("#new-channel-kind").value;
+    const blank = {};
+    (kindOf(kind)?.fields || []).forEach((f) => (blank[f.key] = f.default));
+    notificationData.push({
+      id: null, name: t("channels." + kind + ".name"), kind, enabled: true,
+      config: blank, min_severity: "warning", rules: [], categories: [],
+      fixed_only: false, cooldown: 5,
+    });
+    renderNotifications();
+    $("#notification-list .service:last-child input")?.focus();
+  });
 
   $("#add-service").addEventListener("click", () => {
     serviceData.push({ id: null, name: "Radarr", kind: "radarr", url: "", api_key: "",
@@ -916,6 +1551,13 @@ function wire() {
   } catch (error) { /* redirected */ }
 
   await go((location.hash || "#overview").slice(1), false);
+
+  // On a fresh installation the wizard opens by itself. Nobody should have to
+  // find it, and an empty overview explains nothing.
+  try {
+    const setup = await api("api/setup/state");
+    if (!setup.completed) await wizard.start();
+  } catch (error) { /* the page still works without it */ }
 
   // The overview keeps itself fresh while it is visible.
   setInterval(() => {

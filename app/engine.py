@@ -28,11 +28,11 @@ import threading
 import time
 from typing import Any
 
+from . import notifications
 from . import settings as S
 from .arr import Arr, ArrError
 from .indexers import build_views, rate
 from .matching import build_candidates
-from .notify import Pushover
 from .prowlarr import Prowlarr, ProwlarrError
 from .rules import ALL, Finding
 from .sab import Sab, SabError
@@ -102,10 +102,8 @@ class Engine:
     def rule_enabled(self, cfg: dict, name: str) -> bool:
         return bool((cfg["rules"].get(name) or {}).get("enabled", True))
 
-    def notifier(self, cfg: dict) -> Pushover:
-        return Pushover(cfg.get("pushover_app", ""), cfg.get("pushover_user", ""),
-                        cfg.get("pushover_devices", ""),
-                        cfg.get("pushover_sound", "pianobar"))
+    def notification_targets(self) -> list[dict]:
+        return self.store.notifications(enabled_only=True)
 
     # -- per service state -----------------------------------------------------
     def _service_context(self, arr: Arr, cfg: dict, deep: bool) -> dict:
@@ -600,22 +598,21 @@ class Engine:
             self._housekeep(cfg)
 
             # 5. notify
-            notified = None
             worth_reporting = [f for f in findings if f.is_new or f.action]
-            if cfg.get("pushover_enabled") and worth_reporting:
-                ok, note = self.notifier(cfg).report(
-                    worth_reporting, cfg.get("pushover_min_severity", "warning"),
-                    bool(cfg.get("pushover_fixed_only")),
-                    cfg.get("public_url", ""),
-                    int(cfg.get("pushover_cooldown", 5)),
-                    language=cfg.get("language") if cfg.get("language") != "auto" else "en")
-                notified = note
-                if not ok and note != "nothing to report":
-                    log.info("Pushover: %s", note)
+            notified: list[dict] = []
+            targets = self.notification_targets()
+            if targets and worth_reporting:
+                language = cfg.get("language")
+                notified = notifications.dispatch(
+                    targets, worth_reporting,
+                    language=language if language in ("en", "de") else "en",
+                    url=cfg.get("public_url", ""),
+                    dry_run=bool(cfg.get("dry_run")))
 
             return {"found": len(findings), "new": len(worth_reporting), "fixed": fixed,
                     "duration_ms": duration, "deep": deep, "trigger": trigger,
-                    "services": len(services), "errors": errors, "notified": notified,
+                    "services": len(services), "errors": errors,
+                    "notified": notified,
                     "findings": [f.as_dict() for f in findings]}
         finally:
             for arr in services:

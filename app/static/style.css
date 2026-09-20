@@ -75,6 +75,13 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 
+/* Any rule that sets display beats the browser default for [hidden], and most
+   of the components here set one. Without this, hiding an element by setting
+   the attribute quietly does nothing — which is how the sign-out button stayed
+   visible with authentication switched off, and how the wizard showed a Back
+   button on its first step. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--base);
@@ -491,4 +498,105 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
   .topbar { padding: 12px 14px; }
   .rule { flex-direction: column; gap: 10px; }
   .toast { left: 14px; right: 14px; max-width: none; }
+}
+
+/* ------------------------------------------------------------------ modal */
+.backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(0, 0, 0, .62);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  animation: fade-in 140ms ease-out;
+}
+.backdrop[hidden] { display: none; }
+
+.modal {
+  width: 100%; max-width: 760px; max-height: 88vh;
+  display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--line-strong);
+  border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+  animation: rise 180ms cubic-bezier(.2, .9, .3, 1);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+
+.modal-head {
+  padding: 20px 24px 0; display: flex; flex-direction: column; gap: 14px;
+  position: relative;
+}
+.modal-head h2 { font-size: 1.15rem; }
+.modal-head .lead { color: var(--muted); font-size: .9em; max-width: 62ch; }
+.modal-close {
+  position: absolute; top: 14px; right: 16px;
+  background: none; border: 0; color: var(--faint);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.modal-close:hover { color: var(--ink); background: var(--raised); }
+
+.modal-body {
+  padding: 18px 24px; overflow-y: auto; flex: 1;
+}
+.modal-foot {
+  padding: 16px 24px 20px; display: flex; align-items: center; gap: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* The rail of steps across the top of the wizard. */
+.steps { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.step {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 10px 5px 6px; border-radius: 99px;
+  font-size: .78em; color: var(--faint);
+  background: var(--raised); border: 1px solid transparent;
+  white-space: nowrap;
+}
+.step .number {
+  width: 19px; height: 19px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  background: var(--line); color: var(--muted);
+  font-size: .82em; font-weight: 650;
+}
+.step.current {
+  color: var(--ink); border-color: var(--accent); background: var(--accent-soft);
+}
+.step.current .number { background: var(--accent); color: var(--accent-ink); }
+.step.done { color: var(--good); }
+.step.done .number { background: var(--good-soft); color: var(--good); }
+
+.wizard-section { margin-bottom: 20px; }
+.wizard-section:last-child { margin-bottom: 0; }
+.wizard-section > h3 { margin-bottom: 8px; font-size: .95em; }
+
+/* A compact service row inside the wizard, with its own test button. */
+.wizard-service {
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px; margin-bottom: 10px; background: var(--raised);
+}
+.wizard-service .top {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 10px;
+}
+.wizard-service .top .name { font-weight: 570; }
+.wizard-service .top .result { margin-left: auto; font-size: .84em; }
+.wizard-service .result.ok { color: var(--good); }
+.wizard-service .result.bad { color: var(--bad); }
+
+.checklist { display: flex; flex-direction: column; gap: 9px; }
+.check {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: .92em; line-height: 1.5;
+}
+.check .mark {
+  width: 18px; height: 18px; border-radius: 50%; flex: none; margin-top: 1px;
+  display: grid; place-items: center; font-size: 11px; font-weight: 700;
+}
+.check.ok .mark  { background: var(--good-soft); color: var(--good); }
+.check.bad .mark { background: var(--bad-soft);  color: var(--bad); }
+.check.idle .mark { background: var(--line); color: var(--faint); }
+.check .detail { color: var(--muted); font-size: .92em; }
+
+@media (max-width: 880px) {
+  .modal { max-height: 94vh; }
+  .modal-head, .modal-body, .modal-foot { padding-left: 16px; padding-right: 16px; }
+  .step span:not(.number) { display: none; }
 }

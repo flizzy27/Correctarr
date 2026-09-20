@@ -35,7 +35,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, i18n, logging_setup
+from . import auth, i18n, logging_setup, notifications
 from . import settings as S
 from .arr import Arr, ArrError
 from .engine import Engine
@@ -876,19 +876,151 @@ def compact(request: Request, _: dict = Depends(require_user)):
                               freed=max(0, round(before - after, 2)))}
 
 
-@app.post("/api/notify/test")
-def notify_test(request: Request, _: dict = Depends(require_user)):
-    cfg = engine.config()
-    notifier = engine.notifier(cfg)
-    if not notifier.configured:
-        raise _fail(request, 400, "error.pushover_not_configured")
-    language = language_for(request)
-    ok, note = notifier.send("Correctarr",
-                             i18n.t("message.test_notification", language),
-                             "info", url=cfg.get("public_url", ""))
+# ---------------------------------------------------------------------------
+# Setup wizard
+# ---------------------------------------------------------------------------
+@app.get("/api/setup/state")
+def setup_state(_: dict = Depends(require_user)):
+    """Whether the guided setup has been run through.
+
+    Kept separate from the settings because it is not a preference: it is a
+    one-off fact about this installation, and it should not appear on a page
+    full of things somebody might want to change.
+    """
+    services = store.services()
+    return {
+        "completed": bool(store.get("setup_done", False)),
+        "services": len(services),
+        "arr_services": sum(1 for s in services if s["kind"] in ("radarr", "sonarr")),
+        "notifications": len(store.notifications()),
+    }
+
+
+@app.post("/api/setup/complete")
+def setup_complete(_: dict = Depends(require_user)):
+    store.set("setup_done", True)
+    log.info("The setup wizard was completed")
+    return {"ok": True}
+
+
+@app.post("/api/setup/restart")
+def setup_restart(_: dict = Depends(require_user)):
+    store.set("setup_done", False)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Notification connections
+# ---------------------------------------------------------------------------
+class NotificationBody(BaseModel):
+    id: int | None = None
+    name: str = Field(default="", max_length=64)
+    kind: str
+    enabled: bool = True
+    config: dict = Field(default_factory=dict)
+    min_severity: str = "warning"
+    rules: list[str] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    fixed_only: bool = False
+    cooldown: int = 5
+
+
+def _prepared_connection(body: NotificationBody, request: Request) -> dict:
+    """Validate a submitted connection and put back any unchanged secret."""
+    if body.kind not in notifications.KINDS:
+        raise _fail(request, 400, "error.unknown_channel_kind", kind=body.kind)
+    if body.min_severity not in ("info", "warning", "error"):
+        raise _fail(request, 400, "error.unknown_severity")
+    unknown = [r for r in body.rules if r not in BY_NAME]
+    if unknown:
+        raise _fail(request, 400, "error.no_such_rule", name=unknown[0])
+    unknown_categories = [c for c in body.categories if c not in CATEGORIES]
+    if unknown_categories:
+        raise _fail(request, 400, "error.unknown_category",
+                    name=unknown_categories[0])
+
+    stored = store.notification(body.id) if body.id else None
+    config = notifications.restore_secrets(
+        body.kind, body.config, (stored or {}).get("config") or {}, S.MASK)
+    try:
+        config = notifications.validate(body.kind, config)
+    except ValueError as e:
+        raise _fail_from_value_error(request, e) from e
+
+    return {**body.model_dump(), "config": config,
+            "cooldown": max(0, min(1440, body.cooldown))}
+
+
+@app.get("/api/notifications/kinds")
+def notification_kinds(_: dict = Depends(require_user)):
+    """What can be configured, and which fields each one needs."""
+    return {"kinds": notifications.describe_kinds(),
+            "severities": ["info", "warning", "error"],
+            "categories": list(CATEGORIES),
+            "rules": [r.name for r in ALL]}
+
+
+@app.get("/api/notifications")
+def list_notifications(_: dict = Depends(require_user)):
+    return [notifications.redact(entry, S.MASK) for entry in store.notifications()]
+
+
+@app.post("/api/notifications")
+def save_notification(body: NotificationBody, request: Request,
+                      _: dict = Depends(require_user)):
+    prepared = _prepared_connection(body, request)
+    if not prepared["name"]:
+        prepared["name"] = body.kind.capitalize()
+    new_id = store.save_notification(prepared)
+    return {"ok": True, "id": new_id}
+
+
+@app.delete("/api/notifications/{notification_id}")
+def delete_notification(notification_id: int, request: Request,
+                        _: dict = Depends(require_user)):
+    if not store.notification(notification_id):
+        raise _fail(request, 404, "error.no_such_connection")
+    store.delete_notification(notification_id)
+    return {"ok": True}
+
+
+@app.post("/api/notifications/test")
+def test_notification(body: NotificationBody, request: Request,
+                      _: dict = Depends(require_user)):
+    """Send a test to a connection that may not be saved yet.
+
+    Testing before saving is the point: nobody should have to store a wrong
+    token to find out it is wrong.
+    """
+    prepared = _prepared_connection(body, request)
+    ok, detail = notifications.send_test(
+        prepared, language=language_for(request),
+        url=engine.config().get("public_url", ""))
     if not ok:
-        raise HTTPException(502, note)
-    return {"ok": True, "message": note}
+        raise HTTPException(502, detail)
+    return {"ok": True, "message": detail}
+
+
+@app.post("/api/notifications/telegram/chats")
+def telegram_chats(body: NotificationBody, request: Request,
+                   _: dict = Depends(require_user)):
+    """The chats a Telegram bot can currently reach.
+
+    The chat id is the awkward half of setting Telegram up: a bot cannot write
+    to anyone who has not written to it first, and the id is shown nowhere.
+    Reading the bot's pending updates turns that into a list to pick from.
+    """
+    if body.kind != "telegram":
+        raise _fail(request, 400, "error.unknown_channel_kind", kind=body.kind)
+    prepared = _prepared_connection(body, request)
+    channel = notifications.build(prepared)
+    try:
+        bot = channel.describe_bot()
+        chats = channel.discover_chats()
+    except notifications.ChannelError as e:
+        raise HTTPException(502, str(e)) from e
+    return {"ok": True, "bot": bot.get("username") or bot.get("first_name", ""),
+            "chats": chats}
 
 
 # ---------------------------------------------------------------------------

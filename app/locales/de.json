@@ -14,7 +14,8 @@
     "settings": "Einstellungen",
     "group_insight": "Überblick",
     "group_operations": "Betrieb",
-    "group_configuration": "Einrichtung"
+    "group_configuration": "Einrichtung",
+    "notifications": "Benachrichtigungen"
   },
   "page": {
     "overview": "Die Lage auf einen Blick",
@@ -24,7 +25,8 @@
     "rules": "Was geprüft und was behoben wird",
     "indexers": "Gemessene Leistung je Quelle",
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
-    "settings": "Takt, Pfade, Schwellen, Darstellung"
+    "settings": "Takt, Pfade, Schwellen, Darstellung",
+    "notifications": "Wohin die Funde gehen"
   },
   "action": {
     "check_fast": "Schnell prüfen",
@@ -97,7 +99,8 @@
     "filter_findings": "Filtern nach Titel oder Regel …",
     "all_rules": "alle Regeln",
     "only_problems": "nur Auffälligkeiten",
-    "only_fixed": "nur behobene"
+    "only_fixed": "nur behobene",
+    "optional": "optional"
   },
   "unit": {
     "seconds": "Sekunden",
@@ -301,7 +304,6 @@
     "saved": "Gespeichert",
     "password_changed": "Passwort geändert. Andere Sitzungen wurden beendet.",
     "compacted": "{removed} Einträge entfernt, {freed} MB frei",
-    "test_notification": "Testnachricht — die Anbindung steht.",
     "webhook_created": "Webhook angelegt",
     "webhook_updated": "Webhook aktualisiert",
     "webhook_adopted": "Webhook übernommen und umbenannt",
@@ -317,7 +319,10 @@
     "title_fixed": ", {count} behoben",
     "and_more": "… und {count} weitere",
     "truncated": "… gekürzt",
-    "open": "In Correctarr ansehen"
+    "open": "In Correctarr ansehen",
+    "test_title": "Correctarr-Test",
+    "test_body": "Das ist eine Testnachricht. Wenn du sie liest, steht die Verbindung.",
+    "title_dry_run": " · Testlauf"
   },
   "error": {
     "password_too_short": "Das Passwort braucht mindestens {min} Zeichen.",
@@ -350,9 +355,13 @@
     "api_key_missing": "Der API-Schlüssel fehlt",
     "no_services": "Es ist kein Zugang eingerichtet. Unter Zugänge mindestens Radarr oder Sonarr eintragen.",
     "already_running": "Ein Durchlauf läuft bereits",
-    "pushover_not_configured": "App- und Benutzerschlüssel fehlen",
     "generic": "Da ist etwas schiefgegangen",
-    "unknown_field_kind": "Intern: Eine Einstellung ist mit einer unbekannten Art angelegt ({value})."
+    "unknown_field_kind": "Intern: Eine Einstellung ist mit einer unbekannten Art angelegt ({value}).",
+    "unknown_channel_kind": "Unbekannte Art der Benachrichtigung: {kind}",
+    "unknown_severity": "Unbekannte Schwere.",
+    "unknown_category": "Diesen Bereich gibt es nicht: {name}",
+    "no_such_connection": "Diese Verbindung gibt es nicht",
+    "channel_field_missing": "„{field}“ wird gebraucht."
   },
   "reason": {
     "marked_failed": "als fehlgeschlagen gekennzeichnet",
@@ -611,38 +620,6 @@
       "label": "Abweichung melden ab",
       "help": "Um so viele Plätze darf ein Indexer falsch einsortiert sein, ohne dass es gemeldet wird. Mit 1 wären im Test fünf von sechs Indexern aufgefallen — reines Rauschen."
     },
-    "pushover_enabled": {
-      "label": "Pushover einschalten",
-      "help": ""
-    },
-    "pushover_app": {
-      "label": "App-Schlüssel",
-      "help": "Aus deiner Pushover-Anwendung."
-    },
-    "pushover_user": {
-      "label": "Benutzerschlüssel",
-      "help": "Steht auf deiner Pushover-Startseite."
-    },
-    "pushover_devices": {
-      "label": "Geräte",
-      "help": "Kommagetrennt. Leer heißt: an alle Geräte."
-    },
-    "pushover_sound": {
-      "label": "Klang",
-      "help": "Name eines Pushover-Klangs."
-    },
-    "pushover_min_severity": {
-      "label": "Ab welcher Schwere melden",
-      "help": "„Warnung und schlimmer“ überspringt bloße Hinweise."
-    },
-    "pushover_fixed_only": {
-      "label": "Nur behobene Funde melden",
-      "help": "An: reine Meldungen bleiben still, es kommt nur, was auch behoben wurde."
-    },
-    "pushover_cooldown": {
-      "label": "Schonfrist",
-      "help": "So lange bleibt es nach einer Nachricht still, auch wenn Neues auftaucht. Schützt vor Schwällen."
-    },
     "recheck_hours": {
       "label": "Denselben Fund erneut melden nach",
       "help": "Jeder Fund wird gemerkt. Ein Dauerbrenner meldet sich frühestens nach dieser Zeit erneut."
@@ -670,6 +647,226 @@
     "log_days": {
       "label": "Funde höchstens aufheben",
       "help": "Zusätzlich zur Anzahl. 0 schaltet die Altersgrenze ab."
+    }
+  },
+  "notifications_page": {
+    "title": "Benachrichtigungen",
+    "help": "Gemeldet wird am Ende eines Durchlaufs, nach Regel gruppiert, nie einzeln. Jede Verbindung entscheidet selbst, was sie hören will — eine Push-Nachricht nur bei Fehlern und ein vollständiges Protokoll in einen Chatkanal können nebeneinander stehen.",
+    "empty": "Noch keine Verbindung eingerichtet. Es wird nichts verschickt.",
+    "add": "Verbindung hinzufügen",
+    "pick_kind": "Welcher Dienst",
+    "not_saved": "noch nicht gespeichert",
+    "test_first": "Vor dem Speichern testen — ein falscher Schlüssel fällt jetzt leichter auf als in drei Wochen.",
+    "routing": "Was diese Verbindung hört",
+    "min_severity": "Ab welcher Schwere melden",
+    "fixed_only": "Nur, was wirklich verändert wurde",
+    "cooldown": "Nach einer Nachricht still bleiben für",
+    "cooldown_help": "Kurz aufeinanderfolgende Durchläufe schicken nicht zweimal. 0 schaltet es ab.",
+    "rules_filter": "Nur diese Regeln",
+    "rules_filter_help": "Leer lassen heißt: alle. So ist eine neue Regel automatisch dabei.",
+    "categories_filter": "Nur diese Bereiche",
+    "categories_filter_help": "Leer lassen heißt: alle.",
+    "all_rules": "alle Regeln",
+    "sent": "Testnachricht verschickt",
+    "confirm_remove": "Verbindung „{name}“ wirklich entfernen?",
+    "telegram_find_chats": "Chats suchen",
+    "telegram_searching": "sucht …",
+    "telegram_no_chats": "Der Bot hat keine offenen Nachrichten. Schreib ihm einmal in Telegram und versuch es dann erneut — er kann niemanden anschreiben, der ihm nicht zuerst geschrieben hat.",
+    "telegram_bot_is": "Bot: {name}",
+    "telegram_pick": "Chat auswählen"
+  },
+  "channels": {
+    "pushover": {
+      "name": "Pushover",
+      "help": "Push auf das Telefon. Auf pushover.net eine Anwendung anlegen; der App-Schlüssel steht dort, der Benutzerschlüssel auf deiner Startseite.",
+      "app_token": {
+        "label": "App-Schlüssel",
+        "help": "Aus der Anwendung, die du auf pushover.net angelegt hast."
+      },
+      "user_key": {
+        "label": "Benutzerschlüssel",
+        "help": "Steht auf deiner Pushover-Startseite."
+      },
+      "devices": {
+        "label": "Geräte",
+        "help": "Kommagetrennt. Leer heißt: an alle Geräte."
+      },
+      "sound": {
+        "label": "Klang",
+        "help": "Name eines Pushover-Klangs, etwa pianobar oder cosmic."
+      }
+    },
+    "telegram": {
+      "name": "Telegram",
+      "help": "In Telegram @BotFather anschreiben, einen Bot anlegen und dessen Token hier einfügen. Danach dem Bot einmal schreiben und auf „Chats suchen“ drücken — ein Bot kann niemanden anschreiben, der ihm nicht zuerst geschrieben hat.",
+      "bot_token": {
+        "label": "Bot-Token",
+        "help": "Der Token von @BotFather, in der Form 123456:ABC-DEF…"
+      },
+      "chat_id": {
+        "label": "Chat",
+        "help": "Wohin geschickt wird. Nimm „Chats suchen“, statt die Kennung von Hand zu ermitteln."
+      },
+      "thread_id": {
+        "label": "Thema",
+        "help": "Nur nötig für ein bestimmtes Thema in einer Gruppe. Sonst leer lassen."
+      },
+      "silent": {
+        "label": "Stumm senden",
+        "help": "Die Nachricht kommt ohne Ton und ohne Vibration an."
+      }
+    },
+    "discord": {
+      "name": "Discord",
+      "help": "In Discord: Servereinstellungen → Integrationen → Webhooks → Neuer Webhook. Die Webhook-Adresse kopieren und hier einfügen.",
+      "webhook_url": {
+        "label": "Webhook-Adresse",
+        "help": "Beginnt mit https://discord.com/api/webhooks/"
+      },
+      "username": {
+        "label": "Angezeigt als",
+        "help": "Unter welchem Namen die Nachricht erscheint. Leer nimmt den Namen des Webhooks."
+      },
+      "avatar_url": {
+        "label": "Bild",
+        "help": "Adresse eines Bildes, das statt des Webhook-Bildes erscheint."
+      },
+      "mention": {
+        "label": "Bei Fehlern erwähnen",
+        "help": "Wird nur bei Fehlern benutzt, nie bei Leiserem. In der Rohform angeben, etwa <@&1234> für eine Rolle."
+      }
+    },
+    "ntfy": {
+      "name": "ntfy",
+      "help": "Geht mit ntfy.sh oder mit einem eigenen Server. Wähle einen Themennamen, den niemand erraten würde — auf einem öffentlichen Server kann jeder mitlesen, der ihn kennt.",
+      "server": {
+        "label": "Server",
+        "help": "https://ntfy.sh oder die Adresse deiner eigenen Instanz."
+      },
+      "topic": {
+        "label": "Thema",
+        "help": "Auf einem öffentlichen Server ist das das Einzige, was deine Nachrichten schützt. Mach es lang und zufällig."
+      },
+      "token": {
+        "label": "Zugriffstoken",
+        "help": "Nur für ein geschütztes Thema. Beginnt mit tk_"
+      },
+      "username": {
+        "label": "Benutzername",
+        "help": "Nur, wenn dein Server Benutzername und Passwort statt eines Tokens verlangt."
+      },
+      "password": {
+        "label": "Passwort",
+        "help": "Gehört zum Benutzernamen darüber."
+      }
+    },
+    "gotify": {
+      "name": "Gotify",
+      "help": "Selbst betrieben. In Gotify: Apps → Anwendung anlegen, dann deren Token kopieren.",
+      "server": {
+        "label": "Server",
+        "help": "Die Adresse deiner Gotify-Instanz."
+      },
+      "token": {
+        "label": "Anwendungstoken",
+        "help": "Aus der Anwendung, die du in Gotify angelegt hast — nicht dein Client-Token."
+      }
+    },
+    "webhook": {
+      "name": "Webhook",
+      "help": "Für alles andere: Home Assistant, n8n, Node-RED, ein eigenes Skript. Der ganze Bericht geht als JSON hinaus, strukturiert statt vorformatiert, damit die Gegenseite damit machen kann, was sie will.",
+      "url": {
+        "label": "Adresse",
+        "help": "Wohin die Anfrage geht."
+      },
+      "method": {
+        "label": "Methode",
+        "help": "POST, sofern die Gegenseite nicht auf PUT besteht."
+      },
+      "secret_header": {
+        "label": "Kopfzeilenname",
+        "help": "Optional. Eine Kopfzeile, die mitgeschickt wird, damit die Gegenseite erkennt, dass wirklich du es bist — etwa X-Webhook-Token."
+      },
+      "secret_value": {
+        "label": "Kopfzeilenwert",
+        "help": "Der Wert für diese Kopfzeile."
+      },
+      "include_findings": {
+        "label": "Jeden Fund mitschicken",
+        "help": "An: die vollständige Liste geht mit. Aus: nur die Anzahl je Regel."
+      }
+    }
+  },
+  "wizard": {
+    "open": "Einrichtung",
+    "next": "Weiter",
+    "back": "Zurück",
+    "skip": "Überspringen",
+    "finish": "Fertig",
+    "welcome": {
+      "short": "Start",
+      "title": "Willkommen bei Correctarr",
+      "lead": "Fünf kurze Schritte, dann läuft es. An deiner Bibliothek wird nichts verändert, bevor du es sagst.",
+      "body": "Correctarr behält Radarr, Sonarr, SABnzbd und Prowlarr im Auge — und zwar auf die Probleme, die sie zwar bemerken, aber nie von selbst auflösen: ein Download, der dem falschen Film zugeordnet wurde, ein Release, das gegen eine später geänderte Profilregel verstößt, eine fertige Datei, die niemand einem Titel zuordnen konnte, liegen gebliebener Müll im Download-Ordner.",
+      "what": "Worauf es achtet",
+      "category_queue": "Was gerade hereinkommt: falsches Jahr, falscher Titel, Releases die nach den heutigen Regeln gesperrt wären, solche die stehen geblieben sind.",
+      "category_import": "Was angekommen ist, aber nicht hereinkommt: hängendes Entpacken, nichts zum Zuordnen, liegen gebliebene Reste.",
+      "category_library": "Was schon auf der Platte liegt: unlesbare Dateien, fehlende Tonspuren, Dateien die heute nicht mehr angenommen würden.",
+      "category_downloader": "Das Download-Programm selbst: Warnungen, eine angehaltene Warteschlange, Einträge deren Dateien längst importiert sind.",
+      "category_indexers": "Welche deiner Indexer wirklich liefern — gemessen statt geraten.",
+      "safety": "Jede Regel lässt sich einzeln zwischen <b>melden</b> und <b>beheben</b> umschalten, und ein einziger Testlauf-Schalter legt alle Veränderungen auf einmal still. Der Grundsatz durchgehend: im Zweifel nichts tun."
+    },
+    "services": {
+      "short": "Dienste",
+      "title": "Deine Dienste verbinden",
+      "lead": "Radarr oder Sonarr wird gebraucht — alles andere ist freiwillig und bringt weitere Prüfungen.",
+      "requirement": "Mindestens Radarr oder Sonarr muss verbunden sein.",
+      "required": "nötig",
+      "optional": "freiwillig",
+      "radarr": "Deine Filmbibliothek. Der API-Schlüssel steht in Radarr unter Settings → General.",
+      "sonarr": "Deine Serienbibliothek. Der API-Schlüssel steht in Sonarr unter Settings → General.",
+      "sabnzbd": "Ohne das Download-Programm wird nie etwas als Müll eingestuft und nichts gelöscht — nur es weiß, ob ein Ordner noch in Benutzung ist.",
+      "prowlarr": "Wird nur für die Indexer-Bewertung gebraucht. Alles andere geht auch ohne."
+    },
+    "paths": {
+      "short": "Pfade",
+      "title": "Wo die Dateien liegen",
+      "lead": "Pfade aus Sicht dieses Containers, nicht aus Sicht des Hosts.",
+      "warning": "Hier geht bei den meisten Einrichtungen etwas schief. Die Pfade müssen dieselben sein, die auch Radarr und Sonarr sehen — binde die Download-Ordner genau so ein, wie du sie dort eingebunden hast, sonst schweigen die Dateiregeln, obwohl es reichlich zu finden gäbe.",
+      "check": "Speichern und prüfen"
+    },
+    "address": {
+      "short": "Adresse",
+      "title": "Wie Radarr dich erreicht",
+      "lead": "Nötig für den Webhook, der aus bis zu einer Minute Verzögerung eine Reaktion in Sekunden macht.",
+      "why": "Damit melden Radarr und Sonarr sofort, wenn sie etwas greifen oder Handarbeit verlangen — ein falscher Download lässt sich dann stoppen, bevor er fertig ist. Ohne die Adresse funktioniert alles weiter, nur eben im Takt.",
+      "save": "Speichern und Webhooks einrichten",
+      "done": "Gespeichert. Webhook bei {count} Dienst(en) eingerichtet."
+    },
+    "notifications": {
+      "short": "Melden",
+      "title": "Bescheid bekommen",
+      "lead": "Freiwillig. Das lässt sich jederzeit nachholen.",
+      "body": "Gemeldet wird am Ende eines Durchlaufs, nach Regel gruppiert, nie einzeln. Jede Verbindung entscheidet selbst, was sie hören will — eine Push-Nachricht nur bei Fehlern und ein vollständiges Protokoll in einen Chatkanal können nebeneinander stehen.",
+      "none": "Es ist noch nichts eingerichtet, es wird also nichts verschickt. Festgehalten und in der Oberfläche sichtbar ist trotzdem alles.",
+      "configured": "{count} Verbindung(en) eingerichtet.",
+      "go": "Jetzt eine einrichten"
+    },
+    "dry_run": {
+      "short": "Probe",
+      "title": "Erst einmal ohne Veränderung",
+      "lead": "Nachdrücklich empfohlen, bevor du es zum ersten Mal eingreifen lässt.",
+      "body": "Mit eingeschaltetem Testlauf laufen alle Regeln und melden, was sie gefunden haben — angefasst wird nichts. Sieh die Funde durch, entscheide ob du ihnen zustimmst, und schalte ihn dann ab. Jede eingreifende Regel ist so entstanden — und jedes Mal kamen dabei Fehler heraus.",
+      "run": "Jetzt vollständig prüfen"
+    },
+    "done": {
+      "short": "Fertig",
+      "title": "Das war's",
+      "lead": "Correctarr läuft.",
+      "services": "{count} Dienst(e) erreichbar",
+      "rules": "26 Regeln aktiv, jede einzeln schaltbar unter Regeln",
+      "schedule": "Warteschlange jede Minute, Bibliothek alle 90 Minuten",
+      "next": "Sieh dir unter <b>Regeln</b> an, was jede einzelne tut, und entscheide, welche eingreifen dürfen. Wenn du den Testlauf angelassen hast: nicht vergessen, ihn abzuschalten, sobald du zufrieden bist."
     }
   }
 }

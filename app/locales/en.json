@@ -14,7 +14,8 @@
     "settings": "Settings",
     "group_insight": "Insight",
     "group_operations": "Operations",
-    "group_configuration": "Configuration"
+    "group_configuration": "Configuration",
+    "notifications": "Notifications"
   },
   "page": {
     "overview": "How things stand",
@@ -24,7 +25,8 @@
     "rules": "What gets checked and what gets fixed",
     "indexers": "Measured performance per source",
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
-    "settings": "Schedule, paths, thresholds, appearance"
+    "settings": "Schedule, paths, thresholds, appearance",
+    "notifications": "Where findings get sent"
   },
   "action": {
     "check_fast": "Quick check",
@@ -97,7 +99,8 @@
     "filter_findings": "Filter by title or rule…",
     "all_rules": "all rules",
     "only_problems": "only problems",
-    "only_fixed": "only fixed"
+    "only_fixed": "only fixed",
+    "optional": "optional"
   },
   "unit": {
     "seconds": "seconds",
@@ -301,7 +304,6 @@
     "saved": "Saved",
     "password_changed": "Password changed. Other sessions have been ended.",
     "compacted": "{removed} entries removed, {freed} MB freed",
-    "test_notification": "Test notification — the connection works.",
     "webhook_created": "Webhook created",
     "webhook_updated": "Webhook updated",
     "webhook_adopted": "Webhook adopted and renamed",
@@ -317,7 +319,10 @@
     "title_fixed": ", {count} fixed",
     "and_more": "… and {count} more",
     "truncated": "… truncated",
-    "open": "Open in Correctarr"
+    "open": "Open in Correctarr",
+    "test_title": "Correctarr test",
+    "test_body": "This is a test message. If you are reading it, the connection works.",
+    "title_dry_run": " · dry run"
   },
   "error": {
     "password_too_short": "The password needs at least {min} characters.",
@@ -350,9 +355,13 @@
     "api_key_missing": "The API key is missing",
     "no_services": "No service is configured. Add at least Radarr or Sonarr under Services.",
     "already_running": "A run is already in progress",
-    "pushover_not_configured": "The application and user keys are missing",
     "generic": "Something went wrong",
-    "unknown_field_kind": "Internal: a setting is declared with an unknown kind ({value})."
+    "unknown_field_kind": "Internal: a setting is declared with an unknown kind ({value}).",
+    "unknown_channel_kind": "Unknown notification type: {kind}",
+    "unknown_severity": "Unknown severity.",
+    "unknown_category": "No such category: {name}",
+    "no_such_connection": "No such connection",
+    "channel_field_missing": "“{field}” is required."
   },
   "reason": {
     "marked_failed": "marked as failed",
@@ -611,38 +620,6 @@
       "label": "Report deviations from",
       "help": "How many places an indexer may be out of position without it being reported. With 1, five of six indexers came up in testing — pure noise."
     },
-    "pushover_enabled": {
-      "label": "Enable Pushover",
-      "help": ""
-    },
-    "pushover_app": {
-      "label": "Application key",
-      "help": "From your Pushover application."
-    },
-    "pushover_user": {
-      "label": "User key",
-      "help": "Shown on your Pushover home page."
-    },
-    "pushover_devices": {
-      "label": "Devices",
-      "help": "Comma separated. Empty means every device."
-    },
-    "pushover_sound": {
-      "label": "Sound",
-      "help": "The name of a Pushover sound."
-    },
-    "pushover_min_severity": {
-      "label": "Report from this severity",
-      "help": "\"Warning and above\" skips plain informational findings."
-    },
-    "pushover_fixed_only": {
-      "label": "Report fixed findings only",
-      "help": "On: plain reports stay silent, only what was actually changed comes through."
-    },
-    "pushover_cooldown": {
-      "label": "Cooldown",
-      "help": "How long it stays quiet after a message, even when something new turns up. Protects against floods."
-    },
     "recheck_hours": {
       "label": "Report the same finding again after",
       "help": "Every finding is remembered. A long-running problem reports itself again no sooner than this."
@@ -670,6 +647,226 @@
     "log_days": {
       "label": "Keep findings at most",
       "help": "In addition to the count. 0 switches the age limit off."
+    }
+  },
+  "notifications_page": {
+    "title": "Notifications",
+    "help": "Findings are sent at the end of a run, grouped by rule, never one by one. Each connection decides for itself what it wants to hear about — an error-only push to a phone and a full log into a chat channel can sit side by side.",
+    "empty": "No connection configured yet. Nothing is sent.",
+    "add": "Add a connection",
+    "pick_kind": "Which service",
+    "not_saved": "not saved yet",
+    "test_first": "Test it before saving — a wrong token is easier to spot now than in three weeks.",
+    "routing": "What this connection hears about",
+    "min_severity": "Send from this severity",
+    "fixed_only": "Only what was actually changed",
+    "cooldown": "Stay quiet after a message for",
+    "cooldown_help": "Runs close together do not send twice. 0 switches it off.",
+    "rules_filter": "Only these rules",
+    "rules_filter_help": "Leave empty for all of them. A new rule is included automatically that way.",
+    "categories_filter": "Only these categories",
+    "categories_filter_help": "Leave empty for all of them.",
+    "all_rules": "all rules",
+    "sent": "Test sent",
+    "confirm_remove": "Really remove the connection “{name}”?",
+    "telegram_find_chats": "Find chats",
+    "telegram_searching": "looking…",
+    "telegram_no_chats": "The bot has no pending messages. Write to it once in Telegram, then try again — it cannot message anyone who has not written to it first.",
+    "telegram_bot_is": "Bot: {name}",
+    "telegram_pick": "Pick a chat"
+  },
+  "channels": {
+    "pushover": {
+      "name": "Pushover",
+      "help": "Push to a phone. Create an application at pushover.net; the application key is shown there, the user key on your home page.",
+      "app_token": {
+        "label": "Application key",
+        "help": "From the application you created at pushover.net."
+      },
+      "user_key": {
+        "label": "User key",
+        "help": "Shown on your Pushover home page."
+      },
+      "devices": {
+        "label": "Devices",
+        "help": "Comma separated. Empty means every device."
+      },
+      "sound": {
+        "label": "Sound",
+        "help": "The name of a Pushover sound, for example pianobar or cosmic."
+      }
+    },
+    "telegram": {
+      "name": "Telegram",
+      "help": "Talk to @BotFather in Telegram, create a bot and paste its token here. Then write to your bot once and press “Find chats” — a bot cannot message anyone who has not written to it first.",
+      "bot_token": {
+        "label": "Bot token",
+        "help": "The token @BotFather gave you, in the form 123456:ABC-DEF…"
+      },
+      "chat_id": {
+        "label": "Chat",
+        "help": "The chat to send to. Use “Find chats” rather than looking it up by hand."
+      },
+      "thread_id": {
+        "label": "Topic",
+        "help": "Only needed for a specific topic inside a group. Leave empty otherwise."
+      },
+      "silent": {
+        "label": "Send silently",
+        "help": "The message arrives without a sound or vibration."
+      }
+    },
+    "discord": {
+      "name": "Discord",
+      "help": "In Discord: Server settings → Integrations → Webhooks → New webhook. Copy the webhook address and paste it here.",
+      "webhook_url": {
+        "label": "Webhook address",
+        "help": "Starts with https://discord.com/api/webhooks/"
+      },
+      "username": {
+        "label": "Shown as",
+        "help": "The name the message appears under. Empty uses whatever the webhook is called."
+      },
+      "avatar_url": {
+        "label": "Picture",
+        "help": "Address of an image to use instead of the webhook's own."
+      },
+      "mention": {
+        "label": "Mention on errors",
+        "help": "Only used for errors, never for anything quieter. Use the raw form, for example <@&1234> for a role."
+      }
+    },
+    "ntfy": {
+      "name": "ntfy",
+      "help": "Works with ntfy.sh or your own server. Pick a topic name nobody else would guess — on a public server, anyone who knows it can read your notifications.",
+      "server": {
+        "label": "Server",
+        "help": "https://ntfy.sh, or the address of your own instance."
+      },
+      "topic": {
+        "label": "Topic",
+        "help": "On a public server this is the only thing protecting your messages. Make it long and random."
+      },
+      "token": {
+        "label": "Access token",
+        "help": "Only for a protected topic. Starts with tk_"
+      },
+      "username": {
+        "label": "User name",
+        "help": "Only if your server uses a user name and password instead of a token."
+      },
+      "password": {
+        "label": "Password",
+        "help": "Goes with the user name above."
+      }
+    },
+    "gotify": {
+      "name": "Gotify",
+      "help": "Self-hosted. In Gotify: Apps → Create application, then copy that application's token.",
+      "server": {
+        "label": "Server",
+        "help": "The address of your Gotify instance."
+      },
+      "token": {
+        "label": "Application token",
+        "help": "From the application you created in Gotify, not your client token."
+      }
+    },
+    "webhook": {
+      "name": "Webhook",
+      "help": "For anything else: Home Assistant, n8n, Node-RED, a script of your own. The whole report goes out as JSON, structured rather than pre-formatted, so the receiving end can do what it likes with it.",
+      "url": {
+        "label": "Address",
+        "help": "Where to send the request."
+      },
+      "method": {
+        "label": "Method",
+        "help": "POST unless the other end insists on PUT."
+      },
+      "secret_header": {
+        "label": "Header name",
+        "help": "Optional. A header to send along so the receiving end can tell it is really you, for example X-Webhook-Token."
+      },
+      "secret_value": {
+        "label": "Header value",
+        "help": "The value for that header."
+      },
+      "include_findings": {
+        "label": "Include every finding",
+        "help": "On: the full list travels with the report. Off: only the counts per rule."
+      }
+    }
+  },
+  "wizard": {
+    "open": "Setup",
+    "next": "Next",
+    "back": "Back",
+    "skip": "Skip",
+    "finish": "Done",
+    "welcome": {
+      "short": "Start",
+      "title": "Welcome to Correctarr",
+      "lead": "Five short steps and it is running. Nothing is changed on your library until you say so.",
+      "body": "Correctarr watches Radarr, Sonarr, SABnzbd and Prowlarr for the problems they notice but never resolve on their own — a download matched to the wrong film, a release that breaks a profile rule you changed afterwards, a finished file nobody could match to a title, debris left behind in the download folder.",
+      "what": "What it keeps an eye on",
+      "category_queue": "Downloads on their way in: wrong year, wrong title, releases that would be blocked under today's rules, ones that stopped moving.",
+      "category_import": "Files that arrived but did not get in: stuck unpacking, nothing to match them to, leftover debris.",
+      "category_library": "What is already on disk: unreadable files, missing audio languages, files that would not be accepted today.",
+      "category_downloader": "The download client itself: warnings, a paused queue, entries whose files are long since imported.",
+      "category_indexers": "Which of your indexers actually deliver, measured rather than guessed.",
+      "safety": "Every rule can be switched between <b>report</b> and <b>fix</b> on its own, and a single dry run switch stops every change at once. The guiding principle throughout: when in doubt, do nothing."
+    },
+    "services": {
+      "short": "Services",
+      "title": "Connect your services",
+      "lead": "Radarr or Sonarr is required — everything else is optional and adds more checks.",
+      "requirement": "At least one of Radarr or Sonarr has to be connected.",
+      "required": "required",
+      "optional": "optional",
+      "radarr": "Your film library. The API key is in Radarr under Settings → General.",
+      "sonarr": "Your series library. The API key is in Sonarr under Settings → General.",
+      "sabnzbd": "Without it, nothing is ever classified as debris and nothing is deleted — the download client is the only thing that knows whether a folder is still in use.",
+      "prowlarr": "Only needed for the indexer ratings. Everything else works without it."
+    },
+    "paths": {
+      "short": "Paths",
+      "title": "Where the files are",
+      "lead": "Paths as this container sees them, not as the host sees them.",
+      "warning": "This is where most setups go wrong. The paths here have to be the same ones Radarr and Sonarr see — mount the download folders exactly the way you mounted them there, or the file rules will stay quiet while there is plenty to find.",
+      "check": "Save and check"
+    },
+    "address": {
+      "short": "Address",
+      "title": "How Radarr reaches you",
+      "lead": "Needed for the webhook that turns a delay of up to a minute into a reaction within seconds.",
+      "why": "With this set, Radarr and Sonarr report the moment they grab something or need manual work, and a wrong download can be stopped before it finishes. Without it, everything still works — just on the schedule.",
+      "save": "Save and set up the webhooks",
+      "done": "Saved. Webhooks set up on {count} service(s)."
+    },
+    "notifications": {
+      "short": "Alerts",
+      "title": "Getting told about it",
+      "lead": "Optional. You can always set this up later.",
+      "body": "Findings are sent at the end of a run, grouped by rule, never one by one. Each connection decides for itself what it wants to hear about, so an error-only push to your phone and a full log into a chat channel can sit side by side.",
+      "none": "Nothing is configured yet, so nothing is sent. Everything is still recorded and visible in the interface.",
+      "configured": "{count} connection(s) configured.",
+      "go": "Set one up now"
+    },
+    "dry_run": {
+      "short": "Trial",
+      "title": "Try it without changing anything",
+      "lead": "Strongly recommended before you let it act for the first time.",
+      "body": "With the dry run on, every rule runs and reports what it found, but nothing is touched. Look through the findings, decide whether you agree with them, then turn it off. Every rule that acts was built this way first — and every single time it turned up a mistake.",
+      "run": "Run a full check now"
+    },
+    "done": {
+      "short": "Done",
+      "title": "That is it",
+      "lead": "Correctarr is running.",
+      "services": "{count} service(s) reachable",
+      "rules": "26 rules active, each switchable on its own under Rules",
+      "schedule": "Queue checked every minute, library every 90 minutes",
+      "next": "Have a look at <b>Rules</b> to see what each one does and decide which of them may act. If you left the dry run on, remember to turn it off once you are happy."
     }
   }
 }

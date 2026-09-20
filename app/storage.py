@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _now() -> str:
@@ -113,8 +113,29 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires);
 """
 
+# Version 2: notification connections. Until here there was one hard wired
+# Pushover configuration living in the settings table; now any number of
+# connections of any kind can be configured, each with its own routing.
+_M2 = """
+CREATE TABLE IF NOT EXISTS notifications (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    config       TEXT NOT NULL DEFAULT '{}',
+    min_severity TEXT NOT NULL DEFAULT 'warning',
+    rules        TEXT NOT NULL DEFAULT '[]',
+    categories   TEXT NOT NULL DEFAULT '[]',
+    fixed_only   INTEGER NOT NULL DEFAULT 0,
+    cooldown     INTEGER NOT NULL DEFAULT 5,
+    created      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_enabled ON notifications(enabled);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _M1),
+    (2, _M2),
 ]
 
 # Column mapping used when adopting a store written by a pre-release build.
@@ -155,8 +176,10 @@ class Store:
         # nothing to migrate. If the schema step once succeeded and the copy
         # then failed, the version has already moved on, so the next start
         # would skip the migration — and with it the adoption — leaving that
-        # data stranded for good.
+        # data stranded for good. The same reasoning applies to the settings
+        # that became a notification connection.
         self._adopt_legacy()
+        self._adopt_pushover_settings()
 
     # -- connection ------------------------------------------------------------
     @contextmanager
@@ -249,6 +272,115 @@ class Store:
                 log.info("  %s → %s: %d rows", old_table, new_table, len(rows))
                 c.execute(f"DROP TABLE {old_table}")
             c.commit()
+
+    def _adopt_pushover_settings(self) -> None:
+        """Turn the old single Pushover configuration into a connection.
+
+        Up to version 1 there was exactly one notification target, configured
+        through four settings. Anyone who had it working should not have to set
+        it up again, and should certainly not discover months later that their
+        alerts stopped.
+        """
+        with _lock, self._conn() as c:
+            already = c.execute(
+                "SELECT COUNT(*) c FROM notifications WHERE kind='pushover'"
+            ).fetchone()["c"]
+            if already:
+                return
+            rows = {r["key"]: r["value"] for r in c.execute(
+                "SELECT key, value FROM settings WHERE key LIKE 'pushover_%'"
+            ).fetchall()}
+        if not rows:
+            return
+
+        def read(key: str, fallback: Any = "") -> Any:
+            try:
+                return json.loads(rows[key])
+            except (KeyError, json.JSONDecodeError):
+                return fallback
+
+        app_token, user_key = read("pushover_app"), read("pushover_user")
+        if not (app_token and user_key):
+            return
+
+        self.save_notification({
+            "name": "Pushover",
+            "kind": "pushover",
+            "enabled": bool(read("pushover_enabled", False)),
+            "config": {"app_token": app_token, "user_key": user_key,
+                       "devices": read("pushover_devices"),
+                       "sound": read("pushover_sound", "pianobar") or "pianobar"},
+            "min_severity": read("pushover_min_severity", "warning") or "warning",
+            "fixed_only": bool(read("pushover_fixed_only", False)),
+            "cooldown": int(read("pushover_cooldown", 5) or 5),
+        })
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM settings WHERE key LIKE 'pushover_%'")
+        log.info("The Pushover settings became a notification connection")
+
+    # -- notification connections ----------------------------------------------
+    @staticmethod
+    def _notification_row(row: sqlite3.Row) -> dict:
+        def decode(value: str, fallback: Any) -> Any:
+            try:
+                return json.loads(value)
+            except (TypeError, json.JSONDecodeError):
+                return fallback
+
+        return {
+            "id": row["id"], "name": row["name"], "kind": row["kind"],
+            "enabled": bool(row["enabled"]),
+            "config": decode(row["config"], {}),
+            "min_severity": row["min_severity"],
+            "rules": decode(row["rules"], []),
+            "categories": decode(row["categories"], []),
+            "fixed_only": bool(row["fixed_only"]),
+            "cooldown": int(row["cooldown"]),
+            "created": row["created"],
+        }
+
+    def notifications(self, enabled_only: bool = False) -> list[dict]:
+        sql = "SELECT * FROM notifications"
+        if enabled_only:
+            sql += " WHERE enabled=1"
+        sql += " ORDER BY id"
+        with _lock, self._conn() as c:
+            return [self._notification_row(r) for r in c.execute(sql).fetchall()]
+
+    def notification(self, notification_id: int) -> dict | None:
+        with _lock, self._conn() as c:
+            row = c.execute("SELECT * FROM notifications WHERE id=?",
+                            (notification_id,)).fetchone()
+        return self._notification_row(row) if row else None
+
+    def save_notification(self, entry: dict) -> int:
+        fields = (
+            str(entry.get("name", "")).strip() or entry.get("kind", "notification"),
+            entry.get("kind", "webhook"),
+            1 if entry.get("enabled", True) else 0,
+            json.dumps(entry.get("config") or {}, ensure_ascii=False),
+            entry.get("min_severity") or "warning",
+            json.dumps(list(entry.get("rules") or []), ensure_ascii=False),
+            json.dumps(list(entry.get("categories") or []), ensure_ascii=False),
+            1 if entry.get("fixed_only") else 0,
+            int(entry.get("cooldown", 5) or 0),
+        )
+        with _lock, self._conn() as c:
+            if entry.get("id"):
+                c.execute(
+                    "UPDATE notifications SET name=?,kind=?,enabled=?,config=?,"
+                    "min_severity=?,rules=?,categories=?,fixed_only=?,cooldown=? "
+                    "WHERE id=?", (*fields, entry["id"]))
+                return int(entry["id"])
+            cursor = c.execute(
+                "INSERT INTO notifications(name,kind,enabled,config,min_severity,"
+                "rules,categories,fixed_only,cooldown,created) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)", (*fields, _now()))
+            return int(cursor.lastrowid)
+
+    def delete_notification(self, notification_id: int) -> None:
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM notifications WHERE id=?", (notification_id,))
 
     # -- settings --------------------------------------------------------------
     def get(self, key: str, default: Any = None) -> Any:

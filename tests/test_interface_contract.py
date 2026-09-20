@@ -25,7 +25,7 @@ ENGLISH = set(i18n.bundle("en"))
 
 # The eight views the sidebar can reach.
 VIEWS = ("overview", "fixed", "findings", "queue", "rules", "indexers",
-         "services", "settings")
+         "services", "notifications", "settings")
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +58,14 @@ def _expected_runtime_keys() -> set[str]:
                 keys.add(f"choice.{choice}")
     for theme in S.THEMES:
         keys.add(f"theme.{theme}")
+    # Every notification channel and every field it declares.
+    from app.notifications import KINDS
+    for kind, channel in KINDS.items():
+        keys.add(f"channels.{kind}.name")
+        keys.add(f"channels.{kind}.help")
+        for channel_field in channel.FIELDS:
+            keys.add(f"channels.{kind}.{channel_field.key}.label")
+            keys.add(f"channels.{kind}.{channel_field.key}.help")
     for trigger in ("schedule", "manual"):
         keys.add(f"run.trigger_{trigger}")
     for severity in ("error", "warning", "info"):
@@ -291,11 +299,14 @@ def test_every_id_the_script_uses_exists_in_the_page():
     """A renamed id turns into a silent null dereference at runtime."""
     html = (APP / "templates" / "index.html").read_text(encoding="utf-8")
     present = set(re.findall(r'id="([a-zA-Z0-9_-]+)"', html))
-    # Ids the script creates itself rather than finding.
-    created = {"loading", "test-notify", "change-password", "compact",
+    # Ids the script creates itself rather than finding. Everything the setup
+    # wizard renders is prefixed "w-", so it is covered by the prefix rule
+    # below rather than by an ever-growing list.
+    created = {"loading", "change-password", "compact",
                "password-form", "pw-current", "pw-new", "pw-repeat"}
     used = set(re.findall(r'\$\("#([a-zA-Z0-9_-]+)"\)', JS))
-    missing = sorted(used - present - created)
+    missing = sorted(i for i in used - present - created
+                     if not i.startswith("w-"))
     assert not missing, f"app.js looks for ids that are not in the page: {missing}"
 
 

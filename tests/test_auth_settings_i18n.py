@@ -154,16 +154,15 @@ def test_an_unknown_key_is_rejected():
 
 
 def test_secrets_are_masked():
-    values = {"pushover_app": "really-secret", "pushover_user": "", "fast_seconds": 60}
-    masked = S.mask(values)
-    assert masked["pushover_app"] == S.MASK
-    assert masked["pushover_user"] == ""       # empty stays empty
-    assert masked["fast_seconds"] == 60
+    """There are no secrets in the settings any more — they live on the
+    notification connections. The machinery stays because a future setting
+    might need it, so it is still tested."""
+    assert frozenset() == S.SECRETS, (
+        "a secret setting was added; check it is masked on the way out")
+    assert S.mask({"fast_seconds": 60}) == {"fast_seconds": 60}
 
 
-def test_the_mask_coming_back_keeps_the_stored_value():
-    assert S.unmask("pushover_app", S.MASK, "old") == "old"
-    assert S.unmask("pushover_app", "new", "old") == "new"
+def test_the_mask_coming_back_is_only_honoured_for_secrets():
     assert S.unmask("fast_seconds", S.MASK, 60) == S.MASK
 
 

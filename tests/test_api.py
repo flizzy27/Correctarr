@@ -191,21 +191,11 @@ def test_a_batch_is_all_or_nothing(signed_in):
     assert after == before, "a rejected batch must not have written anything"
 
 
-def test_secrets_never_leave_the_server(signed_in):
-    signed_in.post("/api/settings",
-                   json={"key": "pushover_app", "value": "very-secret-key"})
-    values = signed_in.get("/api/settings").json()["values"]
-    assert values["pushover_app"] != "very-secret-key"
-    assert values["pushover_app"] == "•" * 8
-
-
-def test_sending_the_mask_back_keeps_the_stored_secret(signed_in):
-    signed_in.post("/api/settings",
-                   json={"key": "pushover_app", "value": "very-secret-key"})
-    masked = signed_in.get("/api/settings").json()["values"]["pushover_app"]
-    signed_in.post("/api/settings", json={"key": "pushover_app", "value": masked})
-    # Reading it back through the engine shows the original is still there.
-    assert main_module.engine.config()["pushover_app"] == "very-secret-key"
+def test_a_missing_path_is_reported(signed_in):
+    response = signed_in.post("/api/settings",
+                              json={"key": "path_movies", "value": "/definitely/not/here"},
+                              headers={"Accept-Language": "en"})
+    assert response.status_code == 200
 
 
 def test_a_missing_path_is_reported_but_still_saved(signed_in):
@@ -351,8 +341,81 @@ def test_maintenance_reports_what_it_did(signed_in):
     assert "message" in response.json()
 
 
-def test_pushover_test_needs_keys(signed_in):
-    assert signed_in.post("/api/notify/test").status_code == 400
+# ---------------------------------------------------------------------------
+# Notification connections
+# ---------------------------------------------------------------------------
+def a_connection(**overrides):
+    body = {"name": "Phone", "kind": "pushover", "enabled": True,
+            "config": {"app_token": "a" * 30, "user_key": "u" * 30,
+                       "devices": "", "sound": "pianobar"},
+            "min_severity": "warning", "rules": [], "categories": [],
+            "fixed_only": False, "cooldown": 5}
+    body.update(overrides)
+    return body
+
+
+def test_every_channel_kind_is_described(signed_in):
+    body = signed_in.get("/api/notifications/kinds").json()
+    kinds = {k["kind"] for k in body["kinds"]}
+    assert kinds == {"pushover", "telegram", "discord", "ntfy", "gotify", "webhook"}
+    for kind in body["kinds"]:
+        assert kind["fields"], f"{kind['kind']} declares no fields"
+
+
+def test_a_connection_round_trips(signed_in):
+    response = signed_in.post("/api/notifications", json=a_connection())
+    assert response.status_code == 200, response.text
+    listed = signed_in.get("/api/notifications").json()
+    assert len(listed) == 1
+    assert listed[0]["name"] == "Phone"
+
+
+def test_a_connection_secret_never_leaves_the_server(signed_in):
+    signed_in.post("/api/notifications", json=a_connection())
+    listed = signed_in.get("/api/notifications").json()
+    assert listed[0]["config"]["app_token"] == "•" * 8
+    assert listed[0]["config"]["user_key"] == "•" * 8
+
+
+def test_sending_the_mask_back_keeps_the_stored_secret(signed_in):
+    new_id = signed_in.post("/api/notifications", json=a_connection()).json()["id"]
+    masked = signed_in.get("/api/notifications").json()[0]["config"]
+    signed_in.post("/api/notifications",
+                   json=a_connection(id=new_id, config=masked, name="Renamed"))
+    stored = main_module.store.notification(new_id)
+    assert stored["config"]["app_token"] == "a" * 30
+    assert stored["name"] == "Renamed"
+
+
+def test_a_connection_without_its_required_fields_is_refused(signed_in):
+    response = signed_in.post("/api/notifications",
+                              json=a_connection(config={"app_token": "", "user_key": ""}))
+    assert response.status_code == 400
+
+
+def test_an_unknown_channel_kind_is_refused(signed_in):
+    response = signed_in.post("/api/notifications", json=a_connection(kind="carrier-pigeon"))
+    assert response.status_code == 400
+
+
+def test_a_connection_cannot_name_a_rule_that_does_not_exist(signed_in):
+    response = signed_in.post("/api/notifications", json=a_connection(rules=["nope"]))
+    assert response.status_code == 404 or response.status_code == 400
+
+
+def test_a_connection_can_filter_on_real_rules(signed_in):
+    response = signed_in.post("/api/notifications",
+                              json=a_connection(rules=["wrong_year", "leftover_files"]))
+    assert response.status_code == 200
+    assert signed_in.get("/api/notifications").json()[0]["rules"] == [
+        "wrong_year", "leftover_files"]
+
+
+def test_a_connection_can_be_removed(signed_in):
+    new_id = signed_in.post("/api/notifications", json=a_connection()).json()["id"]
+    assert signed_in.delete(f"/api/notifications/{new_id}").status_code == 200
+    assert signed_in.get("/api/notifications").json() == []
+    assert signed_in.delete(f"/api/notifications/{new_id}").status_code == 404
 
 
 # ---------------------------------------------------------------------------

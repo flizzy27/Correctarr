@@ -72,6 +72,11 @@
              stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7L12 19"/></svg>
         <span data-t="nav.services"></span> <span class="nav-count" id="count-services"></span>
       </button>
+      <button class="nav-item" data-target="notifications">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
+        <span data-t="nav.notifications"></span> <span class="nav-count" id="count-notifications"></span>
+      </button>
       <button class="nav-item" data-target="settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
@@ -94,6 +99,7 @@
       </div>
       <div class="topbar-actions">
         <span class="badge warning" id="dry-run-badge" data-t="settings.dry_run.label" hidden></span>
+        <button class="btn" id="open-wizard" data-t="wizard.open"></button>
         <button class="btn" id="check-fast" data-t="action.check_fast"></button>
         <button class="btn primary" id="check-deep" data-t="action.check_deep"></button>
       </div>
@@ -232,6 +238,20 @@
         </div>
       </section>
 
+      <!-- ============================================ notifications -->
+      <section id="page-notifications" class="page">
+        <div class="card">
+          <h2 data-t="notifications_page.title"></h2>
+          <p class="hint" data-t="notifications_page.help"></p>
+          <div id="notification-list"></div>
+          <div class="row" style="margin-top:12px">
+            <select id="new-channel-kind" style="max-width:220px"></select>
+            <button class="btn primary" id="add-notification"
+                    data-t="notifications_page.add"></button>
+          </div>
+        </div>
+      </section>
+
       <!-- ============================================ settings -->
       <section id="page-settings" class="page">
         <div class="toolbar">
@@ -252,6 +272,25 @@
         </div>
       </section>
     </main>
+  </div>
+</div>
+
+
+<div class="backdrop" id="wizard" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+    <div class="modal-head">
+      <button class="modal-close" id="wizard-close" aria-label="Close">&times;</button>
+      <h2 id="wizard-title"></h2>
+      <p class="lead" id="wizard-lead"></p>
+      <div class="steps" id="wizard-steps"></div>
+    </div>
+    <div class="modal-body" id="wizard-body"></div>
+    <div class="modal-foot">
+      <button class="btn" id="wizard-back" data-t="wizard.back"></button>
+      <span style="flex:1"></span>
+      <button class="btn" id="wizard-skip" data-t="wizard.skip"></button>
+      <button class="btn primary" id="wizard-next"></button>
+    </div>
   </div>
 </div>
 
