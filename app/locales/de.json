@@ -493,7 +493,7 @@
     },
     "downloader_update": {
       "title": "Neue Fassung des Download-Programms",
-      "help": ""
+      "help": "SABnzbd meldet eine neuere Fassung seiner selbst. Gut zu wissen, mehr nicht — das Aktualisieren bleibt deine Sache."
     },
     "indexer_disabled": {
       "title": "Prowlarr hat einen Indexer abgeschaltet",

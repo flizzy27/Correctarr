@@ -57,7 +57,10 @@ On top of that, a rule can carry **conditions**: *wait at least six hours*,
 *nothing over 20 GB*, *only when the match is at least 90 % certain*. A finding
 that fails one is still reported — it is just not acted on, and it says why.
 
-And a single **dry run** switch stops every change at once, across every rule.
+And a single **dry run** switch stops every change at once, across every rule
+— **on by default**. A fresh install runs every rule, reports everything it
+finds and touches nothing, until you have seen the findings and turned it off
+yourself.
 
 <details>
 <summary><strong>All 27 rules</strong></summary>
@@ -225,9 +228,10 @@ services:
    Radarr, Sonarr, SABnzbd and Prowlarr with a connection test for each,
    checking the paths, setting the address the webhooks call back on, and
    notifications.
-3. It finishes by offering a **dry run** — one full pass that changes nothing.
-   Do that before letting anything act. Every rule that acts was built that way
-   first, and every single time it turned something up.
+3. It finishes with a **dry run** — one full pass that changes nothing. The
+   dry run is already on; look through what it found, and turn it off only
+   once you agree with it. Every rule that acts was built that way first, and
+   every single time it turned something up.
 
 All of it can be done later by hand under *Services* and *Settings*; the
 assistant is reachable again from the sidebar at any time.

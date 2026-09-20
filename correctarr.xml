@@ -27,8 +27,11 @@
     for the queue, and on a full pass for the library and the indexers. 27 rules, and
     you decide per rule what happens when one of them finds something &#8212; from
     reporting it to blocklisting, importing, searching again or deleting. Conditions
-    such as "wait six hours first" or "nothing over 20 GB" narrow that down further,
-    and a single dry run switch stops every change at once.
+    such as "wait six hours first" or "nothing over 20 GB" narrow that down further.
+    &#13;
+    A dry run switch stops every change at once, and it is ON after a fresh
+    install: everything is found and reported, nothing is touched, until you have
+    seen the findings and turned it off yourself.
     &#13;
     Guiding principle: when in doubt, do nothing. A rule that is not sure only
     reports. Better one finding left alone than one good file thrown away.

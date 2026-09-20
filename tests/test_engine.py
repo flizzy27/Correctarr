@@ -228,6 +228,7 @@ def test_a_finding_is_fixed_when_the_rule_says_so(engine, monkeypatch):
     service = FakeArr()
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
                                         acts=True))
+    engine.store.set("dry_run", False)
     monkeypatch.setattr(engine, "arr_services", lambda: [service])
     result = engine.run()
     assert result["fixed"] == 1
@@ -253,6 +254,7 @@ def test_a_failed_fix_is_recorded_but_not_counted(engine, monkeypatch):
 
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
                                         acts=True))
+    engine.store.set("dry_run", False)
     monkeypatch.setattr(engine, "arr_services", lambda: [Failing()])
     result = engine.run()
     assert result["fixed"] == 0
@@ -265,6 +267,7 @@ def test_a_finding_is_fixed_on_the_service_it_belongs_to(engine, monkeypatch):
     use_rules(monkeypatch,
               finding_rule("wrong_year", a_finding(service="sonarr"),
                            acts=True, scope="once"))
+    engine.store.set("dry_run", False)
     monkeypatch.setattr(engine, "arr_services", lambda: [radarr, sonarr])
     engine.run()
     assert sonarr.removed == [(42, True, True)]
@@ -407,3 +410,22 @@ def test_the_lead_service_prefers_radarr(engine):
     assert engine._lead_service([sonarr, radarr]) is radarr
     assert engine._lead_service([sonarr]) is sonarr
     assert engine._lead_service([]) is None
+
+
+def test_a_fresh_install_changes_nothing_until_it_is_told_to(engine, monkeypatch):
+    """The most important default in the program.
+
+    Two rules delete by default, and somebody installing this for the first
+    time has not agreed to that — they have not even seen what it would find.
+    So a store with nothing in it runs every rule and touches nothing, until
+    the switch is turned off deliberately.
+    """
+    service = FakeArr()
+    use_rules(monkeypatch, finding_rule("wrong_year", a_finding(), acts=True))
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+
+    assert engine.config()["dry_run"] is True
+    result = engine.run()
+    assert service.removed == []
+    assert result["fixed"] == 0
+    assert result["findings"][0]["action"].startswith("DRY RUN")

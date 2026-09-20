@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommunityApplications>
+  <Profile>
+## Correctarr
+
+Finds and fixes the problems Radarr, Sonarr, SABnzbd and Prowlarr leave lying
+around — the ones that sit there because nobody is looking.
+
+A download matched to the wrong film. A release that would be rejected under
+the custom format rules you changed last month, still downloading under the
+old ones. An import stuck waiting for manual interaction since Tuesday. A
+finished file nothing could match to a title. Half a RAR set and 40 GB of
+debris nobody will ever look at.
+
+The services notice most of this. They just never resolve it.
+
+**27 rules in six areas** — queue, import, library, download client, indexers
+and the services themselves. For each one you decide what happens when it finds
+something: report only, remove from the queue, blocklist, blocklist and search
+again, import, search, or delete. Conditions narrow that down further — *wait at
+least six hours*, *nothing over 20 GB*, *only when the match is at least 90 %
+certain* — and a finding that fails one is still reported, with the reason.
+
+A single dry run switch stops every change at once, and it is **on after a
+fresh install** — everything is found and reported, nothing is touched, until
+you have looked at the findings and turned it off yourself.
+
+**Guiding principle: when in doubt, do nothing.** A rule that is not sure only
+reports. Better one finding left alone than one good file thrown away.
+
+- Built-in login, or `AUTH=off` behind Authelia and friends
+- Works behind a reverse proxy, sub paths included
+- Notifications through Pushover, Telegram, Discord, ntfy, Gotify or a webhook
+- English and German interface, following the browser
+- Setup assistant with a connection test for every service
+
+**Project and full documentation:** https://github.com/flizzy27/Correctarr
+**Support and issues:** https://github.com/flizzy27/Correctarr/issues
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/flizzy27/Correctarr/main/docs/icon.png</Icon>
+  <WebPage>https://github.com/flizzy27/Correctarr</WebPage>
+  <Forum>https://github.com/flizzy27/Correctarr/issues</Forum>
+</CommunityApplications>

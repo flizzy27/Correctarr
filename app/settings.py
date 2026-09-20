@@ -125,7 +125,12 @@ FIELDS: tuple[Field, ...] = (
     Field("event_debounce", "number", "schedule", 8,
           minimum=1, maximum=300, unit="unit.seconds"),
     Field("events_enabled", "switch", "schedule", True),
-    Field("dry_run", "switch", "schedule", False),
+    # On for a fresh install, and deliberately so. Two rules delete by
+    # default, and nobody installing this for the first time has agreed to
+    # that yet — they have not even seen what it would find. The setup
+    # assistant ends by showing one full pass with nothing touched, and the
+    # switch is theirs to turn off once they agree with what they see.
+    Field("dry_run", "switch", "schedule", True),
 
     # -- paths --------------------------------------------------------------
     Field("path_downloads", "path", "paths", "/downloads"),

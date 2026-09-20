@@ -493,7 +493,7 @@
     },
     "downloader_update": {
       "title": "A new version of the download client is available",
-      "help": ""
+      "help": "SABnzbd is reporting a newer version of itself. Worth knowing, nothing more — updating is up to you."
     },
     "indexer_disabled": {
       "title": "Prowlarr has switched an indexer off",
