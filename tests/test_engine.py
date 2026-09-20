@@ -198,9 +198,12 @@ def test_one_broken_rule_does_not_stop_the_others(engine, monkeypatch):
 # ---------------------------------------------------------------------------
 # Fixing
 # ---------------------------------------------------------------------------
-def finding_rule(name, finding, **kwargs):
+def finding_rule(name, finding, *, acts=False,
+                 action="blocklist_and_search", **kwargs):
+    """A stand-in rule that always reports the same finding."""
     return Rule(name, "queue", lambda arr, ctx, cfg: [finding],
-                modifies=True, **kwargs)
+                actions=("report", action),
+                default_action=action if acts else "report", **kwargs)
 
 
 def a_finding(rule="wrong_year", **kwargs):
@@ -214,7 +217,7 @@ def a_finding(rule="wrong_year", **kwargs):
 def test_nothing_is_fixed_unless_the_rule_says_so(engine, monkeypatch):
     service = FakeArr()
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
-                                        fix_by_default=False))
+                                        acts=False))
     monkeypatch.setattr(engine, "arr_services", lambda: [service])
     result = engine.run()
     assert result["fixed"] == 0
@@ -224,7 +227,7 @@ def test_nothing_is_fixed_unless_the_rule_says_so(engine, monkeypatch):
 def test_a_finding_is_fixed_when_the_rule_says_so(engine, monkeypatch):
     service = FakeArr()
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
-                                        fix_by_default=True))
+                                        acts=True))
     monkeypatch.setattr(engine, "arr_services", lambda: [service])
     result = engine.run()
     assert result["fixed"] == 1
@@ -234,7 +237,7 @@ def test_a_finding_is_fixed_when_the_rule_says_so(engine, monkeypatch):
 def test_a_dry_run_changes_nothing(engine, monkeypatch):
     service = FakeArr()
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
-                                        fix_by_default=True))
+                                        acts=True))
     monkeypatch.setattr(engine, "arr_services", lambda: [service])
     engine.store.set("dry_run", True)
     result = engine.run()
@@ -249,7 +252,7 @@ def test_a_failed_fix_is_recorded_but_not_counted(engine, monkeypatch):
             raise ArrError("service said no")
 
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
-                                        fix_by_default=True))
+                                        acts=True))
     monkeypatch.setattr(engine, "arr_services", lambda: [Failing()])
     result = engine.run()
     assert result["fixed"] == 0
@@ -261,7 +264,7 @@ def test_a_finding_is_fixed_on_the_service_it_belongs_to(engine, monkeypatch):
     radarr, sonarr = FakeArr("radarr", "Radarr"), FakeArr("sonarr", "Sonarr")
     use_rules(monkeypatch,
               finding_rule("wrong_year", a_finding(service="sonarr"),
-                           fix_by_default=True, scope="once"))
+                           acts=True, scope="once"))
     monkeypatch.setattr(engine, "arr_services", lambda: [radarr, sonarr])
     engine.run()
     assert sonarr.removed == [(42, True, True)]
@@ -273,7 +276,7 @@ def test_a_finding_is_fixed_on_the_service_it_belongs_to(engine, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_a_repeated_finding_is_recorded_only_once(engine, monkeypatch):
     use_rules(monkeypatch, finding_rule("wrong_year", a_finding(),
-                                        fix_by_default=False))
+                                        acts=False))
     monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
     engine.run()
     engine.run()
@@ -285,7 +288,7 @@ def test_a_recorded_finding_can_be_read_back_in_both_languages(engine, monkeypat
     use_rules(monkeypatch, finding_rule(
         "stalled", a_finding(rule="stalled", message="finding.stalled",
                              params={"minutes": 30, "percent": "42"}),
-        fix_by_default=False))
+        acts=False))
     monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
     engine.run()
 
@@ -325,7 +328,7 @@ def test_deleting_refuses_a_path_outside_the_configured_directories(engine, tmp_
     finding = Finding(rule="leftover_files", severity="warning", title="x",
                       message="finding.leftover_files",
                       data={"path": str(victim), "mb": 0})
-    result = engine._fix_leftover(finding, cfg, dry=False)
+    result = engine._delete_path(finding, cfg, dry=False)
     assert "FAILED" in result
     assert victim.exists(), "a file outside the configured area must survive"
 
@@ -335,7 +338,7 @@ def test_deleting_refuses_when_nothing_is_configured(engine, tmp_path):
     victim.write_bytes(b"\0")
     cfg = S.defaults()
     cfg["cleanup_paths"] = []
-    assert "FAILED" in engine._fix_leftover(
+    assert "FAILED" in engine._delete_path(
         Finding(rule="leftover_files", severity="warning", title="x",
                 message="finding.leftover_files", data={"path": str(victim)}),
         cfg, dry=False)
@@ -353,7 +356,7 @@ def test_deleting_works_inside_the_configured_directory(engine, tmp_path):
     finding = Finding(rule="leftover_files", severity="warning", title="junk",
                       message="finding.leftover_files",
                       data={"path": str(junk), "mb": 1})
-    result = engine._fix_leftover(finding, cfg, dry=False)
+    result = engine._delete_path(finding, cfg, dry=False)
     assert "deleted" in result
     assert not junk.exists()
 
@@ -368,7 +371,7 @@ def test_a_dry_run_never_deletes(engine, tmp_path):
     finding = Finding(rule="leftover_files", severity="warning", title="junk",
                       message="finding.leftover_files",
                       data={"path": str(junk), "mb": 1})
-    assert engine._fix_leftover(finding, cfg, dry=True).startswith("DRY RUN")
+    assert engine._delete_path(finding, cfg, dry=True).startswith("DRY RUN")
     assert junk.exists()
 
 
@@ -387,8 +390,8 @@ def test_rule_settings_fall_back_to_the_defaults(engine):
     engine.store.set("rules", {"wrong_year": {"enabled": False}})
     cfg = engine.config()
     assert cfg["rules"]["wrong_year"]["enabled"] is False
-    # fix keeps its default rather than disappearing
-    assert cfg["rules"]["wrong_year"]["fix"] is True
+    # the action keeps its default rather than disappearing
+    assert cfg["rules"]["wrong_year"]["action"] == "blocklist_and_search"
     # and every other rule is untouched
     assert cfg["rules"]["profile_violation"]["enabled"] is True
 

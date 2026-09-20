@@ -121,6 +121,8 @@ let status = null;
 let settingsSchema = null;
 let settingsValues = {};
 let ruleData = [];
+let ruleCategories = [];
+let ruleLimits = {};
 let findingData = [];
 let fixedData = [];
 let queueData = [];
@@ -321,11 +323,14 @@ function renderQueue() {
 async function loadRules() {
   const data = await api("api/rules");
   ruleData = data.rules;
+  ruleCategories = data.categories;
+  ruleLimits = data.limits || {};
   $("#count-rules").textContent = data.rules.filter((r) => r.enabled).length;
-  renderRules(data.categories);
+  renderRules();
 }
 
-function renderRules(categories) {
+function renderRules() {
+  const categories = ruleCategories;
   const search = ($("#rules-search").value || "").toLowerCase();
   const matching = ruleData.filter((r) => {
     if (!search) return true;
@@ -349,8 +354,12 @@ function renderRules(categories) {
     </div>`;
   }).join("") || `<p class="empty">${esc(t("rules_page.no_match"))}</p>`;
 
-  $$("#rules-list input[data-rule]").forEach((input) =>
+  $$('#rules-list input[data-field="enabled"]').forEach((input) =>
     input.addEventListener("change", onRuleToggled));
+  $$('#rules-list select[data-field="action"]').forEach((picker) =>
+    picker.addEventListener("change", onRuleActionChosen));
+  $$("#rules-list input[data-condition]").forEach((input) =>
+    input.addEventListener("change", onRuleConditionChanged));
 }
 
 function ruleHtml(rule) {
@@ -363,7 +372,10 @@ function ruleHtml(rule) {
   if (rule.only_kinds.length)
     badges.push(["neutral", t("rule_badge.only_kinds", { kinds: rule.only_kinds.join(", ") })]);
 
-  return `<div class="rule ${rule.enabled ? "" : "off"}">
+  const acting = rule.action !== "report";
+  const explain = t("policy.explain." + rule.action);
+
+  return `<div class="rule ${rule.enabled ? "" : "off"}" data-rule-card="${esc(rule.name)}">
     <div class="body">
       <div class="name">
         <span>${esc(t("rules." + rule.name + ".title"))}</span>
@@ -375,6 +387,10 @@ function ruleHtml(rule) {
       <div class="summary mono faint">${esc(rule.name)}</div>
       ${t("rules." + rule.name + ".help")
         ? `<div class="help">${esc(t("rules." + rule.name + ".help"))}</div>` : ""}
+      ${acting && explain ? `<div class="help act">${esc(explain)}</div>` : ""}
+      ${acting && rule.deletes && rule.action !== "report"
+        ? `<div class="help warn">${esc(t("policy.irreversible"))}</div>` : ""}
+      ${conditionsHtml(rule)}
     </div>
     <div class="toggles">
       <div class="toggle-field">
@@ -382,37 +398,119 @@ function ruleHtml(rule) {
           data-field="enabled" ${rule.enabled ? "checked" : ""}><span class="track"></span></span>
         ${esc(t("label.check"))}
       </div>
-      <div class="toggle-field">
-        <span class="toggle"><input type="checkbox" data-rule="${esc(rule.name)}"
-          data-field="fix" ${rule.fix ? "checked" : ""}
-          ${rule.modifies ? "" : "disabled"}><span class="track"></span></span>
-        ${esc(t("label.fix"))}
-      </div>
+      <label class="action-field">
+        <span class="action-label">${esc(t("policy.heading"))}</span>
+        <select data-rule="${esc(rule.name)}" data-field="action"
+                class="${acting ? "acting" : ""}"
+                ${rule.actions.length > 1 ? "" : "disabled"}>
+          ${rule.actions.map((action) =>
+            `<option value="${esc(action)}"${action === rule.action ? " selected" : ""}>${
+              esc(t("policy.action." + action))}</option>`).join("")}
+        </select>
+      </label>
     </div>
+  </div>`;
+}
+
+/* The conditions a rule offers, and nothing else. Showing one whose findings
+   carry no answer would be a trap: it could never be met, and the rule would
+   quietly stop acting for a reason nobody picked. */
+function conditionsHtml(rule) {
+  if (rule.action === "report" || !rule.conditions.length) return "";
+  const set = rule.conditions.some((key) => Number(rule[key]) > 0);
+  return `<details class="conditions"${set ? " open" : ""}>
+    <summary>${esc(t("policy.conditions"))}${set ? "" : ` <span class="faint">(${
+      esc(t("policy.any"))})</span>`}</summary>
+    <div class="condition-grid">
+      ${rule.conditions.map((key) => conditionHtml(rule, key)).join("")}
+    </div>
+  </details>`;
+}
+
+const CONDITION_UNITS = { min_age_hours: "hours", max_gb: "gb",
+                          min_confidence: "percent" };
+
+function conditionHtml(rule, key) {
+  // Confidence is stored as 0–1 but nobody thinks in those, so it is shown
+  // and entered as a percentage, and converted on the way in and out.
+  const percent = key === "min_confidence";
+  const value = percent ? Math.round((Number(rule[key]) || 0) * 100)
+                        : Number(rule[key]) || 0;
+  const max = percent ? 100 : (ruleLimits[key] ? ruleLimits[key][1] : 10000);
+  return `<div class="field">
+    <label>${esc(t("policy." + key))}</label>
+    <div class="field-row">
+      <input type="number" data-rule="${esc(rule.name)}" data-condition="${esc(key)}"
+             min="0" max="${esc(max)}" step="${percent ? 5 : 1}" value="${esc(value)}"
+             placeholder="0">
+      <span class="unit">${esc(t("unit." + CONDITION_UNITS[key]))}</span>
+    </div>
+    <div class="help">${esc(t("policy." + key + "_help"))}</div>
   </div>`;
 }
 
 async function onRuleToggled(event) {
   const input = event.target;
   const name = input.dataset.rule;
-  const field = input.dataset.field;
   try {
     const answer = await post(`api/rules/${encodeURIComponent(name)}`,
-                              { [field]: input.checked });
-    const rule = ruleData.find((r) => r.name === name);
-    if (rule) {
-      rule.enabled = answer.enabled ?? rule.enabled;
-      rule.fix = answer.fix ?? rule.fix;
-      input.closest(".rule").classList.toggle("off", !rule.enabled);
-    }
-    $("#count-rules").textContent = ruleData.filter((r) => r.enabled).length;
+                              { enabled: input.checked });
+    applyRuleAnswer(name, answer);
     toast(t("message.rule_toggled", {
-      rule: name, field: t("label." + (field === "enabled" ? "check" : "fix")),
+      rule: name, field: t("label.check"),
       state: t(input.checked ? "message.on" : "message.off") }), "good");
   } catch (error) {
     input.checked = !input.checked;
     failed(error);
   }
+}
+
+async function onRuleActionChosen(event) {
+  const picker = event.target;
+  const name = picker.dataset.rule;
+  const previous = ruleData.find((r) => r.name === name)?.action;
+  try {
+    const answer = await post(`api/rules/${encodeURIComponent(name)}`,
+                              { action: picker.value });
+    applyRuleAnswer(name, answer);
+    toast(t("message.rule_action_set", {
+      rule: t("rules." + name + ".title"),
+      action: t("policy.action." + answer.action) }), "good");
+    renderRules();
+  } catch (error) {
+    if (previous) picker.value = previous;
+    failed(error);
+  }
+}
+
+async function onRuleConditionChanged(event) {
+  const input = event.target;
+  const name = input.dataset.rule;
+  const key = input.dataset.condition;
+  const raw = Number(input.value);
+  const value = key === "min_confidence" ? Math.min(1, Math.max(0, raw / 100)) : raw;
+  const rule = ruleData.find((r) => r.name === name);
+  try {
+    applyRuleAnswer(name, await post(`api/rules/${encodeURIComponent(name)}`,
+                                     { [key]: value }));
+    toast(t("message.saved"), "good");
+  } catch (error) {
+    if (rule) {
+      input.value = key === "min_confidence"
+        ? Math.round((rule[key] || 0) * 100) : (rule[key] || 0);
+    }
+    failed(error);
+  }
+}
+
+function applyRuleAnswer(name, answer) {
+  const rule = ruleData.find((r) => r.name === name);
+  if (rule) {
+    Object.assign(rule, answer);
+    const card = $(`[data-rule-card="${CSS.escape(name)}"]`);
+    if (card) card.classList.toggle("off", !rule.enabled);
+  }
+  $("#count-rules").textContent = ruleData.filter((r) => r.enabled).length;
 }
 
 /* ============================================================== indexers */
@@ -1488,7 +1586,7 @@ function wire() {
   $("#findings-fixed-only").addEventListener("change", () => loadFindings().catch(failed));
   $("#fixed-search").addEventListener("input", renderFixed);
   $("#fixed-reload").addEventListener("click", () => loadFixed().catch(failed));
-  $("#rules-search").addEventListener("input", () => loadRules().catch(failed));
+  $("#rules-search").addEventListener("input", renderRules);
   $("#show-advanced").addEventListener("change", renderSettings);
 
   $("#add-notification").addEventListener("click", () => {
@@ -1515,7 +1613,7 @@ function wire() {
   $("#rules-report-only").addEventListener("click", async () => {
     if (!confirm(t("rules_page.confirm_report_only"))) return;
     const rules = {};
-    ruleData.forEach((r) => (rules[r.name] = { fix: false }));
+    ruleData.forEach((r) => (rules[r.name] = { action: "report" }));
     try {
       await post("api/rules", { rules });
       toast(t("rules_page.report_only_done"), "good");
@@ -1526,7 +1624,12 @@ function wire() {
   $("#rules-defaults").addEventListener("click", async () => {
     if (!confirm(t("rules_page.confirm_defaults"))) return;
     const rules = {};
-    ruleData.forEach((r) => (rules[r.name] = { enabled: true, fix: r.fix_by_default }));
+    ruleData.forEach((r) => {
+      rules[r.name] = { enabled: true, action: r.default_action };
+      // Conditions go back to "no condition" as well, otherwise a restore
+      // leaves a limit behind that nobody can see any more.
+      r.conditions.forEach((key) => (rules[r.name][key] = 0));
+    });
     try {
       await post("api/rules", { rules });
       toast(t("rules_page.defaults_done"), "good");

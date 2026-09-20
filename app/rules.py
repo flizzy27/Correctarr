@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from . import policy
 from .arr import Arr
 from .i18n import t
 from .indexers import UNKNOWN_TO_PROWLARR, rank_deviation
@@ -80,15 +81,40 @@ class Finding:
 
 @dataclass(frozen=True)
 class Rule:
+    """One check, and what it is allowed to do about what it finds.
+
+    ``actions`` is the menu the interface offers for this rule, and the server
+    refuses anything outside it. ``default_action`` is what a fresh install
+    does — chosen per rule rather than globally, because the sensible default
+    is not the same everywhere: blocklisting a release matched to the wrong
+    film costs nothing, while deleting a folder is worth thinking about first.
+    """
     name: str
     category: str
     check: Callable
-    fix_by_default: bool = False
+    actions: tuple[str, ...] = (policy.REPORT,)
+    default_action: str = policy.REPORT
+    #: Conditions this rule's findings can actually answer. Offering one the
+    #: findings carry no data for would be a trap: it could never be met, and
+    #: the rule would silently stop acting.
+    conditions: tuple[str, ...] = ()
     scope: str = "service"                 # "service" | "once"
     only_kinds: tuple[str, ...] = ()       # empty = every kind
     deep: bool = False                     # only in the full pass
-    modifies: bool = False                 # acts, instead of only reporting
-    deletes: bool = False                  # removes data irreversibly
+
+    @property
+    def modifies(self) -> bool:
+        """Can this rule do anything at all beyond saying so?"""
+        return len(self.actions) > 1
+
+    @property
+    def deletes(self) -> bool:
+        """Can any of its actions remove data irreversibly?"""
+        return bool(set(self.actions) & policy.DESTRUCTIVE)
+
+    @property
+    def fix_by_default(self) -> bool:
+        return self.default_action != policy.REPORT
 
 
 CATEGORIES = ("queue", "import", "library", "downloader", "indexers", "system")
@@ -161,6 +187,14 @@ def _top_folder(path: str) -> str:
 # ===========================================================================
 # Category: queue
 # ===========================================================================
+def _gb(entry: dict) -> float:
+    """A queue entry's size in GB, so size conditions have something to read."""
+    try:
+        return round((entry.get("size") or 0) / 1024 ** 3, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def check_wrong_year(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The year in the release name does not match the title.
 
@@ -183,7 +217,8 @@ def check_wrong_year(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             title=f"{item.get('title', '?')} ({expected})",
             message="finding.wrong_year",
             params={"found": ", ".join(map(str, found)), "expected": expected},
-            data={"release": entry.get("title"), "years": found, "expected": expected},
+            data={"release": entry.get("title"), "years": found, "expected": expected,
+                  "gb": _gb(entry)},
         ))
     return findings
 
@@ -223,7 +258,11 @@ def check_wrong_title(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             message="finding.wrong_title",
             params={"count": len(names), "percent": f"{best:.0%}"},
             data={"release": release, "similarity": round(best, 3),
-                  "checked": len(names)},
+                  # Confidence in the FINDING, so the inverse of the match:
+                  # the less the name resembles any known title, the surer
+                  # this release belongs to something else.
+                  "confidence": round(1 - best, 3), "checked": len(names),
+                  "gb": _gb(entry)},
         ))
     return findings
 
@@ -254,7 +293,8 @@ def check_profile_violation(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             message="finding.profile_violation",
             params={"profile": profile.get("name"),
                     "reason": ", ".join(blocking) or f"score {total}"},
-            data={"release": entry.get("title"), "score": total, "hits": hits},
+            data={"release": entry.get("title"), "score": total, "hits": hits,
+                  "gb": _gb(entry)},
         ))
     return findings
 
@@ -271,7 +311,7 @@ def check_not_an_upgrade(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             rule="not_an_upgrade", severity="warning", service=arr.kind,
             entry_id=entry["id"], title=_item(entry).get("title", "?"),
             message="finding.not_an_upgrade",
-            data={"release": entry.get("title")},
+            data={"release": entry.get("title"), "gb": _gb(entry)},
         ))
     return findings
 
@@ -303,7 +343,7 @@ def check_stalled(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             message="finding.stalled",
             params={"minutes": int(minutes), "percent": f"{percent:.0f}"},
             data={"release": entry.get("title"), "minutes": int(minutes),
-                  "percent": round(percent, 1)},
+                  "percent": round(percent, 1), "gb": _gb(entry)},
         ))
     store.prune_progress(active)
     return findings
@@ -605,6 +645,7 @@ def check_unmatched_files(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         age = _age_minutes(candidate.get("dateAdded")) or 0
         data = {"path": candidate.get("path"), "rejections": rejections,
                 "confidence": round(confidence, 3),
+                "age_hours": round(age / 60, 1),
                 "gb": round((candidate.get("size") or 0) / 1024 ** 3, 1),
                 "quality": candidate.get("quality"),
                 "languages": candidate.get("languages") or [],
@@ -1224,43 +1265,63 @@ def check_disk_space(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 ALL: tuple[Rule, ...] = (
     # -- queue --------------------------------------------------------------
     Rule("wrong_year", "queue", check_wrong_year,
-         fix_by_default=True, modifies=True),
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         default_action="blocklist_and_search", conditions=("max_gb",)),
     Rule("wrong_title", "queue", check_wrong_title,
-         deep=True, modifies=True),
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         conditions=("max_gb", "min_confidence"), deep=True),
     Rule("profile_violation", "queue", check_profile_violation,
-         fix_by_default=True, modifies=True),
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         default_action="blocklist_and_search", conditions=("max_gb",)),
     Rule("not_an_upgrade", "queue", check_not_an_upgrade,
-         fix_by_default=True, modifies=True),
-    Rule("stalled", "queue", check_stalled, modifies=True),
+         # No search afterwards: the file already on disk is the better one.
+         actions=(policy.REPORT, "remove", "blocklist"),
+         default_action="blocklist", conditions=("max_gb",)),
+    Rule("stalled", "queue", check_stalled,
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         conditions=("min_age_hours", "max_gb")),
+    # Nothing to do here on purpose: the cause is in the profile, and no
+    # action taken on the queue can fix that.
     Rule("grab_loop", "queue", check_grab_loop, deep=True),
 
     # -- import -------------------------------------------------------------
     Rule("manual_import", "import", check_manual_import,
-         fix_by_default=True, modifies=True),
-    Rule("unpack_failed", "import", check_unpack_failed, scope="once"),
+         actions=(policy.REPORT, "import"), default_action="import"),
+    Rule("unpack_failed", "import", check_unpack_failed,
+         actions=(policy.REPORT, "delete"),
+         conditions=("min_age_hours", "max_gb"), scope="once"),
     Rule("detached_folder", "import", check_detached_folder, scope="once"),
     Rule("leftover_files", "import", check_leftover_files,
-         fix_by_default=True, scope="once", modifies=True, deletes=True),
+         actions=(policy.REPORT, "delete"), default_action="delete",
+         conditions=("min_age_hours", "max_gb"), scope="once"),
     Rule("unmatched_files", "import", check_unmatched_files,
-         fix_by_default=True, scope="once", modifies=True),
+         actions=(policy.REPORT, "import", "import_and_clean",
+                  "blocklist_and_search"),
+         default_action="import_and_clean", scope="once",
+         conditions=("min_age_hours", "max_gb", "min_confidence")),
 
     # -- library ------------------------------------------------------------
     Rule("missing_audio_language", "library", check_missing_audio_language,
-         only_kinds=("radarr",), deep=True, modifies=True),
+         actions=(policy.REPORT, "search"), only_kinds=("radarr",), deep=True),
     Rule("unreadable_file", "library", check_unreadable_file,
-         only_kinds=("radarr",), deep=True, modifies=True),
+         actions=(policy.REPORT, "refresh", "search"), conditions=("max_gb",),
+         only_kinds=("radarr",), deep=True),
     Rule("below_profile", "library", check_below_profile,
-         only_kinds=("radarr",), deep=True, modifies=True),
+         actions=(policy.REPORT, "search"), only_kinds=("radarr",), deep=True),
     Rule("missing_items", "library", check_missing_items,
-         deep=True, modifies=True),
+         actions=(policy.REPORT, "search"), deep=True),
 
     # -- downloader ---------------------------------------------------------
     Rule("downloader_warning", "downloader", check_downloader_warning,
-         fix_by_default=True, scope="once", modifies=True),
+         actions=(policy.REPORT, "clear_warning"),
+         default_action="clear_warning", scope="once"),
     Rule("downloader_stale_entry", "downloader", check_downloader_stale_entry,
-         fix_by_default=True, scope="once", modifies=True, deletes=True),
+         actions=(policy.REPORT, "remove_entry"),
+         default_action="remove_entry", conditions=("max_gb",), scope="once"),
+    # Deliberately reporting by default: a pause is usually somebody's
+    # decision, and overruling it unasked would be presumptuous.
     Rule("downloader_paused", "downloader", check_downloader_paused,
-         scope="once", modifies=True),
+         actions=(policy.REPORT, "resume"), scope="once"),
     Rule("downloader_disk_space", "downloader", check_downloader_disk_space,
          scope="once"),
     Rule("downloader_update", "downloader", check_downloader_update, scope="once"),

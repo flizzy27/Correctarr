@@ -196,14 +196,17 @@
   },
   "rules_page": {
     "title": "Regeln",
-    "help": "<b>Prüfen</b> aus heißt: Die Regel läuft gar nicht. <b>Beheben</b> aus heißt: Der Fund wird nur gemeldet, nicht angefasst. Die Zahl rechts zeigt, wie oft die Regel bisher angeschlagen hat.",
+    "help": "Ist <b>prüfen</b> aus, läuft die Regel gar nicht. Die Aktion daneben entscheidet, was bei einem Fund geschieht — von nur melden bis beheben. Bedingungen schränken das weiter ein. Die Zahl rechts zeigt, wie oft eine Regel bisher zugetroffen ist.",
     "active_count": "{active} von {total} aktiv",
     "found_count": "{count}× gefunden",
     "no_match": "Keine Regel passt zur Suche.",
-    "confirm_report_only": "Bei allen Regeln „beheben“ abschalten? Gefunden wird weiter, verändert nichts mehr.",
+    "confirm_report_only": "Jede Regel auf nur melden setzen? Probleme werden weiter gefunden, verändert wird nichts.",
     "confirm_defaults": "Alle Regeln auf die Voreinstellung zurücksetzen?",
     "report_only_done": "Alle Regeln stehen jetzt auf „nur melden“",
-    "defaults_done": "Zurückgesetzt"
+    "defaults_done": "Zurückgesetzt",
+    "acts_count": "{count} greifen ein",
+    "shows_conditions": "Bedingungen",
+    "hide_conditions": "Bedingungen ausblenden"
   },
   "rule_badge": {
     "deletes": "löscht",
@@ -312,7 +315,8 @@
     "connection_ok": "Die Verbindung steht: {info}",
     "rule_toggled": "{rule}: {field} {state}",
     "on": "an",
-    "off": "aus"
+    "off": "aus",
+    "rule_action_set": "{rule}: {action}"
   },
   "notify": {
     "title": "{count} neue Meldung(en)",
@@ -347,7 +351,7 @@
     "unknown_kind": "Unbekannte Art. Möglich sind: {kinds}.",
     "unknown_setting": "Unbekannte Einstellung: {key}",
     "bad_settings_body": "Erwartet wird {key, value} oder {values: {…}}",
-    "bad_rules_body": "Erwartet wird {rules: {name: {enabled, fix}}}",
+    "bad_rules_body": "Erwartet wird {rules: {name: {enabled, action, …}}}",
     "no_such_rule": "Diese Regel gibt es nicht: {name}",
     "rule_cannot_fix": "„{name}“ kann nichts beheben — die Regel meldet nur.",
     "no_such_service": "Diesen Zugang gibt es nicht",
@@ -361,7 +365,10 @@
     "unknown_severity": "Unbekannte Schwere.",
     "unknown_category": "Diesen Bereich gibt es nicht: {name}",
     "no_such_connection": "Diese Verbindung gibt es nicht",
-    "channel_field_missing": "„{field}“ wird gebraucht."
+    "channel_field_missing": "„{field}“ wird gebraucht.",
+    "action_not_allowed": "Diese Regel kann „{action}“ nicht.",
+    "out_of_range": "„{field}“ muss zwischen {range} liegen.",
+    "condition_not_allowed": "Diese Regel hat keine Bedingung „{field}“."
   },
   "reason": {
     "marked_failed": "als fehlgeschlagen gekennzeichnet",
@@ -868,5 +875,55 @@
       "schedule": "Warteschlange jede Minute, Bibliothek alle 90 Minuten",
       "next": "Sieh dir unter <b>Regeln</b> an, was jede einzelne tut, und entscheide, welche eingreifen dürfen. Wenn du den Testlauf angelassen hast: nicht vergessen, ihn abzuschalten, sobald du zufrieden bist."
     }
+  },
+  "policy": {
+    "heading": "Was passieren soll",
+    "conditions": "Nur wenn",
+    "no_limit": "keine Grenze",
+    "any": "beliebig",
+    "held_back": "zurückgehalten",
+    "destructive": "löscht Daten",
+    "irreversible": "Das lässt sich nicht rückgängig machen. Setze unten eine Grenze, wenn du bei den großen gefragt werden willst.",
+    "action": {
+      "report": "Nur melden",
+      "remove": "Aus der Warteschlange nehmen",
+      "blocklist": "Sperren",
+      "blocklist_and_search": "Sperren und neu suchen",
+      "import": "Importieren",
+      "import_and_clean": "Importieren und aufräumen",
+      "search": "Nach Ersatz suchen",
+      "refresh": "Datei neu einlesen",
+      "delete": "Von der Platte löschen",
+      "clear_warning": "Warnung bestätigen",
+      "remove_entry": "Eintrag und Ordner entfernen",
+      "resume": "Fortsetzen"
+    },
+    "explain": {
+      "report": "Festhalten und sonst nichts anfassen. Immer verfügbar und immer die sichere Antwort.",
+      "remove": "Aus der Warteschlange nehmen. Dasselbe Release kann später wieder gegriffen werden.",
+      "blocklist": "Aus der Warteschlange nehmen und dieses Release künftig ablehnen. Es wird nichts Neues gesucht.",
+      "blocklist_and_search": "Herausnehmen, künftig ablehnen und sofort nach Ersatz suchen.",
+      "import": "Die Datei in die Bibliothek holen.",
+      "import_and_clean": "Die Datei hereinholen und danach den Eintrag im Download-Programm samt Quellordner räumen — von einem Import hier erfährt das Programm sonst nie.",
+      "search": "Den Dienst nach einer besseren Fassung suchen lassen.",
+      "refresh": "Den Dienst die Datei neu einlesen lassen. Oft genug, wenn die Datei in Ordnung ist und nur der Eintrag veraltet.",
+      "delete": "Die Dateien von der Platte entfernen. Immer nur innerhalb der unter Pfade eingetragenen Ordner.",
+      "clear_warning": "Die Warnung festhalten und im Download-Programm löschen.",
+      "remove_entry": "Den fertigen Eintrag aus dem Download-Programm nehmen und seinen Quellordner löschen.",
+      "resume": "Das Download-Programm wieder starten."
+    },
+    "min_age_hours": "Mindestens warten",
+    "min_age_hours_help": "Vorher wird nicht eingegriffen. Ein Download, der vor zwei Minuten angekommen ist, hängt nicht — er ist neu.",
+    "max_gb": "Höchstens",
+    "max_gb_help": "Alles Größere wird nur gemeldet. Die einfache Art zu sagen: die kleinen Reste weg, bei den großen frag mich.",
+    "min_confidence": "Sicherheit von mindestens",
+    "min_confidence_help": "Nur eingreifen, wenn die Zuordnung so sicher ist. Gilt für Regeln, die eine Datei selbst einem Titel zuordnen.",
+    "report_only": "steht auf nur melden",
+    "too_young": "erst {age} h alt, gewartet wird auf {needed} h",
+    "age_unknown": "zu diesem Fund ist kein Alter bekannt",
+    "too_large": "{size} GB liegt über der Grenze von {limit} GB",
+    "size_unknown": "zu diesem Fund ist keine Größe bekannt",
+    "not_confident_enough": "Zuordnung ist zu {confidence} sicher, verlangt sind {needed}",
+    "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt"
   }
 }

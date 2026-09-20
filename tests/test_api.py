@@ -238,7 +238,57 @@ def test_an_unknown_rule_is_refused(signed_in):
 def test_report_only_in_one_go(signed_in):
     names = [r["name"] for r in signed_in.get("/api/rules").json()["rules"]]
     signed_in.post("/api/rules", json={"rules": {n: {"fix": False} for n in names}})
-    assert not any(r["fix"] for r in signed_in.get("/api/rules").json()["rules"])
+    assert all(r["action"] == "report"
+               for r in signed_in.get("/api/rules").json()["rules"])
+
+
+def test_an_action_can_be_chosen_per_rule(signed_in):
+    response = signed_in.post("/api/rules/wrong_year", json={"action": "remove"})
+    assert response.status_code == 200
+    rules = {r["name"]: r for r in signed_in.get("/api/rules").json()["rules"]}
+    assert rules["wrong_year"]["action"] == "remove"
+
+
+def test_an_action_the_rule_cannot_do_is_refused(signed_in):
+    response = signed_in.post("/api/rules/wrong_year", json={"action": "delete"},
+                              headers={"Accept-Language": "en"})
+    assert response.status_code == 400
+    assert "delete" in response.json()["detail"]
+    rules = {r["name"]: r for r in signed_in.get("/api/rules").json()["rules"]}
+    assert rules["wrong_year"]["action"] == "blocklist_and_search",         "a refused change must not have been half applied"
+
+
+def test_a_condition_is_kept_and_read_back(signed_in):
+    assert signed_in.post("/api/rules/leftover_files",
+                          json={"min_age_hours": 12, "max_gb": 5}).status_code == 200
+    rules = {r["name"]: r for r in signed_in.get("/api/rules").json()["rules"]}
+    assert rules["leftover_files"]["min_age_hours"] == 12
+    assert rules["leftover_files"]["max_gb"] == 5
+    assert rules["leftover_files"]["action"] == "delete",         "setting a condition must not change the action"
+
+
+def test_a_condition_the_rule_cannot_answer_is_refused(signed_in):
+    response = signed_in.post("/api/rules/leftover_files",
+                              json={"min_confidence": 0.8},
+                              headers={"Accept-Language": "en"})
+    assert response.status_code == 400
+
+
+def test_a_condition_outside_its_range_is_refused(signed_in):
+    response = signed_in.post("/api/rules/leftover_files",
+                              json={"max_gb": 999999},
+                              headers={"Accept-Language": "en"})
+    assert response.status_code == 400
+    assert "max_gb" in response.json()["detail"]
+
+
+def test_every_rule_offers_report_and_declares_its_default(signed_in):
+    for rule in signed_in.get("/api/rules").json()["rules"]:
+        assert "report" in rule["actions"], rule["name"]
+        assert rule["default_action"] in rule["actions"], rule["name"]
+        assert rule["action"] in rule["actions"], rule["name"]
+        assert set(rule["conditions"]) <= {"min_age_hours", "max_gb",
+                                           "min_confidence"}, rule["name"]
 
 
 # ---------------------------------------------------------------------------

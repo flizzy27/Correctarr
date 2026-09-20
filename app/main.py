@@ -35,7 +35,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, i18n, logging_setup, notifications
+from . import auth, i18n, logging_setup, notifications, policy
 from . import settings as S
 from .arr import Arr, ArrError
 from .engine import Engine
@@ -744,59 +744,104 @@ def write_settings(request: Request, body: dict = Body(...),
 # ---------------------------------------------------------------------------
 @app.get("/api/rules")
 def list_rules(_: dict = Depends(require_user)):
-    cfg = engine.config()
+    """Every rule, what it may do, and what it is currently set to do."""
+    settings = engine.rule_settings()
     counts = store.summary()["per_rule"]
-    return {"categories": list(CATEGORIES), "rules": [{
-        "name": r.name, "category": r.category, "found": counts.get(r.name, 0),
-        "scope": r.scope, "only_kinds": list(r.only_kinds), "deep": r.deep,
-        "modifies": r.modifies, "deletes": r.deletes,
-        "fix_by_default": r.fix_by_default,
-        "enabled": (cfg["rules"].get(r.name) or {}).get("enabled", True),
-        "fix": (cfg["rules"].get(r.name) or {}).get("fix", r.fix_by_default),
-    } for r in ALL]}
+    return {
+        "categories": list(CATEGORIES),
+        "destructive": sorted(policy.DESTRUCTIVE),
+        "limits": {k: list(v) for k, v in policy.LIMITS.items()},
+        "rules": [{
+            "name": r.name, "category": r.category, "found": counts.get(r.name, 0),
+            "scope": r.scope, "only_kinds": list(r.only_kinds), "deep": r.deep,
+            "modifies": r.modifies, "deletes": r.deletes,
+            "actions": list(r.actions), "default_action": r.default_action,
+            "conditions": list(r.conditions),
+            **settings[r.name],
+        } for r in ALL],
+    }
 
 
-class RuleToggle(BaseModel):
+class RuleUpdate(BaseModel):
+    """What may be changed about a rule.
+
+    ``fix`` is what the previous interface sent. It is still accepted so an
+    older client, or a bookmarked request, keeps working — it simply means
+    "this rule's own default action" or "report".
+    """
     enabled: bool | None = None
+    action: str | None = None
+    min_age_hours: float | None = None
+    max_gb: float | None = None
+    min_confidence: float | None = None
     fix: bool | None = None
 
 
+def _policy_failure(request: Request, error: ValueError) -> HTTPException:
+    """Turn a rejected policy into a translated 400."""
+    key, *parts = str(error).split("|")
+    if key == "error.action_not_allowed":
+        return _fail(request, 400, key, action=parts[0] if parts else "")
+    if key in ("error.not_a_number", "error.condition_not_allowed"):
+        return _fail(request, 400, key, field=parts[0] if parts else "")
+    if key == "error.out_of_range":
+        return _fail(request, 400, key, field=parts[0] if parts else "",
+                     range=parts[1] if len(parts) > 1 else "")
+    return _fail(request, 400, "error.bad_rules_body")
+
+
+def _apply_to_rule(request: Request, rule, entry: dict, submitted: dict) -> dict:
+    """Merge one submitted change into a rule's settings, validating it."""
+    entry = dict(entry)
+    if "enabled" in submitted:
+        entry["enabled"] = bool(submitted["enabled"])
+
+    wanted = {key: submitted[key] for key in ("action", *policy.CONDITIONS)
+              if key in submitted}
+    if "fix" in submitted and "action" not in wanted:
+        if submitted["fix"] and not rule.modifies:
+            raise _fail(request, 400, "error.rule_cannot_fix", name=rule.name)
+        wanted["action"] = rule.default_action if submitted["fix"] else policy.REPORT
+    if not wanted:
+        return entry
+
+    # Conditions are meaningless without knowing which action they guard, so
+    # the current action always travels with them.
+    wanted.setdefault("action", entry.get("action", policy.REPORT))
+    try:
+        entry.update(policy.validate(wanted, rule.actions, rule.conditions))
+    except ValueError as e:
+        raise _policy_failure(request, e) from None
+    return entry
+
+
 @app.post("/api/rules/{name}")
-def toggle_rule(name: str, body: RuleToggle, request: Request,
-                _: dict = Depends(require_user)):
+def configure_rule(name: str, body: RuleUpdate, request: Request,
+                   _: dict = Depends(require_user)):
     rule = BY_NAME.get(name)
     if rule is None:
         raise _fail(request, 404, "error.no_such_rule", name=name)
-    everything = dict(engine.config()["rules"])
-    entry = dict(everything.get(name, {}))
-    if body.enabled is not None:
-        entry["enabled"] = bool(body.enabled)
-    if body.fix is not None:
-        if not rule.modifies and body.fix:
-            raise _fail(request, 400, "error.rule_cannot_fix", name=name)
-        entry["fix"] = bool(body.fix)
-    everything[name] = entry
+    everything = engine.rule_settings()
+    everything[name] = _apply_to_rule(
+        request, rule, everything[name],
+        body.model_dump(exclude_none=True))
     store.set("rules", everything)
-    return {"ok": True, "rule": name, **entry}
+    return {"ok": True, "rule": name, **everything[name]}
 
 
 @app.post("/api/rules")
-def toggle_rules(request: Request, body: dict = Body(...),
-                 _: dict = Depends(require_user)):
+def configure_rules(request: Request, body: dict = Body(...),
+                    _: dict = Depends(require_user)):
     """Several rules at once — "report only", for instance."""
     incoming = body.get("rules")
     if not isinstance(incoming, dict):
         raise _fail(request, 400, "error.bad_rules_body")
-    everything = dict(engine.config()["rules"])
+    everything = engine.rule_settings()
     for name, value in incoming.items():
-        if name not in BY_NAME or not isinstance(value, dict):
+        rule = BY_NAME.get(name)
+        if rule is None or not isinstance(value, dict):
             raise _fail(request, 400, "error.no_such_rule", name=name)
-        entry = dict(everything.get(name, {}))
-        if "enabled" in value:
-            entry["enabled"] = bool(value["enabled"])
-        if "fix" in value:
-            entry["fix"] = bool(value["fix"]) and BY_NAME[name].modifies
-        everything[name] = entry
+        everything[name] = _apply_to_rule(request, rule, everything[name], value)
     store.set("rules", everything)
     return {"ok": True, "rules": everything}
 

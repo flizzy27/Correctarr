@@ -28,7 +28,7 @@ import threading
 import time
 from typing import Any
 
-from . import notifications
+from . import notifications, policy
 from . import settings as S
 from .arr import Arr, ArrError
 from .indexers import build_views, rate
@@ -86,21 +86,48 @@ class Engine:
             elif key != "rules":
                 log.debug("Setting %s is unknown and will be ignored", key)
 
-        rule_defaults = {r.name: {"enabled": True, "fix": r.fix_by_default}
-                         for r in ALL}
-        stored = self.store.get("rules", {}) or {}
-        for name, value in stored.items():
-            if name in rule_defaults and isinstance(value, dict):
-                if "enabled" in value:
-                    rule_defaults[name]["enabled"] = bool(value["enabled"])
-                if "fix" in value:
-                    rule_defaults[name]["fix"] = bool(value["fix"])
-        cfg["rules"] = rule_defaults
+        cfg["rules"] = self.rule_settings()
         cfg["cleanup_paths"] = S.cleanup_paths(cfg)
         return cfg
 
+    def rule_settings(self) -> dict[str, dict]:
+        """Every rule's configuration, filled in and ready to be saved again.
+
+        Deliberately plain dictionaries rather than ``Policy`` objects: the same
+        shape goes to the interface, back from it, and into the store, and one
+        shape that survives a round trip through JSON is worth more than a
+        slightly tidier type.
+        """
+        stored = self.store.get("rules", {}) or {}
+        if not isinstance(stored, dict):
+            stored = {}
+        out: dict[str, dict] = {}
+        for rule in ALL:
+            saved = stored.get(rule.name)
+            saved = saved if isinstance(saved, dict) else {}
+            # "fix" is what the previous version stored. Translating it on the
+            # way out rather than rewriting the row keeps the upgrade
+            # reversible: an older build reading this store still finds what it
+            # expects, right up until something is saved here.
+            if "action" not in saved and "fix" in saved:
+                saved = {**saved,
+                         **policy.from_legacy_switch(bool(saved["fix"]),
+                                                     rule.default_action)}
+            chosen = policy.parse(saved, rule.actions, rule.default_action,
+                                  rule.conditions)
+            out[rule.name] = {"enabled": bool(saved.get("enabled", True)),
+                              **chosen.as_dict()}
+        return out
+
     def rule_enabled(self, cfg: dict, name: str) -> bool:
         return bool((cfg["rules"].get(name) or {}).get("enabled", True))
+
+    def rule_policy(self, cfg: dict, name: str) -> policy.Policy:
+        rule = next((r for r in ALL if r.name == name), None)
+        if rule is None:
+            return policy.Policy()
+        return policy.parse(cfg["rules"].get(name) or {}, rule.actions,
+                            rule.default_action, rule.conditions)
 
     def notification_targets(self) -> list[dict]:
         return self.store.notifications(enabled_only=True)
@@ -305,72 +332,141 @@ class Engine:
                         "views": rate(build_views(indexers, stats, statuses, history))})
         return out
 
-    # -- fixing ----------------------------------------------------------------
-    def _fix(self, arr: Arr, finding: Finding, cfg: dict) -> str | None:
-        dry = bool(cfg.get("dry_run"))
+    # -- acting ----------------------------------------------------------------
+    def _perform(self, action: str, arr: Arr, finding: Finding,
+                 cfg: dict) -> str | None:
+        """Carry out one action on one finding.
 
-        if finding.rule in ("wrong_year", "wrong_title", "profile_violation", "stalled"):
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would blocklist and search again"
-            arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=True)
-            return "blocklisted, new search started"
+        Looked up by name rather than decided by a chain of ``if`` statements on
+        the rule. That way the set of actions is open: a new one needs a method
+        and an entry in ``policy.ACTIONS``, and the interface offers it without
+        anything here changing. It also means a rule and an action are no longer
+        the same thing — the same "blocklist and search again" is shared by four
+        rules that used to each carry their own copy of it.
+        """
+        handler = getattr(self, "_act_" + action, None)
+        if handler is None:
+            # Reachable if a stored configuration names an action this build
+            # does not have — a downgrade, essentially. Report it and do
+            # nothing; the finding is still recorded either way.
+            log.warning("No handler for action %r (rule %s)", action, finding.rule)
+            return None
+        return handler(arr, finding, cfg, bool(cfg.get("dry_run")))
 
-        if finding.rule == "not_an_upgrade":
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would blocklist"
-            arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=False)
-            return "blocklisted (no new search needed)"
+    # Every handler returns a sentence saying what it did, or None when there
+    # was nothing to do. A result starting with FAILED counts as an error, one
+    # starting with the dry run prefix counts as no change.
 
-        if finding.rule == "manual_import":
-            return self._fix_manual_import(arr, finding, dry)
+    def _act_remove(self, arr: Arr, finding: Finding, cfg: dict,
+                    dry: bool) -> str | None:
+        """Out of the queue, but not blocklisted — it may be grabbed again."""
+        if finding.entry_id is None:
+            return None
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would remove from the queue"
+        arr.remove_from_queue(finding.entry_id, blocklist=False, search_again=False)
+        return "removed from the queue"
 
-        if finding.rule in ("missing_audio_language", "below_profile", "missing_items"):
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would search again"
-            item_id = finding.data.get("item_id")
-            if not item_id:
-                return None
-            arr.search([item_id])
-            return "search for a replacement started"
+    def _act_blocklist(self, arr: Arr, finding: Finding, cfg: dict,
+                       dry: bool) -> str | None:
+        if finding.entry_id is None:
+            return self._blocklist_by_history(arr, finding, dry, search=False)
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would blocklist"
+        arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=False)
+        return "blocklisted"
 
+    def _act_blocklist_and_search(self, arr: Arr, finding: Finding, cfg: dict,
+                                  dry: bool) -> str | None:
+        # A finding that was never in the queue has no entry to remove — an
+        # unmatched file, for instance, left it long ago. The grab is still in
+        # the history though, and marking that failed has the same effect.
+        if finding.entry_id is None:
+            return self._blocklist_by_history(arr, finding, dry, search=True)
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would blocklist and search again"
+        arr.remove_from_queue(finding.entry_id, blocklist=True, search_again=True)
+        return "blocklisted, new search started"
+
+    def _act_search(self, arr: Arr, finding: Finding, cfg: dict,
+                    dry: bool) -> str | None:
+        item_id = finding.data.get("item_id")
+        if not item_id:
+            return None
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would search again"
+        arr.search([item_id])
+        return "search for a replacement started"
+
+    def _act_refresh(self, arr: Arr, finding: Finding, cfg: dict,
+                     dry: bool) -> str | None:
+        item_id = finding.data.get("item_id")
+        if not item_id:
+            return None
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would rescan"
+        if arr.kind == "radarr":
+            arr.command("RefreshMovie", movieIds=[item_id])
+        else:
+            arr.command("RefreshSeries", seriesId=item_id)
+        return "rescanned"
+
+    def _act_import(self, arr: Arr, finding: Finding, cfg: dict,
+                    dry: bool) -> str | None:
         if finding.rule == "unmatched_files":
-            return self._fix_unmatched(arr, finding, dry)
+            return self._import_match(arr, finding, dry, clean=False)
+        return self._import_waiting(arr, finding, dry)
 
-        if finding.rule == "downloader_warning":
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would clear the warning"
-            return self._on_client(finding, lambda c: (c.clear_warnings(),
-                                                       "recorded and cleared")[1])
+    def _act_import_and_clean(self, arr: Arr, finding: Finding, cfg: dict,
+                              dry: bool) -> str | None:
+        if finding.rule == "unmatched_files":
+            return self._import_match(arr, finding, dry, clean=True)
+        return self._import_waiting(arr, finding, dry)
 
-        if finding.rule == "downloader_stale_entry":
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would remove the entry and its source folder"
-            gb = finding.data.get("gb")
-            return self._on_client(finding, lambda c: (
-                c.delete_history_entry(finding.data["nzo_id"], with_files=True),
-                f"entry and source folder removed ({gb} GB)")[1])
+    def _act_delete(self, arr: Arr, finding: Finding, cfg: dict,
+                    dry: bool) -> str | None:
+        return self._delete_path(finding, cfg, dry)
 
-        if finding.rule == "downloader_paused":
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would resume"
-            return self._on_client(finding, lambda c: (c.resume(), "resumed")[1])
+    def _act_clear_warning(self, arr: Arr, finding: Finding, cfg: dict,
+                           dry: bool) -> str | None:
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would clear the warning"
+        return self._on_client(finding, lambda c: (c.clear_warnings(),
+                                                   "recorded and cleared")[1])
 
-        if finding.rule == "leftover_files":
-            return self._fix_leftover(finding, cfg, dry)
+    def _act_remove_entry(self, arr: Arr, finding: Finding, cfg: dict,
+                          dry: bool) -> str | None:
+        if not finding.data.get("nzo_id"):
+            return None
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would remove the entry and its source folder"
+        gb = finding.data.get("gb")
+        return self._on_client(finding, lambda c: (
+            c.delete_history_entry(finding.data["nzo_id"], with_files=True),
+            f"entry and source folder removed ({gb} GB)")[1])
 
-        if finding.rule == "unreadable_file":
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would rescan"
-            item_id = finding.data.get("item_id")
-            if not item_id:
-                return None
-            if arr.kind == "radarr":
-                arr.command("RefreshMovie", movieIds=[item_id])
-            else:
-                arr.command("RefreshSeries", seriesId=item_id)
-            return "rescanned"
+    def _act_resume(self, arr: Arr, finding: Finding, cfg: dict,
+                    dry: bool) -> str | None:
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would resume"
+        return self._on_client(finding, lambda c: (c.resume(), "resumed")[1])
 
-        return None
+    def _blocklist_by_history(self, arr: Arr, finding: Finding, dry: bool,
+                              search: bool) -> str | None:
+        """Blocklist something that is no longer in the queue."""
+        release = finding.data.get("release") or finding.title
+        item_id = finding.data.get("item_id")
+        if dry:
+            return (f"{DRY_RUN_PREFIX}: would blocklist and search again" if search
+                    else f"{DRY_RUN_PREFIX}: would blocklist")
+        blocked = self._blocklist_release(arr, release)
+        if search and item_id:
+            arr.search([item_id])
+        self._clear_client_entry(release)
+        if not search:
+            return "blocklisted" if blocked else "source folder cleared"
+        return ("blocklisted, new search started" if blocked
+                else "source folder cleared, new search started")
 
     def _on_client(self, finding: Finding, action) -> str | None:
         """Run something against the download client that reported this."""
@@ -385,7 +481,9 @@ class Engine:
                     client.close()
         return None
 
-    def _fix_manual_import(self, arr: Arr, finding: Finding, dry: bool) -> str | None:
+    def _import_waiting(self, arr: Arr, finding: Finding,
+                        dry: bool) -> str | None:
+        """Import what the service is holding back and waiting on."""
         if dry:
             return f"{DRY_RUN_PREFIX}: would import"
         download_id = finding.data.get("downloadId")
@@ -406,33 +504,30 @@ class Engine:
         arr.manual_import(files)
         return f"{len(files)} file(s) imported"
 
-    def _fix_unmatched(self, arr: Arr, finding: Finding, dry: bool) -> str | None:
-        todo = finding.data.get("todo")
-        item_id = finding.data.get("item_id")
+    def _import_match(self, arr: Arr, finding: Finding, dry: bool,
+                      clean: bool) -> str | None:
+        """Import a file this build matched to a title itself.
 
-        if todo == "give_up":
-            # No match possible and waited long enough: blocklist the release so
-            # it is not grabbed again, and search for something else.
-            if dry:
-                return f"{DRY_RUN_PREFIX}: would blocklist and search again"
-            blocked = self._blocklist_release(arr, finding.data.get("release", ""))
-            if item_id:
-                arr.search([item_id])
-            self._clear_client_entry(finding.data.get("release", ""))
-            return ("blocklisted, new search started" if blocked
-                    else "source folder cleared, new search started")
-
-        if todo != "import":
+        ``todo`` is set by the check and says what is actually possible for this
+        one file. A finding that found no match at all cannot be imported no
+        matter which action is chosen — for those the answer is to blocklist,
+        which is a separate action the person can pick.
+        """
+        if finding.data.get("todo") != "import":
             return None
+        item_id = finding.data.get("item_id")
         path = finding.data.get("path")
         if not item_id or not path:
             return None
         if dry:
-            return f"{DRY_RUN_PREFIX}: would import as item {item_id}"
+            return (f"{DRY_RUN_PREFIX}: would import as item {item_id}"
+                    + (" and clean up afterwards" if clean else ""))
         payload = {"path": path, "quality": finding.data.get("quality"),
                    "languages": finding.data.get("languages") or []}
         payload["movieId" if arr.kind == "radarr" else "seriesId"] = item_id
         arr.manual_import([payload])
+        if not clean:
+            return f"matched and imported ({finding.data.get('gb', 0)} GB)"
         # The download client never learns about a manual import — its entry and
         # source folder would stay. Observed on Crank and Transporter, both of
         # which were still in the history afterwards.
@@ -440,12 +535,16 @@ class Engine:
         return (f"matched and imported ({finding.data.get('gb', 0)} GB)"
                 + (f", {cleared} cleaned up" if cleared else ""))
 
-    def _fix_leftover(self, finding: Finding, cfg: dict, dry: bool) -> str | None:
+    def _delete_path(self, finding: Finding, cfg: dict,
+                     dry: bool) -> str | None:
+        """Delete a file or folder — the only action that cannot be undone."""
         path = finding.data.get("path")
         if not path:
             return None
         if dry:
-            return f"{DRY_RUN_PREFIX}: would delete {finding.data.get('mb', 0)} MB"
+            size = finding.data.get("mb")
+            return (f"{DRY_RUN_PREFIX}: would delete {size} MB" if size is not None
+                    else f"{DRY_RUN_PREFIX}: would delete {os.path.basename(path)}")
         # Last guard immediately before deleting: the path must still sit below
         # a configured directory. Checked twice, on detection and here — minutes
         # can pass between the two.
@@ -565,16 +664,23 @@ class Engine:
                             continue
                         findings += self._apply(rule, lead, shared, cfg, deep, errors)
 
-            # 3. fix
+            # 3. act
             for finding in findings:
-                rule_config = cfg["rules"].get(finding.rule) or {}
-                if not rule_config.get("fix", False):
+                chosen = self.rule_policy(cfg, finding.rule)
+                verdict = policy.decide(chosen, finding)
+                if not verdict.act:
+                    # Held back rather than hidden: the finding is still
+                    # reported, and the reason it was not acted on travels
+                    # with it so it is visible why.
+                    if verdict.reason and verdict.reason != "policy.report_only":
+                        finding.data["_held"] = verdict.reason
+                        finding.data["_held_params"] = verdict.params or {}
                     continue
                 target = next((s for s in services if s.kind == finding.service), lead)
                 if target is None:
                     continue
                 try:
-                    finding.action = self._fix(target, finding, cfg)
+                    finding.action = self._perform(verdict.action, target, finding, cfg)
                     if finding.action and not str(finding.action).startswith(
                             (DRY_RUN_PREFIX, "FAILED")):
                         fixed += 1
@@ -582,7 +688,7 @@ class Engine:
                     finding.action = f"FAILED: {e}"
                     errors.append(str(e))
                 except Exception as e:                          # noqa: BLE001
-                    log.exception("Fixing %s failed", finding.rule)
+                    log.exception("Acting on %s failed", finding.rule)
                     finding.action = f"FAILED: {e}"
                     errors.append(f"{finding.rule}: {e}")
 

@@ -196,14 +196,17 @@
   },
   "rules_page": {
     "title": "Rules",
-    "help": "Turning off <b>check</b> means the rule does not run at all. Turning off <b>fix</b> means findings are reported but nothing is touched. The number on the right shows how often a rule has matched so far.",
+    "help": "Turning off <b>check</b> means the rule does not run at all. The action next to it decides what happens when it finds something — from reporting only through to correcting it. Conditions narrow that down further. The number on the right shows how often a rule has matched so far.",
     "active_count": "{active} of {total} active",
     "found_count": "{count} found",
     "no_match": "No rule matches that search.",
-    "confirm_report_only": "Turn off \"fix\" for every rule? Problems will still be found, but nothing will be changed.",
+    "confirm_report_only": "Set every rule to report only? Problems will still be found, but nothing will be changed.",
     "confirm_defaults": "Reset every rule to its default?",
     "report_only_done": "Every rule is now set to report only",
-    "defaults_done": "Restored"
+    "defaults_done": "Restored",
+    "acts_count": "{count} act",
+    "shows_conditions": "Conditions",
+    "hide_conditions": "Hide conditions"
   },
   "rule_badge": {
     "deletes": "deletes",
@@ -312,7 +315,8 @@
     "connection_ok": "The connection works: {info}",
     "rule_toggled": "{rule}: {field} {state}",
     "on": "on",
-    "off": "off"
+    "off": "off",
+    "rule_action_set": "{rule}: {action}"
   },
   "notify": {
     "title": "{count} new finding(s)",
@@ -347,7 +351,7 @@
     "unknown_kind": "Unknown kind. Possible values: {kinds}.",
     "unknown_setting": "Unknown setting: {key}",
     "bad_settings_body": "Expected {key, value} or {values: {…}}",
-    "bad_rules_body": "Expected {rules: {name: {enabled, fix}}}",
+    "bad_rules_body": "Expected {rules: {name: {enabled, action, …}}}",
     "no_such_rule": "No such rule: {name}",
     "rule_cannot_fix": "\"{name}\" cannot fix anything — the rule only reports.",
     "no_such_service": "No such service",
@@ -361,7 +365,10 @@
     "unknown_severity": "Unknown severity.",
     "unknown_category": "No such category: {name}",
     "no_such_connection": "No such connection",
-    "channel_field_missing": "“{field}” is required."
+    "channel_field_missing": "“{field}” is required.",
+    "action_not_allowed": "This rule cannot do “{action}”.",
+    "out_of_range": "“{field}” has to be between {range}.",
+    "condition_not_allowed": "This rule has no “{field}” condition."
   },
   "reason": {
     "marked_failed": "marked as failed",
@@ -868,5 +875,55 @@
       "schedule": "Queue checked every minute, library every 90 minutes",
       "next": "Have a look at <b>Rules</b> to see what each one does and decide which of them may act. If you left the dry run on, remember to turn it off once you are happy."
     }
+  },
+  "policy": {
+    "heading": "What should happen",
+    "conditions": "Only when",
+    "no_limit": "no limit",
+    "any": "any",
+    "held_back": "held back",
+    "destructive": "deletes data",
+    "irreversible": "This cannot be undone. Set a limit below if you want to be asked about the large ones.",
+    "action": {
+      "report": "Report only",
+      "remove": "Remove from the queue",
+      "blocklist": "Blocklist",
+      "blocklist_and_search": "Blocklist and search again",
+      "import": "Import",
+      "import_and_clean": "Import and clean up",
+      "search": "Search for a replacement",
+      "refresh": "Read the file again",
+      "delete": "Delete from disk",
+      "clear_warning": "Acknowledge the warning",
+      "remove_entry": "Remove the entry and its folder",
+      "resume": "Resume"
+    },
+    "explain": {
+      "report": "Record it and leave everything alone. Always available, and always the safe answer.",
+      "remove": "Take it out of the queue. The same release can be grabbed again later.",
+      "blocklist": "Take it out of the queue and refuse this release from now on. Nothing new is searched for.",
+      "blocklist_and_search": "Take it out, refuse it from now on, and look for a replacement straight away.",
+      "import": "Bring the file into the library.",
+      "import_and_clean": "Bring the file in, then clear the download client entry and its source folder — the client never learns about an import done here.",
+      "search": "Ask the service to look for a better copy.",
+      "refresh": "Have the service read the file again. Often enough when the file itself is fine and only the record is stale.",
+      "delete": "Remove the files from disk. Only ever inside the folders configured under Paths.",
+      "clear_warning": "Record the warning and clear it in the download client.",
+      "remove_entry": "Drop the finished entry from the download client and delete its source folder.",
+      "resume": "Start the download client again."
+    },
+    "min_age_hours": "Wait at least",
+    "min_age_hours_help": "Nothing is acted on before this much time has passed. A download that arrived two minutes ago is not stuck, it is new.",
+    "max_gb": "At most",
+    "max_gb_help": "Anything larger is reported instead of acted on. A cheap way to say: clear the small debris, ask me about the big one.",
+    "min_confidence": "Confidence of at least",
+    "min_confidence_help": "Only act when the match is at least this certain. Applies to rules that match a file to a title themselves.",
+    "report_only": "set to report only",
+    "too_young": "only {age} h old, waiting for {needed} h",
+    "age_unknown": "no age known for this finding",
+    "too_large": "{size} GB is over the limit of {limit} GB",
+    "size_unknown": "no size known for this finding",
+    "not_confident_enough": "match is {confidence} certain, {needed} required",
+    "confidence_unknown": "no confidence known for this finding"
   }
 }

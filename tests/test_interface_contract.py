@@ -72,6 +72,20 @@ def _expected_runtime_keys() -> set[str]:
         keys.add(f"severity.{severity}")
     for direction in ("higher", "lower"):
         keys.add(f"direction.{direction}")
+    # Every action a rule can take, and every condition it can carry. These are
+    # composed at runtime, so nothing else would catch a missing one.
+    from app import policy
+    for action in policy.ACTIONS:
+        keys.add(f"policy.action.{action}")
+        keys.add(f"policy.explain.{action}")
+    for condition in policy.CONDITIONS:
+        keys.add(f"policy.{condition}")
+        keys.add(f"policy.{condition}_help")
+    # And every reason a finding can be held back, so the explanation is never
+    # a bare key in front of the user.
+    for reason in ("report_only", "too_young", "age_unknown", "too_large",
+                   "size_unknown", "not_confident_enough", "confidence_unknown"):
+        keys.add(f"policy.{reason}")
     return keys
 
 
