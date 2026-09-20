@@ -410,7 +410,8 @@
     "indexer_ranking": "Ranked {actual} by configuration, {target} by measurement (rating {rating}). Priority {actual_priority} would be better at {suggested}.",
     "indexer_unknown": "The indexer shows up in the history (mean score {score}) but Prowlarr does not know it. Either it is configured directly in the Arr service, or it has since been removed from Prowlarr.",
     "disk_space": "Only {free} GB free out of {total} GB.",
-    "passthrough": "{text}"
+    "passthrough": "{text}",
+    "api_changes": "{path} is marked as replaced (service version {version})"
   },
   "rules": {
     "wrong_year": {
@@ -516,6 +517,10 @@
     "disk_space": {
       "title": "Free space is running low",
       "help": "Only looks at the locations configured as root folders."
+    },
+    "api_changes": {
+      "title": "Part of the API is being replaced",
+      "help": "The service marked one of the calls this makes as on its way out. It still works, and will for a while. This is the only advance warning available, and it names exactly what needs changing before it stops."
     }
   },
   "settings": {
@@ -871,7 +876,7 @@
       "title": "That is it",
       "lead": "Correctarr is running.",
       "services": "{count} service(s) reachable",
-      "rules": "26 rules active, each switchable on its own under Rules",
+      "rules": "{count} rules active, each with its own action under Rules",
       "schedule": "Queue checked every minute, library every 90 minutes",
       "next": "Have a look at <b>Rules</b> to see what each one does and decide which of them may act. If you left the dry run on, remember to turn it off once you are happy."
     }

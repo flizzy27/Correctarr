@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import policy, years
+from . import compat, policy, years
 from .arr import Arr
 from .i18n import t
 from .indexers import UNKNOWN_TO_PROWLARR, rank_deviation
@@ -184,19 +184,12 @@ def _top_folder(path: str) -> str:
 def size_left(entry: dict) -> float:
     """How much of a queue entry is still to come.
 
-    Both spellings are read on purpose. The services carry ``sizeleft`` today
-    but have it marked as replaced by ``sizeLeft``, and a rule that watches for
-    a download standing still must not be the thing that stops working the day
-    that lands.
+    Read through the alias table rather than by name: the services carry
+    ``sizeleft`` today but have already announced ``sizeLeft``, and the rule
+    that watches for a download standing still must not be the thing that
+    stops working the day that rename lands.
     """
-    for key in ("sizeleft", "sizeLeft"):
-        value = entry.get(key)
-        if value is not None:
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                return 0.0
-    return 0.0
+    return compat.number(entry, "sizeleft")
 
 
 def _gb(entry: dict) -> float:
@@ -380,7 +373,7 @@ def check_grab_loop(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     counter: Counter = Counter()
     last_seen: dict[int, str] = {}
     for entry in ctx.get("history", []):
-        if entry.get("eventType") not in ("grabbed", 1):
+        if not compat.event_is(entry, compat.GRABBED):
             continue
         age = _age_minutes(entry.get("date"))
         if age is None or age > hours * 60:
@@ -1247,6 +1240,31 @@ def check_indexer_unknown(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 # ===========================================================================
 # Category: system
 # ===========================================================================
+def check_api_changes(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """The service has marked part of the API this uses as replaced.
+
+    This is the only advance warning these services give. When a response comes
+    from something that is on its way out, it says so in a header — and then
+    keeps working, sometimes for a release or two, until one day it does not.
+
+    Nobody reads headers, so it is surfaced here instead: as an ordinary
+    finding, months before anything actually breaks, naming exactly which call
+    needs attention. It is reporting only and always will be; there is nothing
+    to fix at this end except the code.
+    """
+    findings = []
+    for path, count in sorted(arr.observed.deprecated.items()):
+        findings.append(Finding(
+            rule="api_changes", severity="info", service=arr.kind,
+            title=f"{arr.name}: {path}",
+            message="finding.api_changes",
+            params={"path": path, "version": arr.observed.version or "?"},
+            data={"path": path, "count": count,
+                  "version": arr.observed.version},
+        ))
+    return findings
+
+
 def check_service_health(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The service is reporting a problem about itself."""
     return [Finding(
@@ -1361,6 +1379,9 @@ ALL: tuple[Rule, ...] = (
     # -- system -------------------------------------------------------------
     Rule("service_health", "system", check_service_health),
     Rule("disk_space", "system", check_disk_space),
+    # Reporting only on purpose, and permanently: the thing that needs
+    # changing when this fires is this program, not anything on the server.
+    Rule("api_changes", "system", check_api_changes, deep=True),
 )
 
 BY_NAME: dict[str, Rule] = {r.name: r for r in ALL}

@@ -248,7 +248,7 @@ def test_rule_names_are_unique():
 
 def test_there_are_twenty_six_rules():
     """A guard against a rule silently disappearing during a refactor."""
-    assert len(ALL) == 26
+    assert len(ALL) == 27
 
 
 @pytest.mark.parametrize("header,expected", [

@@ -11,9 +11,10 @@ import time
 
 import pytest
 
-from app import rules
+from app import compat, rules
 from app import settings as S
 from app.rules import (
+    check_api_changes,
     check_below_profile,
     check_detached_folder,
     check_disk_space,
@@ -34,9 +35,14 @@ from app.rules import (
 
 
 class FakeArr:
-    def __init__(self, kind="radarr", name="Radarr"):
+    def __init__(self, kind="radarr", name="Radarr", deprecated=None):
         self.kind = kind
         self.name = name
+        # The real client fills this in from response headers. The fake has to
+        # carry it too, or a rule that reads it looks fine here and throws in
+        # production — which is exactly what the empty-context test is for.
+        self.observed = compat.Observed(version="5.0.0.1",
+                                        deprecated=dict(deprecated or {}))
 
 
 class FakeStore:
@@ -630,3 +636,19 @@ def test_both_spellings_of_the_remaining_size_are_read():
     assert size_left({}) == 0.0
     assert size_left({"sizeleft": None}) == 0.0
     assert size_left({"sizeleft": "not a number"}) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Advance warning about the services changing
+# ---------------------------------------------------------------------------
+def test_a_replaced_api_call_is_reported_before_it_breaks():
+    arr = FakeArr(deprecated={"queue": 12})
+    found = check_api_changes(arr, {}, config())
+    assert len(found) == 1
+    assert found[0].severity == "info"
+    assert "queue" in found[0].describe("en")
+    assert found[0].data["count"] == 12
+
+
+def test_nothing_is_reported_while_everything_is_current():
+    assert check_api_changes(FakeArr(), {}, config()) == []

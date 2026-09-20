@@ -40,11 +40,11 @@ Three ways, at the same time:
 
 ## The rules
 
-**26 rules across six categories.** Each one can be switched independently
+**27 rules across six categories.** Each one can be switched independently
 between *check* and *fix*, plus a global dry run that stops every change.
 
 <details>
-<summary><strong>All 26 rules</strong></summary>
+<summary><strong>All 27 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default |

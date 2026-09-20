@@ -410,7 +410,8 @@
     "indexer_ranking": "Eingestellt auf Rang {actual}, gemessen gehört er auf Rang {target} (Kennzahl {rating}). Priorität {actual_priority} wäre besser bei {suggested}.",
     "indexer_unknown": "Der Indexer taucht im Verlauf auf (mittlere Punktzahl {score}), Prowlarr kennt ihn aber nicht. Entweder direkt im Arr-Dienst eingetragen oder in Prowlarr inzwischen entfernt.",
     "disk_space": "Nur noch {free} GB frei von {total} GB.",
-    "passthrough": "{text}"
+    "passthrough": "{text}",
+    "api_changes": "{path} ist als abgelöst gekennzeichnet (Dienstversion {version})"
   },
   "rules": {
     "wrong_year": {
@@ -516,6 +517,10 @@
     "disk_space": {
       "title": "Der Platz wird knapp",
       "help": "Betrachtet nur die Ablageorte, die als Wurzelordner eingetragen sind."
+    },
+    "api_changes": {
+      "title": "Ein Teil der Schnittstelle wird abgelöst",
+      "help": "Der Dienst hat einen der hier verwendeten Aufrufe als auslaufend gekennzeichnet. Er funktioniert weiter, und das noch eine Weile. Das ist die einzige Vorwarnung, die es gibt — und sie benennt genau, was zu ändern ist, bevor es aufhört."
     }
   },
   "settings": {
@@ -871,7 +876,7 @@
       "title": "Das war's",
       "lead": "Correctarr läuft.",
       "services": "{count} Dienst(e) erreichbar",
-      "rules": "26 Regeln aktiv, jede einzeln schaltbar unter Regeln",
+      "rules": "{count} Regeln aktiv, jede mit eigener Aktion unter Regeln",
       "schedule": "Warteschlange jede Minute, Bibliothek alle 90 Minuten",
       "next": "Sieh dir unter <b>Regeln</b> an, was jede einzelne tut, und entscheide, welche eingreifen dürfen. Wenn du den Testlauf angelassen hast: nicht vergessen, ihn abzuschalten, sobald du zufrieden bist."
     }

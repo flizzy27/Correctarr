@@ -28,7 +28,7 @@ import threading
 import time
 from typing import Any
 
-from . import notifications, policy
+from . import compat, notifications, policy
 from . import settings as S
 from .arr import Arr, ArrError
 from .indexers import build_views, rate
@@ -299,7 +299,7 @@ class Engine:
             finally:
                 service.close()
             for entry in entries:
-                if entry.get("eventType") not in ("grabbed", 1):
+                if not compat.event_is(entry, compat.GRABBED):
                     continue
                 data = entry.get("data") or {}
                 name = data.get("indexer")
@@ -405,10 +405,13 @@ class Engine:
             return None
         if dry:
             return f"{DRY_RUN_PREFIX}: would rescan"
+        name = compat.command_for(arr.kind, "refresh")
+        if not name:
+            return None
         if arr.kind == "radarr":
-            arr.command("RefreshMovie", movieIds=[item_id])
+            arr.command(name, movieIds=[item_id])
         else:
-            arr.command("RefreshSeries", seriesId=item_id)
+            arr.command(name, seriesId=item_id)
         return "rescanned"
 
     def _act_import(self, arr: Arr, finding: Finding, cfg: dict,
@@ -572,7 +575,7 @@ class Engine:
             return False
         try:
             for entry in arr.history(500):
-                if entry.get("eventType") not in ("grabbed", 1):
+                if not compat.event_is(entry, compat.GRABBED):
                     continue
                 source = entry.get("sourceTitle") or ""
                 if source[:45] == release[:45] or release[:45] in source:

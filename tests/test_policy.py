@@ -7,8 +7,7 @@ Getting this wrong deletes somebody's files.
 import pytest
 
 from app import policy
-from app.rules import ALL
-from app.rules import Finding
+from app.rules import ALL, Finding
 
 
 def finding(**data):

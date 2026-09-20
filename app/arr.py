@@ -15,6 +15,8 @@ from typing import Any
 
 import httpx
 
+from . import compat
+
 log = logging.getLogger(__name__)
 
 # The only kinds the constructor accepts. An unknown value would be a bug in
@@ -37,6 +39,9 @@ class Arr:
         self.timeout = timeout
         self.name = name or kind.capitalize()
         self._client: httpx.Client | None = None
+        #: Filled in from response headers as requests happen — the version the
+        #: service reports, and any part of the API it has marked as replaced.
+        self.observed = compat.Observed()
 
     def __repr__(self) -> str:                      # never includes the key
         return f"<Arr {self.kind} {self.url}>"
@@ -57,7 +62,8 @@ class Arr:
         if self._client is not None and not self._client.is_closed:
             self._client.close()
 
-    def _call(self, method: str, path: str, **kwargs) -> Any:
+    def _call(self, method: str, path: str, retries: int = 2,
+              **kwargs) -> Any:
         path = path.lstrip("/")
         started = time.monotonic()
         try:
@@ -69,7 +75,17 @@ class Arr:
             raise ArrError(f"{self.name} is unreachable: {e}") from e
         log.debug("%s %s %s -> %s in %.0fms", self.name, method, path,
                   response.status_code, (time.monotonic() - started) * 1000)
+        self.observed.note(path, response.headers)
 
+        if response.status_code == compat.STARTING_UP and retries > 0:
+            # Not an outage. The service says so itself while it boots, and a
+            # restart of the host otherwise produces a frightening error on
+            # every single rule at once.
+            log.info("%s is still starting up, asking again", self.name)
+            time.sleep(2.0)
+            return self._call(method, path, retries=retries - 1, **kwargs)
+        if response.status_code == compat.STARTING_UP:
+            raise ArrError(f"{self.name} is still starting up")
         if response.status_code == 401:
             raise ArrError(f"{self.name} rejected the API key")
         if response.status_code == 404:
@@ -91,6 +107,8 @@ class Arr:
             status = self._call("GET", "system/status")
         except ArrError as e:
             return False, str(e)
+        if status.get("version"):
+            self.observed.version = str(status["version"])[:32]
         name = status.get("appName") or self.kind.capitalize()
         # Someone who enters Radarr but means Sonarr should find out now.
         if name.lower() in ("radarr", "sonarr") and name.lower() != self.kind:
@@ -189,10 +207,15 @@ class Arr:
     def search(self, item_ids: list[int]) -> int | None:
         if not item_ids:
             return None
+        # The two applications do not agree on singular or plural here, and an
+        # unrecognised command name is a server error rather than a refusal,
+        # so the names live in one table instead of being spelled out twice.
         if self.kind == "radarr":
-            command = {"name": "MoviesSearch", "movieIds": item_ids}
+            command = {"name": compat.command_for("radarr", "search"),
+                       "movieIds": item_ids}
         else:
-            command = {"name": "SeriesSearch", "seriesId": item_ids[0]}
+            command = {"name": compat.command_for("sonarr", "series_search"),
+                       "seriesId": item_ids[0]}
         return (self._call("POST", "command", json=command) or {}).get("id")
 
     def command(self, name: str, **kwargs) -> int | None:

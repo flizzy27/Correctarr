@@ -1480,7 +1480,7 @@ const wizard = {
           <div>${esc(t("wizard.done.services", { count: reachable }))}</div>
         </div>
         <div class="check ok"><span class="mark">✓</span>
-          <div>${esc(t("wizard.done.rules"))}</div></div>
+          <div>${esc(t("wizard.done.rules", { count: ruleData.length || 27 }))}</div></div>
         <div class="check ok"><span class="mark">✓</span>
           <div>${esc(t("wizard.done.schedule"))}</div></div>
       </div>
