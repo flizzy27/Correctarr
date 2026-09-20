@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import policy
+from . import policy, years
 from .arr import Arr
 from .i18n import t
 from .indexers import UNKNOWN_TO_PROWLARR, rank_deviation
@@ -47,7 +47,6 @@ from .scoring import score
 log = logging.getLogger(__name__)
 
 BLOCKED = -900000
-YEAR_PATTERN = re.compile(r"[0-9]{4}")
 
 VIDEO_SUFFIXES = (".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".wmv", ".mpg", ".mpeg")
 ARCHIVE_SUFFIXES = (".rar", ".par2", ".sfv", ".nfo", ".srr", ".zip", ".7z", ".001", ".tmp")
@@ -123,11 +122,6 @@ CATEGORIES = ("queue", "import", "library", "downloader", "indexers", "system")
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def _years(text: str) -> list[int]:
-    return [y for y in (int(x) for x in YEAR_PATTERN.findall(text or ""))
-            if 1900 <= y <= 2035]
-
-
 def _messages(entry: dict) -> str:
     parts = [m for s in (entry.get("statusMessages") or [])
              for m in (s.get("messages") or [])]
@@ -214,29 +208,36 @@ def _gb(entry: dict) -> float:
 
 
 def check_wrong_year(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
-    """The year in the release name does not match the title.
+    """The year in the release name contradicts the title it was matched to.
 
     Checked in EVERY state on purpose, not only at import: a wrong film stays
-    wrong, and the sooner it surfaces the less bandwidth is wasted. Releases
-    without a year in the name are not judged — there is nothing to compare.
+    wrong, and the sooner it surfaces the less bandwidth is wasted.
+
+    The comparison itself lives in :mod:`app.years`, because it is far less
+    obvious than it looks — a title that is itself a number, a spelled out
+    resolution, and the several defensible answers to "what year is this film
+    from" all have to be handled before the two numbers can be compared. The
+    finding carries a confidence, so a near miss and a twenty year gap can be
+    treated differently.
     """
     tolerance = int(cfg.get("year_tolerance", 1))
     findings = []
     for entry in ctx["queue"]:
         item = _item(entry)
-        expected = item.get("year")
-        if not expected:
-            continue
-        found = _years(entry.get("title", ""))
-        if not found or any(abs(y - expected) <= tolerance for y in found):
+        verdict = years.judge(entry.get("title", ""), item, tolerance)
+        if not verdict.wrong:
             continue
         findings.append(Finding(
             rule="wrong_year", severity="error", service=arr.kind, entry_id=entry["id"],
-            title=f"{item.get('title', '?')} ({expected})",
+            title=f"{item.get('title', '?')} ({verdict.expected})",
             message="finding.wrong_year",
-            params={"found": ", ".join(map(str, found)), "expected": expected},
-            data={"release": entry.get("title"), "years": found, "expected": expected,
-                  "gb": _gb(entry)},
+            params={"found": ", ".join(map(str, verdict.found)),
+                    "expected": verdict.expected},
+            data={"release": entry.get("title"), "years": list(verdict.found),
+                  "expected": verdict.expected, "distance": verdict.distance,
+                  # How sure the mismatch is, so a condition can be set to act
+                  # only on the obvious ones and report the rest.
+                  "confidence": verdict.confidence, "gb": _gb(entry)},
         ))
     return findings
 
@@ -424,10 +425,12 @@ def check_manual_import(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         if "manual import" not in _messages(entry).lower():
             continue
         item = _item(entry)
-        expected, release = item.get("year"), entry.get("title", "")
-        found = _years(release)
-        year_ok = bool(expected and found
-                       and any(abs(y - expected) <= tolerance for y in found))
+        release = entry.get("title", "")
+        # Importing without being asked needs the year to be stated AND to fit.
+        # A name that mentions no year at all is not evidence of anything, and
+        # this is the gate in front of an action, not a reason to report one.
+        verdict = years.judge(release, item, tolerance)
+        year_ok = bool(verdict.found) and not verdict.wrong
         title_ok = max(_similarity(release, item.get("title", "")),
                        _similarity(release, item.get("originalTitle") or "")) >= threshold
         if not (year_ok and title_ok):
@@ -1284,7 +1287,8 @@ ALL: tuple[Rule, ...] = (
     # -- queue --------------------------------------------------------------
     Rule("wrong_year", "queue", check_wrong_year,
          actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
-         default_action="blocklist_and_search", conditions=("max_gb",)),
+         default_action="blocklist_and_search",
+         conditions=("max_gb", "min_confidence")),
     Rule("wrong_title", "queue", check_wrong_title,
          actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
          conditions=("max_gb", "min_confidence"), deep=True),

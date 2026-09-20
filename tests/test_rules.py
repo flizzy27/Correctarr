@@ -61,15 +61,16 @@ def config(**overrides):
 
 
 def queue_entry(title, year=2018, item_id=1, state="downloading",
-                size=10 * 1024 ** 3, left=0, messages=(), profile_id=1):
+                size=10 * 1024 ** 3, left=0, messages=(), profile_id=1,
+                item_title="The Film", **movie):
     return {
         "id": 99, "title": title, "size": size, "sizeleft": left,
         "trackedDownloadState": state,
         "statusMessages": [{"messages": list(messages)}] if messages else [],
         "quality": {"quality": {"resolution": 1080, "source": "bluray",
                                 "modifier": "none"}},
-        "movie": {"id": item_id, "title": "The Film", "year": year,
-                  "qualityProfileId": profile_id},
+        "movie": {"id": item_id, "title": item_title, "year": year,
+                  "qualityProfileId": profile_id, **movie},
     }
 
 
@@ -93,6 +94,37 @@ def test_wrong_year_honours_the_tolerance():
     ctx = {"queue": [queue_entry("The.Film.2019.1080p", year=2018)]}
     assert check_wrong_year(FakeArr(), ctx, config(year_tolerance=1)) == []
     assert len(check_wrong_year(FakeArr(), ctx, config(year_tolerance=0))) == 1
+
+
+def test_wrong_year_leaves_a_title_that_is_itself_a_year_alone():
+    # "1917" states no release year, so there is nothing to contradict. The
+    # naive reading compared 1917 with 2019 and blocklisted a good release.
+    ctx = {"queue": [queue_entry("1917.German.DL.1080p.BluRay.x264-GROUP",
+                                 year=2019, item_title="1917")]}
+    assert check_wrong_year(FakeArr(), ctx, config()) == []
+
+
+def test_wrong_year_accepts_the_premiere_year_the_service_holds():
+    ctx = {"queue": [queue_entry("The.Witch.2015.1080p.BluRay-GROUP", year=2016,
+                                 item_title="The Witch", secondaryYear=2015)]}
+    assert check_wrong_year(FakeArr(), ctx, config(year_tolerance=0)) == []
+
+
+def test_wrong_year_accepts_a_release_date_the_service_holds():
+    # Cinema in late December, disc the following spring. Both years are real.
+    ctx = {"queue": [queue_entry("Hidden.Figures.2017.1080p.BluRay-GROUP",
+                                 year=2016, item_title="Hidden Figures",
+                                 physicalRelease="2017-04-11T00:00:00Z")]}
+    assert check_wrong_year(FakeArr(), ctx, config(year_tolerance=0)) == []
+
+
+def test_wrong_year_carries_a_confidence_so_a_near_miss_can_be_treated_gently():
+    close = {"queue": [queue_entry("The.Film.2015.1080p", year=2018)]}
+    far = {"queue": [queue_entry("The.Film.1995.1080p", year=2018)]}
+    gentle = check_wrong_year(FakeArr(), close, config())[0]
+    obvious = check_wrong_year(FakeArr(), far, config())[0]
+    assert gentle.data["confidence"] < 0.3
+    assert obvious.data["confidence"] == 1.0
 
 
 def test_wrong_title_says_nothing_without_the_item_list():
