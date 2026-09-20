@@ -136,6 +136,11 @@ code, .mono {
 }
 
 .nav { padding: 4px 10px; display: flex; flex-direction: column; gap: 1px; }
+/* Scrolled horizontally on a phone. The bar itself is hidden: it eats a
+   row of height on a screen that has none to spare, and the fade at the
+   edge says "there is more" just as clearly. */
+.nav { scrollbar-width: none; }
+.nav::-webkit-scrollbar { display: none; }
 
 .nav-item {
   display: flex; align-items: center; gap: 10px;
@@ -177,9 +182,23 @@ code, .mono {
   border-bottom: 1px solid var(--line);
 }
 .topbar .subtitle { font-size: .8em; color: var(--muted); }
-.topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.topbar-actions {
+  margin-left: auto; display: flex; align-items: center; gap: 9px;
+  flex-wrap: wrap; min-width: 0;
+}
 
 main { padding: var(--gap) calc(var(--gap) + 6px) 48px; flex: 1; }
+
+/* A line of body text stops being readable somewhere past 100 characters, and
+   a table stretched across a 4K screen is worse than one that is not. So the
+   content is capped and centred — but the bar at the top keeps its full width,
+   because it is sticky and carries a background: capping that would leave the
+   page scrolling through two gaps at the sides. Its padding grows instead, so
+   its contents stay lined up with the column below. */
+main > .page { max-width: 1500px; margin-inline: auto; }
+@media (min-width: 1800px) {
+  .topbar { padding-inline: calc((100% - 1500px) / 2); }
+}
 
 .page { display: none; animation: fade-in 160ms ease-out; }
 .page.active { display: block; }
@@ -206,7 +225,7 @@ main { padding: var(--gap) calc(var(--gap) + 6px) 48px; flex: 1; }
 /* ------------------------------------------------------------------ tiles */
 .tiles {
   display: grid; gap: 12px; margin-bottom: var(--gap);
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(168px, 100%), 1fr));
 }
 .tile {
   background: var(--card); border: 1px solid var(--line);
@@ -306,6 +325,13 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
                     linear-gradient(135deg, currentColor 50%, transparent 50%);
   background-position: calc(100% - 15px) 50%, calc(100% - 10px) 50%;
   background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+/* A list box is not a drop-down: the arrow pointed at nothing, and it sat in
+   the middle of the list rather than on a closed control. */
+select[multiple] {
+  background-image: none; padding-right: 10px; cursor: default;
+  overflow-y: auto;
+}
+select[multiple] option { padding: 4px 2px; }
 
 /* --------------------------------------------------------------- toggles */
 .toggle { position: relative; display: inline-block; width: 38px; height: 21px; flex: none; }
@@ -371,14 +397,27 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 .conditions { margin-top: 9px; }
 .conditions > summary {
   cursor: pointer; font-size: .82em; color: var(--muted);
-  padding: 3px 0; list-style-position: inside;
-  border-radius: var(--radius-sm);
+  padding: 3px 0; border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 7px;
 }
+/* The default marker disappears the moment the summary stops being a
+   list-item, which it has to in order to line its contents up. So the
+   triangle is drawn here instead, and it turns when the block opens. */
+.conditions > summary::-webkit-details-marker { display: none; }
+.conditions > summary::marker { content: ""; }
+.conditions > summary::before {
+  content: ""; flex: none;
+  width: 0; height: 0; border-style: solid;
+  border-width: 4.5px 0 4.5px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform var(--transition);
+}
+.conditions[open] > summary::before { transform: rotate(90deg); }
 .conditions > summary:hover { color: var(--ink); }
 .conditions > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .condition-grid {
   display: grid; gap: 13px; margin: 9px 0 3px;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
   max-width: 72ch;
 }
 .condition-grid .field-row input[type=number] { max-width: 96px; }
@@ -409,7 +448,12 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 .entry .action.dry { color: var(--warn); }
 
 /* --------------------------------------------------------------- settings */
-.fields { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); }
+.fields {
+  display: grid; gap: 15px;
+  /* min() so a narrow screen gets one column instead of a column that is
+     wider than the screen and pushes the whole page sideways. */
+  grid-template-columns: repeat(auto-fit, minmax(min(275px, 100%), 1fr));
+}
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .field > label { font-size: .88em; font-weight: 540; }
 .field .help { color: var(--muted); font-size: .81em; line-height: 1.45; }
@@ -438,7 +482,7 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
   padding: 14px; margin-bottom: 11px; background: var(--raised);
 }
 .service-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.service-head .name { font-weight: 600; }
+.service-head .name { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
 .service-head .state { color: var(--muted); font-size: .84em; }
 .service-head .remove { margin-left: auto; }
 
@@ -446,11 +490,18 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 .path-row {
   display: flex; align-items: center; gap: 11px; padding: 9px 0;
   border-bottom: 1px solid var(--line); font-size: .9em;
+  flex-wrap: wrap;
 }
 .path-row:last-child { border-bottom: 0; }
 .path-row .what { font-weight: 540; min-width: 150px; }
-.path-row .path { font-family: ui-monospace, monospace; font-size: .86em; color: var(--muted); }
-.path-row .note { margin-left: auto; color: var(--muted); font-size: .85em; text-align: right; }
+.path-row .path {
+  font-family: ui-monospace, monospace; font-size: .86em; color: var(--muted);
+  overflow-wrap: anywhere; min-width: 0;
+}
+.path-row .note {
+  margin-left: auto; color: var(--muted); font-size: .85em; text-align: right;
+  overflow-wrap: anywhere; min-width: 0;
+}
 
 /* ------------------------------------------------------------- gate pages */
 .gate {
@@ -517,22 +568,111 @@ select { cursor: pointer; appearance: none; padding-right: 30px;
 }
 
 /* ----------------------------------------------------------------- narrow */
+/* ---------------------------------------------------------- narrow screens
+   Two steps, and the reasoning is the same at both: nothing may force the page
+   wider than the screen. A sideways-scrolling page is the one layout failure
+   that makes an interface feel broken rather than cramped, so anything that
+   cannot fit is wrapped, stacked, or given a scroller of its own. */
+
+/* Tablet and below: the sidebar becomes a row of tabs across the top. */
 @media (max-width: 880px) {
   .shell { flex-direction: column; }
   .sidebar {
     width: 100%; height: auto; position: static;
     border-right: 0; border-bottom: 1px solid var(--line);
   }
-  .nav { flex-direction: row; overflow-x: auto; padding: 4px 8px 8px; gap: 4px; }
+  /* Only the tab strip is pinned, not the whole header. Pinning the logo and
+     the footer as well cost around a sixth of a phone screen permanently, for
+     two things nobody needs while reading a list. */
+  .nav {
+    position: sticky; top: 0; z-index: 30;
+    flex-direction: row; overflow-x: auto; padding: 6px 10px; gap: 4px;
+    background: color-mix(in srgb, var(--raised) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line); margin-bottom: -1px;
+    scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+  }
+  /* Two sticky bars competing for the same top edge is one too many, and the
+     tabs win: they are how you get anywhere else. */
+  .topbar { position: static; }
   .nav-group, .nav-count { display: none; }
-  .nav-item { white-space: nowrap; }
+  .nav-item { white-space: nowrap; flex: none; width: auto; scroll-snap-align: start; }
   .sidebar-footer { border-top: 0; padding-top: 0; }
   main { padding: 14px 14px 40px; }
   .topbar { padding: 12px 14px; }
   .rule { flex-direction: column; gap: 10px; }
   .rule .toggles { width: 100%; }
-  .action-field { flex: 1; min-width: 0; }
+  .action-field { flex: 1 1 auto; width: auto; min-width: 0; }
   .toast { left: 14px; right: 14px; max-width: none; }
+}
+
+/* Phone. Everything that was side by side goes underneath, and every target
+   you tap gets big enough to hit without aiming. */
+@media (max-width: 620px) {
+  :root { --gap: 14px; }
+
+  /* The bar at the top stacks: the title on one line, the buttons on the next,
+     sharing the width equally rather than overflowing off the right. */
+  .topbar { align-items: flex-start; gap: 9px; padding: 11px 14px; }
+  .topbar-actions { margin-left: 0; width: 100%; gap: 8px; }
+  .topbar-actions .btn { flex: 1 1 auto; justify-content: center; }
+  .topbar h1 { font-size: 1.12rem; }
+
+  .brand { padding: 13px 14px 9px; }
+  .sidebar-footer { padding: 4px 14px 11px; }
+
+  main { padding: 12px 12px 56px; }
+  .card { padding: 14px; border-radius: 10px; }
+  .tiles { gap: 10px; }
+
+  /* A finger is about 9 mm across. Anything smaller than this is a target you
+     have to aim at, and aiming is what makes an interface feel fiddly. */
+  .btn { min-height: 40px; padding: 9px 14px; }
+  .btn.small { min-height: 36px; }
+  select, input[type="text"], input[type="password"],
+  input[type="number"], input[type="url"] { min-height: 42px; }
+  .conditions > summary { min-height: 40px; display: flex; align-items: center; }
+  .toggle { width: 44px; height: 25px; }
+  .track::before { height: 19px; width: 19px; }
+  .toggle input:checked + .track::before { transform: translateX(19px); }
+
+  /* Rules: the action picker sits under the rule rather than beside it. */
+  .rule { padding: 15px 0; }
+  .rule .toggles { flex-direction: column; align-items: stretch; gap: 11px; }
+  .action-field { width: 100%; flex: 1 1 auto; }
+  .condition-grid { grid-template-columns: 1fr; gap: 11px; }
+  .condition-grid .field-row input[type=number] { max-width: none; flex: 1; }
+
+  /* Paths: label, path and note each on their own line, left aligned — a note
+     pushed to the right edge of a phone is a note nobody reads. */
+  .path-row { align-items: flex-start; gap: 3px 9px; }
+  .path-row .what { min-width: 0; flex: 1 1 100%; }
+  .path-row .path,
+  .path-row .note { flex: 1 1 100%; margin-left: 0; text-align: left; }
+  .path-row .dot { margin-top: 6px; }
+
+  /* Services and notifications: one field per row, buttons full width. */
+  .fields { gap: 12px; }
+  .service { padding: 14px; }
+  .service-head .remove { margin-left: 0; }
+
+  .toolbar { gap: 8px; }
+  .toolbar .grow { min-width: 0; flex: 1 1 100%; }
+
+  .table th, .table td { padding: 8px 9px; }
+  .table { font-size: .86em; }
+
+  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+  .toast { left: 10px; right: 10px; bottom: 10px; }
+}
+
+/* The smallest screens still sold. Nothing new here, only less of everything. */
+@media (max-width: 380px) {
+  main { padding: 10px 10px 56px; }
+  .card { padding: 12px; }
+  .topbar-actions .btn { font-size: .86em; padding: 9px 10px; }
+  .rule-badges { gap: 4px; }
+  .badge { padding: 2px 7px; font-size: .71em; }
 }
 
 /* ------------------------------------------------------------------ modal */

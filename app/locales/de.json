@@ -827,7 +827,7 @@
       "category_library": "Was schon auf der Platte liegt: unlesbare Dateien, fehlende Tonspuren, Dateien die heute nicht mehr angenommen würden.",
       "category_downloader": "Das Download-Programm selbst: Warnungen, eine angehaltene Warteschlange, Einträge deren Dateien längst importiert sind.",
       "category_indexers": "Welche deiner Indexer wirklich liefern — gemessen statt geraten.",
-      "safety": "Jede Regel lässt sich einzeln zwischen <b>melden</b> und <b>beheben</b> umschalten, und ein einziger Testlauf-Schalter legt alle Veränderungen auf einmal still. Der Grundsatz durchgehend: im Zweifel nichts tun."
+      "safety": "Jede Regel hat ihre eigene Aktion — von <b>nur melden</b> bis beheben — und Bedingungen, die das weiter einschränken. Ein einziger <b>Testlauf</b>-Schalter legt alle Veränderungen auf einmal still, und er ist zu Beginn an. Der Grundsatz durchgehend: im Zweifel nichts tun."
     },
     "services": {
       "short": "Dienste",

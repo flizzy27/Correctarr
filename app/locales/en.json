@@ -827,7 +827,7 @@
       "category_library": "What is already on disk: unreadable files, missing audio languages, files that would not be accepted today.",
       "category_downloader": "The download client itself: warnings, a paused queue, entries whose files are long since imported.",
       "category_indexers": "Which of your indexers actually deliver, measured rather than guessed.",
-      "safety": "Every rule can be switched between <b>report</b> and <b>fix</b> on its own, and a single dry run switch stops every change at once. The guiding principle throughout: when in doubt, do nothing."
+      "safety": "Every rule has its own action — from <b>report only</b> through to correcting it — and conditions to narrow that down further. A single <b>dry run</b> switch stops every change at once, and it is on to begin with. The guiding principle throughout: when in doubt, do nothing."
     },
     "services": {
       "short": "Services",

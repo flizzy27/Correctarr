@@ -119,7 +119,9 @@ yourself.
 </details>
 
 **Guiding principle: when in doubt, do nothing.** A rule that is not sure only
-reports. Better one finding left alone than one good file thrown away.
+reports. Better one finding left alone than one good file thrown away. And a
+fresh install starts with the **dry run on**: everything is found and reported,
+nothing is touched, until you have seen the findings and turned it off.
 
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
@@ -127,6 +129,19 @@ Every rule shows what it does before you turn it on: whether it only reports,
 acts, or deletes; whether it runs on every pass or only the deep one; and how
 often it has matched so far. A rule only offers the conditions its own findings
 can actually answer, so you cannot set one that could never be met.
+
+### On a phone, too
+
+<img src="docs/screenshot-phone.png" alt="The rules page on a phone" width="300" align="right">
+
+The interface is the same one at every size — nothing is hidden on a small
+screen and there is no separate mobile version to fall behind. Below 620 pixels
+the columns stack, the navigation becomes a row of tabs across the top, and
+every control you tap grows to a size you can hit without aiming. It has been
+checked from 320 pixels up to 4K, on every page, with nothing running off the
+side at any width.
+
+<br clear="right">
 
 ## Three things Radarr cannot do itself
 

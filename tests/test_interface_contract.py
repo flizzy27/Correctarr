@@ -363,3 +363,47 @@ def test_the_readme_lists_every_rule_with_the_right_default():
         expected = labels[BY_NAME[name].default_action]
         assert expected.lower() in stated.lower(), \
             f"{name}: the README says {stated!r}, the rule does {expected!r}"
+
+
+# ---------------------------------------------------------------------------
+# Layout at every screen size
+# ---------------------------------------------------------------------------
+CSS = (APP / "static" / "style.css").read_text(encoding="utf-8")
+
+
+def test_every_page_declares_the_viewport():
+    """Without this a phone renders the page at desktop width and shrinks it,
+    which makes every text too small to read and every target too small to hit."""
+    for name in ("index.html", "login.html", "setup.html"):
+        page = (APP / "templates" / name).read_text(encoding="utf-8")
+        assert 'name="viewport"' in page, name
+        assert "width=device-width" in page, name
+
+
+def test_no_grid_forces_a_column_wider_than_the_screen():
+    """``minmax(280px, 1fr)`` is wider than a phone once padding is taken off,
+    and a grid column that cannot shrink drags the whole page sideways with it.
+    ``minmax(min(280px, 100%), 1fr)`` behaves the same everywhere else and
+    collapses to one column when it has to.
+    """
+    import re
+    offenders = [m.group(0) for m in re.finditer(r"minmax\(\s*\d+px", CSS)]
+    assert not offenders, (
+        f"a grid column cannot shrink below its minimum: {offenders} — "
+        "wrap the size in min(..., 100%)")
+
+
+def test_the_phone_breakpoints_are_there():
+    for query in ("max-width: 880px", "max-width: 620px", "max-width: 380px"):
+        assert f"@media ({query})" in CSS, query
+
+
+def test_touch_targets_are_raised_on_phones():
+    """A finger is about 9 mm across. Anything smaller has to be aimed at."""
+    phone = CSS.split("@media (max-width: 620px)")[1]
+    assert "min-height: 40px" in phone
+    assert ".toggle { width: 44px" in phone
+
+
+def test_a_list_box_is_not_dressed_up_as_a_drop_down():
+    assert "select[multiple]" in CSS and "background-image: none" in CSS

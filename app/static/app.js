@@ -130,24 +130,35 @@ let serviceData = [];
 let channelKinds = null;
 let notificationData = [];
 
-/* ============================================================== overview */
-async function loadOverview() {
+/* ================================================================= chrome
+   The version, the counts beside the navigation, the heartbeat and — most
+   importantly — the dry run badge. None of this belongs to a single page, and
+   it used to be filled only while the overview was being loaded: opening a
+   bookmark to any other page left the version reading "…", the counts empty
+   and the badge hidden, so nobody was told that nothing was being changed. */
+async function loadChrome() {
   status = await api("api/status");
-  const summary = status.summary;
-  const last = status.last_run;
-
   applyAppearance(status.theme, status.density);
 
   $("#version").textContent = status.version;
   $("#version").title = `${status.version}\n${status.built_at}\n${status.commit}`;
   $("#dry-run-badge").hidden = !status.dry_run;
-  $("#count-findings").textContent = summary.total ? num(summary.total) : "";
-  $("#count-fixed").textContent = summary.fixed ? num(summary.fixed) : "";
+  $("#count-findings").textContent = status.summary.total ? num(status.summary.total) : "";
+  $("#count-fixed").textContent = status.summary.fixed ? num(status.summary.fixed) : "";
   $("#count-services").textContent = status.services.length || "";
 
   const up = status.services.filter((s) => s.ok).length;
   $("#heartbeat").className =
     "dot " + (status.services.length === 0 ? "" : up === status.services.length ? "good" : "warn");
+  return status;
+}
+
+/* ============================================================== overview */
+async function loadOverview() {
+  await loadChrome();
+  const summary = status.summary;
+  const last = status.last_run;
+  const up = status.services.filter((s) => s.ok).length;
 
   $("#subtitle").textContent = [
     `${status.services.length} × ${t("nav.services")}`,
@@ -1656,7 +1667,13 @@ function wire() {
     $("#sign-out").hidden = state.mode === "off";
   } catch (error) { /* redirected */ }
 
-  await go((location.hash || "#overview").slice(1), false);
+  const first = (location.hash || "#overview").slice(1);
+  // Loaded whichever page was asked for, because the version, the counts and
+  // the dry run badge belong to the window, not to one page. The overview
+  // fetches it as part of its own work, so it is not asked for twice.
+  const chrome = first === "overview" ? Promise.resolve() : loadChrome().catch(() => {});
+  await go(first, false);
+  await chrome;
 
   // On a fresh installation the wizard opens by itself. Nobody should have to
   // find it, and an empty overview explains nothing.
@@ -1665,11 +1682,11 @@ function wire() {
     if (!setup.completed) await wizard.start();
   } catch (error) { /* the page still works without it */ }
 
-  // The overview keeps itself fresh while it is visible.
+  // Kept fresh while the tab is in front. The overview reloads in full; every
+  // other page only refreshes the chrome, which is one request.
   setInterval(() => {
-    if ($("#page-overview").classList.contains("active")
-        && document.visibilityState === "visible") {
-      loadOverview().catch(() => {});
-    }
+    if (document.visibilityState !== "visible") return;
+    if ($("#page-overview").classList.contains("active")) loadOverview().catch(() => {});
+    else loadChrome().catch(() => {});
   }, 30000);
 })();
