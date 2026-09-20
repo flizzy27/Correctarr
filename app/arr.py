@@ -126,7 +126,11 @@ class Arr:
 
     # -- reading ---------------------------------------------------------------
     def queue(self) -> list[dict]:
+        # includeEpisode is what lets a queue entry be held against the date
+        # its content actually aired. Without it a Sonarr entry carries the
+        # series and nothing about which episode is in the box.
         params = {"pageSize": 1000, "includeMovie": "true", "includeSeries": "true",
+                  "includeEpisode": "true",
                   "includeUnknownMovieItems": "true", "includeUnknownSeriesItems": "true"}
         return (self._call("GET", "queue", params=params) or {}).get("records", [])
 

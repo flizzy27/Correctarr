@@ -14,7 +14,7 @@ debris nobody will ever look at.
 
 The services notice most of this. They just never resolve it.
 
-**27 rules in six areas** — queue, import, library, download client, indexers
+**32 rules in six areas** — queue, import, library, download client, indexers
 and the services themselves. For each one you decide what happens when it finds
 something: report only, remove from the queue, blocklist, blocklist and search
 again, import, search, or delete. Conditions narrow that down further — *wait at

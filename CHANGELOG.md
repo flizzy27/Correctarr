@@ -5,6 +5,46 @@ that break an existing installation.
 
 ## Unreleased
 
+### Added
+
+* **Five more rules, and Sonarr stops being a second-class citizen.** The
+  library rules that read a file — missing audio language, unreadable file,
+  below the profile — used to say "Radarr only". That was never a statement
+  about the question; a series file lacks a language, fails to read and falls
+  below a profile exactly the way a film does. It was a statement about this
+  program, which only knew how to find a movie's file. It knows how to find a
+  series' files now, and says so.
+* **`premature_grab`.** A release for something that is not out yet. There is
+  no honest copy of a film three weeks from its cinema date and no honest copy
+  of an episode that has not aired; what turns up under those names is a
+  re-encode of a trailer or a different film with the right name on it.
+  Reporting by default, with a day of grace, because release dates carry no
+  time zone.
+* **`cutoff_unmet`.** There is a file, but it is below the quality the profile
+  asks for. The services keep this list and will act on it when asked — the
+  problem is that nobody asks. A cutoff that is never met is invisible: the
+  title looks complete in every view and it plays.
+* **`season_gaps`** *(Sonarr)*. A season that is *partly* there, which is a
+  different thing from one nobody has started: eight of ten episodes means a
+  season pack that imported partly, or two episodes that failed months ago and
+  were never noticed. Costs no extra request — the counts arrive with the
+  series list.
+* **`series_incomplete`** *(Sonarr)*. A series that has finished airing and is
+  still missing episodes. A running series missing last week is waiting for an
+  indexer to catch up; one that ended four years ago is missing them for good.
+* **`stale_blocklist`.** The blocklist is permanent and nothing ever reviews
+  it. A release refused months ago because it failed to unpack once is still
+  refused today, and if it was the only copy anyone had, the title simply never
+  comes. Raised only where the title is still missing, with a new action —
+  **take off the blocklist and search again** — because removing the entry on
+  its own changes nothing.
+
+### Changed
+
+* The history is fetched once per connection per run instead of once per
+  question. Blocklisting ten orphaned files asked for the same five hundred
+  rows ten times, and a deep pass asked every service for them twice.
+
 ### Fixed
 
 * **A stalled download was never reported on an install with more than one
@@ -49,12 +89,19 @@ that break an existing installation.
   quality benchmark and additionally told it had too little data to judge.
 * The download percentage in the queue view could read below zero while a
   repair was running.
-
-### Changed
-
-* The history is fetched once per connection per run instead of once per
-  question. Blocklisting ten orphaned files asked for the same five hundred
-  rows ten times, and a deep pass asked every service for them twice.
+* **The year check condemned episodes of any series running longer than a
+  year.** A series is not *from* a year the way a film is — it runs. An episode
+  of a show that started in 2015 carries this year's date, and daily
+  programmes are named by date outright: `Show.Name.2024.03.04.1080p.WEB`. Held
+  against the year the series is filed under, every one of those read as a
+  different programme — and that rule blocklists and searches again by default,
+  so good episodes were thrown away as fast as they arrived. The whole
+  broadcast span is accepted now, left open at the top unless the service says
+  the series has ended *and* says when it last aired.
+* **`manual_import` could never fire for a series.** It demanded that the
+  release state a year, which is how a film identifies itself. An episode
+  states an episode instead, so every one of them sat waiting for somebody to
+  press the button by hand.
 
 ## 1.1.0
 

@@ -114,7 +114,8 @@
     "entries": "Einträge",
     "percent": "%",
     "gb": "GB",
-    "mb": "MB"
+    "mb": "MB",
+    "episodes": "Folgen"
   },
   "severity": {
     "error": "Fehler",
@@ -412,7 +413,12 @@
     "indexer_unknown": "Der Indexer taucht im Verlauf auf (mittlere Punktzahl {score}), Prowlarr kennt ihn aber nicht. Entweder direkt im Arr-Dienst eingetragen oder in Prowlarr inzwischen entfernt.",
     "disk_space": "Nur noch {free} GB frei von {total} GB.",
     "passthrough": "{text}",
-    "api_changes": "{path} ist als abgelöst gekennzeichnet (Dienstversion {version})"
+    "api_changes": "{path} ist als abgelöst gekennzeichnet (Dienstversion {version})",
+    "premature_grab": "Erscheint erst am {date}, also in {days} Tagen. Eine ehrliche Kopie davon gibt es noch nicht.",
+    "cutoff_unmet": "Vorhanden als {quality} und damit unter der Qualität, die das Profil verlangt. Von allein sucht niemand nach einer besseren Kopie.",
+    "season_gaps": "{missing} von {total} Folgen der Staffel {season} fehlen, der Rest ist da. Ein Staffelpaket, das nur teilweise importiert wurde, oder Folgen, die gescheitert und nie aufgefallen sind.",
+    "series_incomplete": "Die Serie ist abgeschlossen, und {missing} von {total} Folgen fehlen weiterhin. Das erledigt sich nicht von selbst.",
+    "stale_blocklist": "Vor {days} Tagen gesperrt: {release}. Der Titel fehlt immer noch — möglicherweise genau deshalb."
   },
   "rules": {
     "wrong_year": {
@@ -522,6 +528,26 @@
     "api_changes": {
       "title": "Ein Teil der Schnittstelle wird abgelöst",
       "help": "Der Dienst hat einen der hier verwendeten Aufrufe als auslaufend gekennzeichnet. Er funktioniert weiter, und das noch eine Weile. Das ist die einzige Vorwarnung, die es gibt — und sie benennt genau, was zu ändern ist, bevor es aufhört."
+    },
+    "premature_grab": {
+      "title": "Ein Release für etwas, das noch nicht erschienen ist",
+      "help": "Nur melden. Eine frühe Veröffentlichung in einer Region ist selten, aber echt — und ein Irrtum wirft hier die einzige Kopie weg, die es gibt."
+    },
+    "cutoff_unmet": {
+      "title": "Vorhanden, aber unter der verlangten Qualität",
+      "help": "Nur melden — für jeden Titel unter seiner Grenze auf einmal zu suchen sind sehr viele Indexer-Abfragen."
+    },
+    "season_gaps": {
+      "title": "Eine Staffel, die nur teilweise da ist",
+      "help": "Nur Sonarr. Kostet nichts: die Zahlen kommen mit der Serienliste mit."
+    },
+    "series_incomplete": {
+      "title": "Eine abgeschlossene Serie, die unvollständig ist",
+      "help": "Nur Sonarr. Einer laufenden Serie fehlt die letzte Folge, weil sie noch kommt; einer vor vier Jahren beendeten fehlt sie dauerhaft."
+    },
+    "stale_blocklist": {
+      "title": "Eine alte Sperre, an der ein Titel hängen bleiben könnte",
+      "help": "Nur dort gemeldet, wo der Titel weiterhin fehlt. Eine Sperre für etwas, das inzwischen da ist, tut ihre Arbeit."
     }
   },
   "settings": {
@@ -660,6 +686,18 @@
     "log_days": {
       "label": "Funde höchstens aufheben",
       "help": "Zusätzlich zur Anzahl. 0 schaltet die Altersgrenze ab."
+    },
+    "premature_grace_hours": {
+      "label": "Kulanz, bevor ein Release als verfrüht gilt",
+      "help": "Erscheinungsdaten werden ohne Zeitzone geführt, und nichts erscheint um Mitternacht UTC. Ein Tag passt meistens."
+    },
+    "season_gap_min": {
+      "label": "Kleinste Lücke in einer Staffel, die gemeldet wird",
+      "help": "Eine fehlende Folge in einer fertigen Staffel ist es wert. Höher setzen, wenn Staffeln bei Ihnen meist noch laufen."
+    },
+    "blocklist_stale_days": {
+      "label": "Alter, ab dem eine Sperre hinterfragt wird",
+      "help": "Gemeldet werden nur Einträge zu Titeln, die weiterhin fehlen. Null schaltet die Prüfung ab."
     }
   },
   "notifications_page": {
@@ -902,7 +940,8 @@
       "delete": "Von der Platte löschen",
       "clear_warning": "Warnung bestätigen",
       "remove_entry": "Eintrag und Ordner entfernen",
-      "resume": "Fortsetzen"
+      "resume": "Fortsetzen",
+      "unblocklist": "Sperre aufheben und neu suchen"
     },
     "explain": {
       "report": "Festhalten und sonst nichts anfassen. Immer verfügbar und immer die sichere Antwort.",
@@ -916,7 +955,8 @@
       "delete": "Die Dateien von der Platte entfernen. Immer nur innerhalb der unter Pfade eingetragenen Ordner.",
       "clear_warning": "Die Warnung festhalten und im Download-Programm löschen.",
       "remove_entry": "Den fertigen Eintrag aus dem Download-Programm nehmen und seinen Quellordner löschen.",
-      "resume": "Das Download-Programm wieder starten."
+      "resume": "Das Download-Programm wieder starten.",
+      "unblocklist": "Entfernt den alten Sperreintrag und startet eine Suche, damit das Release wieder angeboten wird."
     },
     "min_age_hours": "Mindestens warten",
     "min_age_hours_help": "Vorher wird nicht eingegriffen. Ein Download, der vor zwei Minuten angekommen ist, hängt nicht — er ist neu.",

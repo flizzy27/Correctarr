@@ -40,7 +40,7 @@ Three ways, at the same time:
 
 ## The rules
 
-**27 rules across six categories.** For each one you decide what happens when
+**32 rules across six categories.** For each one you decide what happens when
 it finds something — not just on or off:
 
 | | |
@@ -52,6 +52,7 @@ it finds something — not just on or off:
 | **import** / **import and clean up** | bring the file in, optionally clearing the download client entry |
 | **search** / **read the file again** | ask the service to look again |
 | **delete** | remove the files from disk |
+| **take off the blocklist** | let a release that was refused long ago be tried again |
 
 On top of that, a rule can carry **conditions**: *wait at least six hours*,
 *nothing over 20 GB*, *only when the match is at least 90 % certain*. A finding
@@ -63,7 +64,7 @@ finds and touches nothing, until you have seen the findings and turned it off
 yourself.
 
 <details>
-<summary><strong>All 27 rules</strong></summary>
+<summary><strong>All 32 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default action |
@@ -73,6 +74,7 @@ yourself.
 | `profile_violation` | Download breaks today's profile rules | *Blocklist and search again* |
 | `not_an_upgrade` | Import would not be an upgrade | *Blocklist* |
 | `stalled` | A started download stopped moving | Report only |
+| `premature_grab` | A release for something that is not out yet | Report only |
 | `grab_loop` | The same title is grabbed over and over | Report only |
 
 ### Import
@@ -91,6 +93,10 @@ yourself.
 | `unreadable_file` | File cannot be read | Report only |
 | `below_profile` | Existing file would be blocked today | Report only |
 | `missing_items` | Monitored and released, but no file | Report only |
+| `cutoff_unmet` | Present, but below the quality that was asked for | Report only |
+| `season_gaps` | A season that is only partly there *(Sonarr)* | Report only |
+| `series_incomplete` | A finished series that is still incomplete *(Sonarr)* | Report only |
+| `stale_blocklist` | An old refusal that may be why a title never arrives | Report only |
 
 ### Download client
 | Rule | What it finds | Default action |

@@ -246,9 +246,14 @@ def test_rule_names_are_unique():
     assert len(names) == len(set(names))
 
 
-def test_there_are_twenty_six_rules():
-    """A guard against a rule silently disappearing during a refactor."""
-    assert len(ALL) == 27
+def test_the_rule_count_is_what_is_published():
+    """A guard against a rule silently disappearing during a refactor.
+
+    The number is also printed in the README, the Unraid template and the
+    repository profile, and those three are what somebody reads before
+    deciding whether to install this at all.
+    """
+    assert len(ALL) == 32
 
 
 @pytest.mark.parametrize("header,expected", [

@@ -147,7 +147,10 @@ class Engine:
             "formats": arr.custom_formats(),
             "health": arr.health() if enabled("service_health") else [],
             "items": [],
+            "files": [],
             "missing": [],
+            "below_cutoff": [],
+            "blocklist": [],
             "disk_space": [],
             "root_folders": [],
             "history": [],
@@ -167,9 +170,29 @@ class Engine:
             safe("history", lambda: arr.history(500), "history")
         if deep and enabled("missing_items"):
             safe("missing items", arr.missing, "missing")
-        if deep and any(enabled(n) for n in ("missing_audio_language", "unreadable_file",
-                                             "below_profile", "grab_loop", "wrong_title")):
+        if deep and enabled("cutoff_unmet"):
+            safe("titles below the cutoff", arr.below_cutoff, "below_cutoff")
+
+        library_rules = ("missing_audio_language", "unreadable_file",
+                         "below_profile", "grab_loop", "wrong_title",
+                         "season_gaps", "series_incomplete", "stale_blocklist")
+        if deep and any(enabled(n) for n in library_rules):
             safe("item list", arr.items, "items")
+
+        if deep and enabled("stale_blocklist") and ctx["items"]:
+            safe("blocklist", arr.blocklist, "blocklist")
+
+        # Only Sonarr, and only when something is going to read them. A movie
+        # carries its file in the list above; a series carries none of them, so
+        # the files are a call of their own — one per thirty series, which is
+        # worth paying for a rule that is actually switched on and nothing
+        # else.
+        needs_files = any(enabled(n) for n in ("missing_audio_language",
+                                               "unreadable_file", "below_profile",
+                                               "downloader_stale_entry"))
+        if deep and arr.kind == "sonarr" and needs_files and ctx["items"]:
+            ids = [i["id"] for i in ctx["items"] if i.get("id")]
+            safe("episode files", lambda: arr.files(ids), "files")
         return ctx
 
     # -- shared state ----------------------------------------------------------
@@ -465,6 +488,27 @@ class Engine:
         return self._on_client(finding, lambda c: (
             c.delete_history_entry(finding.data["nzo_id"], with_files=True),
             f"entry and source folder removed ({gb} GB)")[1])
+
+    def _act_unblocklist(self, arr: Arr, finding: Finding, cfg: dict,
+                         dry: bool) -> str | None:
+        """Let a release that was refused long ago be tried again.
+
+        Removing the entry on its own changes nothing — the blocklist is only
+        consulted when something goes looking — so a search follows it. Without
+        that, the action would appear to work and the title would stay exactly
+        as missing as it was.
+        """
+        entry_id = finding.data.get("blocklist_id")
+        if not entry_id:
+            return None
+        if dry:
+            return f"{DRY_RUN_PREFIX}: would take this off the blocklist and search again"
+        arr.remove_from_blocklist(int(entry_id))
+        item_id = finding.data.get("item_id")
+        if item_id:
+            arr.search([item_id])
+            return "taken off the blocklist, new search started"
+        return "taken off the blocklist"
 
     def _act_resume(self, arr: Arr, finding: Finding, cfg: dict,
                     dry: bool) -> str | None:

@@ -158,6 +158,15 @@ FIELDS: tuple[Field, ...] = (
           minimum=0.5, maximum=72, step=0.5, unit="unit.hours"),
     Field("downloader_done_hours", "number", "detection", 1,
           minimum=0.5, maximum=168, step=0.5, unit="unit.hours"),
+    # A day of grace. Release dates are held without a time zone, the world
+    # does not release things at midnight UTC, and something that came out this
+    # morning is not a fake.
+    Field("premature_grace_hours", "number", "detection", 24,
+          minimum=0, maximum=720, unit="unit.hours"),
+    Field("season_gap_min", "number", "detection", 1,
+          minimum=1, maximum=100, unit="unit.episodes"),
+    Field("blocklist_stale_days", "number", "detection", 60,
+          minimum=0, maximum=3650, unit="unit.days"),
     # Empty on purpose: there is no sensible default for which audio languages
     # matter. The rule stays quiet until somebody says.
     Field("audio_languages", "text", "detection", ""),

@@ -16,6 +16,7 @@ from app import settings as S
 from app.rules import (
     check_api_changes,
     check_below_profile,
+    check_cutoff_unmet,
     check_detached_folder,
     check_disk_space,
     check_downloader_disk_space,
@@ -26,10 +27,15 @@ from app.rules import (
     check_missing_audio_language,
     check_missing_items,
     check_not_an_upgrade,
+    check_premature_grab,
     check_profile_violation,
+    check_season_gaps,
+    check_series_incomplete,
+    check_stale_blocklist,
     check_stalled,
     check_unmatched_files,
     check_unpack_failed,
+    check_unreadable_file,
     check_wrong_title,
     check_wrong_year,
 )
@@ -715,3 +721,218 @@ def test_stalled_prunes_only_its_own_service():
     arr.service_id = 7
     check_stalled(arr, {"queue": [], "store": store}, config())
     assert store.prefix == "7:"
+
+
+# ===========================================================================
+# Series: what the library rules can see now
+# ===========================================================================
+def _series(**over):
+    base = {"id": 3, "title": "The Series", "year": 2015, "monitored": True,
+            "qualityProfileId": 1, "ended": False,
+            "seasons": [], "statistics": {}}
+    base.update(over)
+    return base
+
+
+def _season(number, have, total, monitored=True):
+    return {"seasonNumber": number, "monitored": monitored,
+            "statistics": {"episodeFileCount": have, "episodeCount": total}}
+
+
+def test_a_series_file_can_lack_a_language_too():
+    """The question was never Radarr-only; only the answer was.
+
+    A movie carries its file on itself, a series carries none of them. Three
+    library rules were written against ``movieFile`` and were therefore marked
+    "Radarr only" — not because a series file cannot lack a language, but
+    because nothing had fetched it.
+    """
+    ctx = {"items": [_series()],
+           "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv",
+                      "mediaInfo": {"audioLanguages": "English"}}]}
+    found = check_missing_audio_language(FakeArr("sonarr"), ctx,
+                                         config(audio_languages="German"))
+    assert len(found) == 1
+    assert "ep01.mkv" in found[0].title
+
+
+def test_a_series_file_that_cannot_be_read_is_reported():
+    ctx = {"items": [_series()],
+           "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv"}]}
+    found = check_unreadable_file(FakeArr("sonarr"), ctx, config())
+    assert len(found) == 1
+    assert found[0].data["item_id"] == 3
+
+
+def test_a_file_belonging_to_no_series_in_the_list_is_left_alone():
+    ctx = {"items": [_series()], "files": [{"seriesId": 999, "relativePath": "x.mkv"}]}
+    assert check_unreadable_file(FakeArr("sonarr"), ctx, config()) == []
+
+
+# ---------------------------------------------------------------------------
+# Season gaps
+# ---------------------------------------------------------------------------
+def test_a_half_imported_season_is_reported():
+    ctx = {"items": [_series(seasons=[_season(2, 8, 10)])]}
+    found = check_season_gaps(FakeArr("sonarr"), ctx, config())
+    assert len(found) == 1
+    assert found[0].data == {"item_id": 3, "season": 2, "missing": 2,
+                             "have": 8, "total": 10}
+
+
+def test_a_season_nobody_has_started_is_not_a_gap():
+    """Nothing downloaded yet is a list, not a hole."""
+    ctx = {"items": [_series(seasons=[_season(2, 0, 10)])]}
+    assert check_season_gaps(FakeArr("sonarr"), ctx, config()) == []
+
+
+def test_a_complete_season_says_nothing():
+    ctx = {"items": [_series(seasons=[_season(1, 10, 10)])]}
+    assert check_season_gaps(FakeArr("sonarr"), ctx, config()) == []
+
+
+def test_an_unmonitored_season_is_not_a_gap():
+    ctx = {"items": [_series(seasons=[_season(1, 3, 10, monitored=False)])]}
+    assert check_season_gaps(FakeArr("sonarr"), ctx, config()) == []
+
+
+# ---------------------------------------------------------------------------
+# A series that has finished and is still incomplete
+# ---------------------------------------------------------------------------
+def test_a_finished_series_with_holes_is_reported():
+    ctx = {"items": [_series(ended=True,
+                             statistics={"episodeFileCount": 40, "episodeCount": 46})]}
+    found = check_series_incomplete(FakeArr("sonarr"), ctx, config())
+    assert found[0].data["missing"] == 6
+
+
+def test_a_running_series_with_holes_is_left_to_the_gap_rule():
+    ctx = {"items": [_series(ended=False,
+                             statistics={"episodeFileCount": 40, "episodeCount": 46})]}
+    assert check_series_incomplete(FakeArr("sonarr"), ctx, config()) == []
+
+
+# ---------------------------------------------------------------------------
+# A release for something that is not out yet
+# ---------------------------------------------------------------------------
+def _in_days(days):
+    from datetime import UTC, datetime, timedelta
+    return (datetime.now(UTC) + timedelta(days=days)).isoformat()
+
+
+def test_a_release_for_a_film_that_is_not_out_is_reported():
+    entry = {"id": 1, "title": "The.Film.2026.1080p.BluRay",
+             "size": 8 * 1024 ** 3,
+             "movie": {"id": 1, "title": "The Film", "inCinemas": _in_days(30)}}
+    found = check_premature_grab(FakeArr(), {"queue": [entry]}, config())
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert found[0].data["confidence"] == 1.0
+
+
+def test_something_that_came_out_this_morning_is_not_a_fake():
+    """Release dates carry no time zone and nothing comes out at midnight UTC."""
+    entry = {"id": 1, "title": "The.Film.1080p", "size": 1,
+             "movie": {"id": 1, "title": "The Film",
+                       "digitalRelease": _in_days(0.4)}}
+    assert check_premature_grab(FakeArr(), {"queue": [entry]}, config()) == []
+
+
+def test_an_episode_that_has_not_aired_is_reported():
+    entry = {"id": 1, "title": "The.Series.S09E01.1080p", "size": 1,
+             "series": {"id": 3, "title": "The Series"},
+             "episode": {"id": 90, "airDateUtc": _in_days(9)}}
+    found = check_premature_grab(FakeArr("sonarr"), {"queue": [entry]}, config())
+    assert len(found) == 1
+    assert found[0].data["days_early"] == 9.0
+
+
+def test_an_item_with_no_dates_at_all_is_not_evidence_of_anything():
+    entry = {"id": 1, "title": "The.Film.1080p", "size": 1,
+             "movie": {"id": 1, "title": "The Film"}}
+    assert check_premature_grab(FakeArr(), {"queue": [entry]}, config()) == []
+
+
+def test_the_earliest_date_wins():
+    """Out in cinemas is out, whatever the disc date says."""
+    entry = {"id": 1, "title": "The.Film.1080p", "size": 1,
+             "movie": {"id": 1, "title": "The Film",
+                       "inCinemas": "2019-01-01", "physicalRelease": _in_days(40)}}
+    assert check_premature_grab(FakeArr(), {"queue": [entry]}, config()) == []
+
+
+# ---------------------------------------------------------------------------
+# An old refusal nobody ever reviews
+# ---------------------------------------------------------------------------
+def _long_ago(days):
+    from datetime import UTC, datetime, timedelta
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat()
+
+
+def test_an_old_refusal_for_something_still_missing_is_questioned():
+    ctx = {"items": [{"id": 1, "title": "The Film", "hasFile": False}],
+           "blocklist": [{"id": 7, "movieId": 1, "sourceTitle": "The.Film.1080p",
+                          "date": _long_ago(120), "indexer": "Somewhere"}]}
+    found = check_stale_blocklist(FakeArr(), ctx, config())
+    assert len(found) == 1
+    assert found[0].data["blocklist_id"] == 7
+
+
+def test_a_refusal_for_something_that_has_since_arrived_is_doing_its_job():
+    ctx = {"items": [{"id": 1, "title": "The Film", "hasFile": True}],
+           "blocklist": [{"id": 7, "movieId": 1, "sourceTitle": "x",
+                          "date": _long_ago(120)}]}
+    assert check_stale_blocklist(FakeArr(), ctx, config()) == []
+
+
+def test_a_recent_refusal_is_left_alone():
+    ctx = {"items": [{"id": 1, "title": "The Film", "hasFile": False}],
+           "blocklist": [{"id": 7, "movieId": 1, "sourceTitle": "x",
+                          "date": _long_ago(3)}]}
+    assert check_stale_blocklist(FakeArr(), ctx, config()) == []
+
+
+def test_the_blocklist_check_can_be_switched_off():
+    ctx = {"items": [{"id": 1, "hasFile": False}],
+           "blocklist": [{"id": 7, "movieId": 1, "date": _long_ago(900)}]}
+    assert check_stale_blocklist(FakeArr(), ctx,
+                                 config(blocklist_stale_days=0)) == []
+
+
+# ---------------------------------------------------------------------------
+# Below the cutoff
+# ---------------------------------------------------------------------------
+def test_a_movie_below_its_cutoff_carries_the_movie_id():
+    ctx = {"below_cutoff": [{"id": 4, "title": "The Film", "year": 2019,
+                             "movieFile": {"quality": {"quality": {"name": "SDTV"}}}}]}
+    found = check_cutoff_unmet(FakeArr(), ctx, config())
+    assert found[0].data["item_id"] == 4
+    assert "SDTV" in found[0].describe("en")
+
+
+def test_an_episode_below_its_cutoff_carries_the_series_id():
+    ctx = {"below_cutoff": [{"id": 5001, "seriesId": 3, "seasonNumber": 1,
+                             "episodeNumber": 2,
+                             "series": {"id": 3, "title": "The Series"}}]}
+    found = check_cutoff_unmet(FakeArr("sonarr"), ctx, config())
+    assert found[0].data["item_id"] == 3
+    assert found[0].data["episode_ids"] == [5001]
+
+
+# ---------------------------------------------------------------------------
+# Manual import for a series
+# ---------------------------------------------------------------------------
+def test_an_episode_release_does_not_have_to_state_a_year():
+    """A film release states the year it came out. An episode states an episode.
+
+    Demanding a year of it meant this rule could never fire for a series at
+    all: every episode sat waiting for somebody to press the button by hand.
+    """
+    entry = queue_entry("The.Series.S03E04.1080p.WEB-DL", item_id=3,
+                        state="importBlocked",
+                        messages=("One or more episodes... manual import",))
+    entry["series"] = {"id": 3, "title": "The Series", "year": 2015,
+                       "firstAired": "2015-03-04", "seasons": []}
+    entry.pop("movie", None)
+    found = check_manual_import(FakeArr("sonarr"), {"queue": [entry]}, config())
+    assert len(found) == 1

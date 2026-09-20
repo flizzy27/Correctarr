@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 #: Cinema is older than most people assume and release names occasionally run
 #: ahead of the calendar, so the window is wide. It exists to rule out things
@@ -159,7 +160,46 @@ def accepted(item: dict, tolerance: int = 1) -> set[int]:
         filed = _year_of(item.get("year"))
         if filed:
             years.update(range(filed - tolerance, filed + tolerance + 1))
+
+    years |= _broadcast_span(item)
     return years
+
+
+def _looks_like_a_series(item: dict) -> bool:
+    """Is this a thing that runs, rather than a thing that came out once?"""
+    return (item.get("seasons") is not None
+            or bool(item.get("seriesType"))
+            or bool(item.get("firstAired")))
+
+
+def _broadcast_span(item: dict) -> set[int]:
+    """Every year a series was on the air.
+
+    A series is not *from* a year the way a film is — it runs. An episode of a
+    show that started in 2015 and is still going carries this year's date, and
+    daily programmes are named by date outright:
+    ``Show.Name.2024.03.04.1080p.WEB``. Held against the year the series is
+    filed under, every one of those reads as a different programme — and the
+    rule that compares them blocklists and searches again by default, so a
+    show running longer than a year had its episodes thrown away as fast as
+    they arrived.
+
+    The span is left open at the top unless the service says the series has
+    ended *and* says when it last aired. Narrowing it on a guess is how the
+    problem started.
+    """
+    if not _looks_like_a_series(item):
+        return set()
+    start = _year_of(item.get("firstAired")) or _year_of(item.get("year"))
+    if not start:
+        return set()
+    end = datetime.now(UTC).year
+    if item.get("ended"):
+        known = [y for y in (_year_of(item.get("lastAired")),
+                             _year_of(item.get("previousAiring"))) if y]
+        if known:
+            end = max(known)
+    return set(range(start, max(start, end) + 1))
 
 
 def _confidence(distance: int, tolerance: int) -> float:

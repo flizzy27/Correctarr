@@ -174,3 +174,48 @@ def test_the_message_names_the_nearest_miss_not_the_first_number():
     verdict = years.judge("The.Film.1998.2005.1080p",
                           {"year": 2019, "title": "The Film"})
     assert verdict.distance == 13, "2005 is nearer than 1998"
+
+
+# ---------------------------------------------------------------------------
+# A series is not "from" a year — it runs
+# ---------------------------------------------------------------------------
+def _running(**over):
+    base = {"title": "The Series", "year": 2015, "firstAired": "2015-03-04",
+            "seasons": [], "ended": False}
+    base.update(over)
+    return base
+
+
+def test_a_current_episode_of_a_running_series_is_not_a_different_programme():
+    """Daily programmes are named by date outright.
+
+    ``Show.Name.2024.03.04.1080p.WEB`` held against the year the series is
+    filed under reads as a different programme — and the rule that compares
+    them blocklists and searches again by default, so a show running longer
+    than a year had its episodes thrown away as fast as they arrived.
+    """
+    from datetime import UTC, datetime
+    this_year = datetime.now(UTC).year
+    name = f"The.Series.{this_year}.03.04.1080p.WEB"
+    assert years.judge(name, _running()).wrong is False
+
+
+def test_a_season_pack_from_a_later_year_is_accepted():
+    assert years.judge("The.Series.S05.2020.1080p", _running()).wrong is False
+
+
+def test_a_series_that_ended_does_not_accept_a_later_year():
+    ended = _running(ended=True, lastAired="2018-05-05")
+    assert years.judge("The.Series.S09E01.2021.1080p", ended).wrong is True
+
+
+def test_a_series_that_ended_without_a_last_date_keeps_the_benefit_of_the_doubt():
+    """Narrowing the span on a guess is how the problem started."""
+    ended = _running(ended=True)
+    assert years.judge("The.Series.S09E01.2021.1080p", ended).wrong is False
+
+
+def test_a_film_is_still_judged_the_way_it_always_was():
+    film = {"title": "The Film", "year": 2018}
+    assert years.judge("The.Film.1999.1080p", film).wrong is True
+    assert years.judge("The.Film.2018.1080p", film).wrong is False

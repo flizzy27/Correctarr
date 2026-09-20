@@ -54,6 +54,7 @@ ACTIONS = (
     "clear_warning",         # acknowledge a download client warning
     "remove_entry",          # drop a finished entry and its source folder
     "resume",                # start a paused download client
+    "unblocklist",           # let a refused release be tried again
 )
 
 #: What each action needs from a finding in order to do anything at all. A rule
@@ -75,6 +76,7 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "clear_warning": ("client",),
     "remove_entry": ("nzo_id",),
     "resume": ("client",),
+    "unblocklist": ("blocklist_id",),
 }
 
 #: Actions that remove data. The interface marks them, and the conditions

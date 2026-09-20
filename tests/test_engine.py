@@ -56,6 +56,15 @@ class FakeArr:
     def missing(self):
         return []
 
+    def below_cutoff(self):
+        return []
+
+    def blocklist(self):
+        return []
+
+    def files(self, item_ids):
+        return []
+
     def disk_space(self):
         return []
 

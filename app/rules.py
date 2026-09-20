@@ -178,6 +178,75 @@ def _top_folder(path: str) -> str:
     return (path or "").replace("\\", "/").split("/")[0]
 
 
+#: A release name that names an episode, a season or a broadcast date. What
+#: follows such a marker describes the airing, not the work, so several checks
+#: that ask "which year is this from" have to hold their tongue.
+EPISODE_MARKER = re.compile(
+    r"\b(s\d{1,2}[\s._-]?e\d{1,3}|s\d{1,2}\b"
+    r"|season[\s._-]?\d+|staffel[\s._-]?\d+"
+    r"|\d{4}[.\-]\d{2}[.\-]\d{2}\b)",
+    re.IGNORECASE)
+
+
+def _library_files(arr: Arr, ctx: dict):
+    """Every file in the library, as ``(item, file, label)``.
+
+    The two services do not hold this the same way and the difference is not
+    cosmetic. A movie carries its one file on itself, so Radarr answers the
+    whole question in the call that fetches the library. A series has many
+    files and carries none of them, so they arrive from a separate call.
+
+    Three library rules were written against ``movieFile`` and were therefore
+    marked as applying to Radarr only — not because the question does not
+    apply to a series, but because nothing had fetched the answer. This is
+    where that stops.
+    """
+    if arr.kind != "sonarr":
+        for item in ctx.get("items", []):
+            info = item.get("movieFile")
+            if info:
+                yield item, info, item.get("title", "?")
+        return
+
+    by_series: dict[int, list[dict]] = {}
+    for info in ctx.get("files", []):
+        series_id = info.get("seriesId")
+        if series_id:
+            by_series.setdefault(series_id, []).append(info)
+    for item in ctx.get("items", []):
+        for info in by_series.get(item.get("id"), []):
+            yield item, info, f"{item.get('title', '?')} — {_file_label(info)}"
+
+
+def _file_label(info: dict) -> str:
+    """Something short that says which file this is."""
+    name = (info.get("relativePath") or info.get("path") or "").replace("\\", "/")
+    if name:
+        return name.rsplit("/", 1)[-1][:60]
+    season = info.get("seasonNumber")
+    return f"Season {season}" if season is not None else "?"
+
+
+def _wanted_entry(arr: Arr, item: dict) -> tuple[int | None, str, dict]:
+    """Read one row of "missing" or "below the cutoff".
+
+    Radarr answers both with movies, where ``id`` is the movie. Sonarr answers
+    with **episodes**, where ``id`` is the episode and the series is a field on
+    it. The two are not interchangeable and handing one to the other is how an
+    episode id ended up in a series search.
+    """
+    if arr.kind != "sonarr":
+        return item.get("id"), item.get("title") or "?", {"year": item.get("year")}
+    series = item.get("series") or {}
+    series_id = item.get("seriesId") or series.get("id")
+    season, number = item.get("seasonNumber"), item.get("episodeNumber")
+    label = (f"S{int(season):02d}E{int(number):02d}"
+             if season is not None and number is not None else "")
+    title = " ".join(x for x in (series.get("title") or "?", label) if x)
+    return series_id, title, {"year": series.get("year"), "season": season,
+                              "episode_ids": [item["id"]] if item.get("id") else []}
+
+
 # ===========================================================================
 # Category: queue
 # ===========================================================================
@@ -366,6 +435,62 @@ def check_stalled(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     return findings
 
 
+def _first_available(entry: dict) -> str | None:
+    """The earliest moment this entry's content existed anywhere.
+
+    Read off the item the service already sent with the queue entry: the
+    cinema, digital and disc dates for a film, the broadcast date for an
+    episode. Missing dates are not treated as "not out" — plenty of items
+    carry none, and a rule that reads silence as evidence finds only noise.
+    """
+    episode = entry.get("episode") or {}
+    if episode.get("airDateUtc"):
+        return str(episode["airDateUtc"])
+    item = _item(entry)
+    dates = [str(item[key]) for key in
+             ("inCinemas", "digitalRelease", "physicalRelease", "firstAired")
+             if item.get(key)]
+    return min(dates) if dates else None
+
+
+def check_premature_grab(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A release for something that has not come out yet.
+
+    There is no honest copy of a film that is still three weeks from its
+    cinema date, and no honest copy of an episode that has not aired. What
+    turns up under those names is a re-encode of a trailer, a different film
+    with the right name on it, or nothing at all inside a working archive.
+
+    A day of grace on purpose: release dates are held without a time zone, the
+    world does not release things at midnight UTC, and something that came out
+    this morning is not a fake. Reporting by default — a legitimate early
+    release in one region is rare but real, and the safe direction is to say so
+    rather than to act.
+    """
+    grace = float(cfg.get("premature_grace_hours", 24))
+    findings = []
+    for entry in ctx["queue"]:
+        moment = _first_available(entry)
+        if not moment:
+            continue
+        minutes = _age_minutes(moment)
+        if minutes is None or minutes > -grace * 60:
+            continue
+        days = round(-minutes / 1440, 1)
+        item = _item(entry)
+        findings.append(Finding(
+            rule="premature_grab", severity="error", service=arr.kind,
+            entry_id=entry["id"], title=item.get("title", "?"),
+            message="finding.premature_grab",
+            params={"days": f"{days:g}", "date": moment[:10]},
+            data={"release": entry.get("title"), "available": moment,
+                  "days_early": days, "gb": _gb(entry),
+                  # Three weeks out is a judgement call, three months is not.
+                  "confidence": round(min(1.0, days / 21), 3)},
+        ))
+    return findings
+
+
 def check_grab_loop(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The same title is grabbed over and over and discarded again.
 
@@ -428,7 +553,15 @@ def check_manual_import(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         # A name that mentions no year at all is not evidence of anything, and
         # this is the gate in front of an action, not a reason to report one.
         verdict = years.judge(release, item, tolerance)
-        year_ok = bool(verdict.found) and not verdict.wrong
+        # A film release states the year it came out, and a name that states
+        # none is no evidence of anything. An episode states an episode
+        # instead, and demanding a year of it meant this rule could never fire
+        # for a series at all — every episode sat waiting for somebody to press
+        # the button by hand.
+        if EPISODE_MARKER.search(release):
+            year_ok = not verdict.wrong
+        else:
+            year_ok = bool(verdict.found) and not verdict.wrong
         title_ok = max(_similarity(release, item.get("title", "")),
                        _similarity(release, item.get("originalTitle") or "")) >= threshold
         if not (year_ok and title_ok):
@@ -873,10 +1006,7 @@ def check_missing_audio_language(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
     if not wanted:
         return []
     findings = []
-    for item in ctx.get("items", []):
-        file_info = item.get("movieFile")
-        if not file_info:
-            continue
+    for item, file_info, label in _library_files(arr, ctx):
         media_info = file_info.get("mediaInfo") or {}
         languages = (media_info.get("audioLanguages") or "").lower()
         if not languages:
@@ -885,7 +1015,7 @@ def check_missing_audio_language(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
             continue
         findings.append(Finding(
             rule="missing_audio_language", severity="warning", service=arr.kind,
-            title=item.get("title", "?"),
+            title=label,
             message="finding.missing_audio_language",
             params={"found": media_info.get("audioLanguages"),
                     "wanted": ", ".join(wanted)},
@@ -899,13 +1029,12 @@ def check_missing_audio_language(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
 def check_unreadable_file(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The file could not be read — often a sign of damage."""
     findings = []
-    for item in ctx.get("items", []):
-        file_info = item.get("movieFile")
-        if not file_info or file_info.get("mediaInfo"):
+    for item, file_info, label in _library_files(arr, ctx):
+        if file_info.get("mediaInfo"):
             continue
         findings.append(Finding(
             rule="unreadable_file", severity="error", service=arr.kind,
-            title=item.get("title", "?"),
+            title=label,
             message="finding.unreadable_file",
             data={"item_id": item.get("id"), "file": file_info.get("relativePath"),
                   "gb": round((file_info.get("size") or 0) / 1024 ** 3, 2)},
@@ -923,10 +1052,9 @@ def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     profiles = {p["id"]: p for p in ctx["profiles"]}
     formats = {f["name"]: f for f in ctx["formats"]}
     findings = []
-    for item in ctx.get("items", []):
-        file_info = item.get("movieFile")
+    for item, file_info, label in _library_files(arr, ctx):
         profile = profiles.get(item.get("qualityProfileId"))
-        if not file_info or not profile:
+        if not profile:
             continue
         name = file_info.get("sceneName") or file_info.get("relativePath") or ""
         if not name:
@@ -948,7 +1076,7 @@ def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             continue
         findings.append(Finding(
             rule="below_profile", severity="warning", service=arr.kind,
-            title=item.get("title", "?"),
+            title=label,
             message="finding.below_profile",
             params={"profile": profile.get("name"), "reason": ", ".join(without_size)},
             data={"item_id": item.get("id"), "file": name, "score": total, "hits": hits},
@@ -969,27 +1097,168 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """
     findings = []
     for item in ctx.get("missing", []):
-        if arr.kind == "sonarr":
-            series = item.get("series") or {}
-            series_id = item.get("seriesId") or series.get("id")
-            if not series_id:
-                continue
-            season = item.get("seasonNumber")
-            number = item.get("episodeNumber")
-            label = (f"S{int(season):02d}E{int(number):02d}"
-                     if season is not None and number is not None else "")
-            title = " ".join(x for x in (series.get("title") or "?", label) if x)
-            data = {"item_id": series_id, "year": series.get("year"),
-                    "episode_ids": [item["id"]] if item.get("id") else [],
-                    "season": season}
-        else:
-            title = item.get("title") or "?"
-            data = {"item_id": item.get("id"), "year": item.get("year")}
+        item_id, title, extra = _wanted_entry(arr, item)
+        if not item_id:
+            continue
         findings.append(Finding(
             rule="missing_items", severity="info", service=arr.kind, title=title,
-            message="finding.missing_items", data=data,
+            message="finding.missing_items",
+            data={"item_id": item_id, **extra},
         ))
     return findings
+
+
+def check_cutoff_unmet(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """There is a file, but it is below the quality the profile asks for.
+
+    The services keep this list themselves and will act on it when asked — the
+    problem is that nobody asks. A cutoff that is never met is invisible: the
+    title looks complete in every view, it plays, and the only sign that
+    something better was wanted is a number on a page nobody opens.
+
+    Reporting by default. The action is a search, and a search for every title
+    below its cutoff at once is a lot of queries — that should be somebody's
+    decision, not a default.
+    """
+    findings = []
+    for item in ctx.get("below_cutoff", []):
+        item_id, title, extra = _wanted_entry(arr, item)
+        if not item_id:
+            continue
+        current = ((item.get("movieFile") or item.get("episodeFile") or {})
+                   .get("quality") or {}).get("quality") or {}
+        findings.append(Finding(
+            rule="cutoff_unmet", severity="info", service=arr.kind, title=title,
+            message="finding.cutoff_unmet",
+            params={"quality": current.get("name") or "?"},
+            data={"item_id": item_id, "quality": current.get("name"), **extra},
+        ))
+    return findings
+
+
+def _seasons_of(item: dict) -> list[dict]:
+    return [s for s in (item.get("seasons") or []) if isinstance(s, dict)]
+
+
+def check_season_gaps(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A season that is partly there.
+
+    Distinct from "nothing has been downloaded yet", and the distinction is the
+    whole point: a season with no files at all is simply on the list. A season
+    with eight of ten episodes is a season pack that imported partly, or two
+    episodes that failed months ago and were never noticed, and nothing about
+    the usual views makes that visible — the series shows a tick, the season
+    shows a number nobody reads.
+
+    Costs nothing to ask: the per-season counts arrive with the series list
+    that the library rules already fetch.
+    """
+    minimum = int(cfg.get("season_gap_min", 1))
+    findings = []
+    for item in ctx.get("items", []):
+        if not item.get("monitored"):
+            continue
+        for season in _seasons_of(item):
+            if not season.get("monitored"):
+                continue
+            stats = season.get("statistics") or {}
+            have = int(stats.get("episodeFileCount") or 0)
+            total = int(stats.get("episodeCount") or 0)
+            missing = total - have
+            if not have or missing < max(1, minimum):
+                continue
+            number = season.get("seasonNumber")
+            findings.append(Finding(
+                rule="season_gaps", severity="warning", service=arr.kind,
+                title=f"{item.get('title', '?')} — Season {number}",
+                message="finding.season_gaps",
+                params={"missing": missing, "total": total, "season": number},
+                data={"item_id": item.get("id"), "season": number,
+                      "missing": missing, "have": have, "total": total},
+            ))
+    return findings
+
+
+def check_series_incomplete(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A series that has finished airing and is still not complete.
+
+    Worth separating from an ordinary gap because it will not fix itself. A
+    running series missing last week's episode is waiting for an indexer to
+    catch up; a series that ended four years ago is missing those episodes
+    permanently unless somebody goes looking.
+    """
+    findings = []
+    for item in ctx.get("items", []):
+        if not item.get("ended") or not item.get("monitored"):
+            continue
+        stats = item.get("statistics") or {}
+        have = int(stats.get("episodeFileCount") or 0)
+        total = int(stats.get("episodeCount") or 0)
+        if not total or have >= total:
+            continue
+        findings.append(Finding(
+            rule="series_incomplete", severity="info", service=arr.kind,
+            title=item.get("title", "?"),
+            message="finding.series_incomplete",
+            params={"have": have, "total": total, "missing": total - have},
+            data={"item_id": item.get("id"), "have": have, "total": total,
+                  "missing": total - have},
+        ))
+    return findings
+
+
+def check_stale_blocklist(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """An old blocklist entry that may be why a title never arrives.
+
+    The blocklist is permanent and nothing ever reviews it. A release refused
+    months ago because it failed to unpack once, or because a profile said no
+    to something the profile now says yes to, is still refused today — and if
+    it was the only copy anyone had, the title simply never comes.
+
+    Only raised where it can still matter: the entry is old, and the thing it
+    was for is *still* missing. A blocklisted release for something that has
+    since arrived is doing its job.
+    """
+    days = float(cfg.get("blocklist_stale_days", 60))
+    if days <= 0:
+        return []
+    items = {i["id"]: i for i in ctx.get("items", []) if i.get("id")}
+    findings, seen = [], set()
+    for entry in ctx.get("blocklist", []):
+        minutes = _age_minutes(entry.get("date"))
+        if minutes is None or minutes < days * 1440:
+            continue
+        item_id = entry.get("movieId") or entry.get("seriesId")
+        item = items.get(item_id)
+        if item is None:
+            continue
+        if not _still_missing(item):
+            continue
+        key = (item_id, (entry.get("sourceTitle") or "")[:60])
+        if key in seen:
+            continue
+        seen.add(key)
+        findings.append(Finding(
+            rule="stale_blocklist", severity="info", service=arr.kind,
+            title=item.get("title", "?"),
+            message="finding.stale_blocklist",
+            params={"release": (entry.get("sourceTitle") or "?")[:70],
+                    "days": int(minutes / 1440)},
+            data={"item_id": item_id, "blocklist_id": entry.get("id"),
+                  "release": entry.get("sourceTitle"),
+                  "age_hours": round(minutes / 60, 1),
+                  "indexer": entry.get("indexer")},
+        ))
+    return findings
+
+
+def _still_missing(item: dict) -> bool:
+    """Is the thing this entry was blocklisted for still not there?"""
+    if "hasFile" in item:
+        return not item.get("hasFile")
+    stats = item.get("statistics") or {}
+    total = int(stats.get("episodeCount") or 0)
+    return bool(total) and int(stats.get("episodeFileCount") or 0) < total
 
 
 # ===========================================================================
@@ -1039,10 +1308,9 @@ def check_downloader_stale_entry(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
     findings = []
 
     library = []
-    for item in ctx.get("items", []):
-        file_info = item.get("movieFile")
-        if file_info and file_info.get("size"):
-            library.append((int(file_info["size"]), item))
+    for item, file_info, _label in _library_files(arr, ctx):
+        if file_info.get("size"):
+            library.append((int(file_info["size"]), item, file_info))
     if not library:
         return []
 
@@ -1058,7 +1326,9 @@ def check_downloader_stale_entry(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
                 continue
             name = str(entry.get("name", ""))
 
-            same_size = [item for s, item in library if abs(s - size) <= size * 0.01]
+            same_size = [item for s, item, _f in library if abs(s - size) <= size * 0.01]
+            same_files = {item.get("id"): info for s, item, info in library
+                          if abs(s - size) <= size * 0.01}
             if not same_size:
                 continue
             hit = None
@@ -1072,8 +1342,9 @@ def check_downloader_stale_entry(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
             if not hit:
                 # Fallback: the library file name mentions the download
                 for item in same_size:
-                    file_info = item.get("movieFile") or {}
-                    origin = file_info.get("sceneName") or file_info.get("originalFilePath") or ""
+                    file_info = same_files.get(item.get("id")) or {}
+                    origin = (file_info.get("sceneName")
+                              or file_info.get("originalFilePath") or "")
                     if origin and origin[:30] and origin[:30] in name:
                         hit = item.get("title")
                         break
@@ -1380,6 +1651,11 @@ ALL: tuple[Rule, ...] = (
     Rule("stalled", "queue", check_stalled,
          actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
          conditions=("min_age_hours", "max_gb")),
+    # Reporting by default: an early release in one region is rare but real,
+    # and being wrong here throws away the only copy there is.
+    Rule("premature_grab", "queue", check_premature_grab,
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         conditions=("max_gb", "min_confidence")),
     # Nothing to do here on purpose: the cause is in the profile, and no
     # action taken on the queue can fix that.
     Rule("grab_loop", "queue", check_grab_loop, deep=True),
@@ -1401,15 +1677,32 @@ ALL: tuple[Rule, ...] = (
          conditions=("min_age_hours", "max_gb", "min_confidence")),
 
     # -- library ------------------------------------------------------------
+    # These three used to say "Radarr only". That was never a statement about
+    # the question — a series file lacks a language, fails to read and falls
+    # below a profile exactly the way a film does — it was a statement about
+    # this program, which only knew how to find a movie's file. It knows how to
+    # find a series' files now.
     Rule("missing_audio_language", "library", check_missing_audio_language,
-         actions=(policy.REPORT, "search"), only_kinds=("radarr",), deep=True),
+         actions=(policy.REPORT, "search"), deep=True),
     Rule("unreadable_file", "library", check_unreadable_file,
          actions=(policy.REPORT, "refresh", "search"), conditions=("max_gb",),
-         only_kinds=("radarr",), deep=True),
+         deep=True),
     Rule("below_profile", "library", check_below_profile,
-         actions=(policy.REPORT, "search"), only_kinds=("radarr",), deep=True),
+         actions=(policy.REPORT, "search"), deep=True),
     Rule("missing_items", "library", check_missing_items,
          actions=(policy.REPORT, "search"), deep=True),
+    # Searching for every title below its cutoff at once is a great many
+    # queries. That belongs to whoever pays for them.
+    Rule("cutoff_unmet", "library", check_cutoff_unmet,
+         actions=(policy.REPORT, "search"), deep=True),
+    Rule("season_gaps", "library", check_season_gaps,
+         actions=(policy.REPORT, "search"), only_kinds=("sonarr",), deep=True),
+    Rule("series_incomplete", "library", check_series_incomplete,
+         actions=(policy.REPORT, "search"), only_kinds=("sonarr",), deep=True),
+    # Un-blocklisting is not destructive, but it does undo somebody's earlier
+    # refusal, so it is offered rather than assumed.
+    Rule("stale_blocklist", "library", check_stale_blocklist,
+         actions=(policy.REPORT, "unblocklist"), deep=True),
 
     # -- downloader ---------------------------------------------------------
     Rule("downloader_warning", "downloader", check_downloader_warning,
