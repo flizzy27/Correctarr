@@ -154,8 +154,11 @@ def retry_after(origin: str) -> int:
         count, last = _attempts.get(origin, (0, 0.0))
     if count < THROTTLE_AFTER:
         return 0
-    # Doubles per failure above the threshold, capped.
-    window = min(THROTTLE_MAX_SECONDS, 2 ** (count - THROTTLE_AFTER + 1))
+    # Doubles per failure above the threshold, capped. The exponent is capped
+    # too: without that, a few thousand attempts would ask Python to build a
+    # number with a few thousand digits before min() throws it away.
+    steps = min(count - THROTTLE_AFTER + 1, 16)
+    window = min(THROTTLE_MAX_SECONDS, 2 ** steps)
     remaining = window - (time.monotonic() - last)
     return max(0, int(remaining))
 

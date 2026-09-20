@@ -18,11 +18,13 @@ without ``Secure``.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -225,9 +227,31 @@ def _is_set_up() -> bool:
     return auth.mode() == "off" or store.user_count() > 0
 
 
+def _route_path(request: Request) -> str:
+    """The path with the reverse proxy prefix taken off.
+
+    Two proxy configurations are common and they behave differently:
+
+      * ``proxy_pass http://host:8099/`` strips the prefix, so the request
+        arrives as ``/api/status``.
+      * ``proxy_pass http://host:8099`` does not, so it arrives as
+        ``/correctarr/api/status``.
+
+    Comparing the raw path against the list of open paths only works for the
+    first. In the second, ``/correctarr/api/alive`` would not match
+    ``/api/alive``, the health check would be sent to the sign-in page, and the
+    container would be reported as unhealthy. Stripping the prefix makes both
+    shapes behave the same.
+    """
+    path = request.url.path
+    if BASE and (path == BASE or path.startswith(BASE + "/")):
+        path = path[len(BASE):] or "/"
+    return path
+
+
 @app.middleware("http")
 async def gatekeeper(request: Request, call_next):
-    path = request.url.path
+    path = _route_path(request)
     if path.startswith("/static") or path in OPEN_PATHS:
         return await call_next(request)
 
@@ -252,9 +276,16 @@ def require_user(request: Request) -> dict:
     return user
 
 
-def _fail(request: Request, status: int, key: str, **fields) -> HTTPException:
-    """An error the interface can show in the user's own language."""
-    return HTTPException(status, i18n.t(key, language_for(request), **fields))
+def _fail(request: Request, status: int, message_key: str, /, **fields) -> HTTPException:
+    """An error the interface can show in the user's own language.
+
+    The first three parameters are positional only on purpose. A translation
+    placeholder called ``key`` is entirely reasonable — ``error.unknown_setting``
+    has one — and without the marker it would collide with the parameter name
+    and raise a TypeError instead of returning the error. That turned a clean
+    400 into a 500.
+    """
+    return HTTPException(status, i18n.t(message_key, language_for(request), **fields))
 
 
 def _fail_from_value_error(request: Request, error: ValueError) -> HTTPException:
@@ -464,12 +495,50 @@ class ServiceBody(BaseModel):
     webhook: bool = True
 
 
-def _connector(kind: str, url: str, api_key: str, name: str = ""):
+def _connector(kind: str, url: str, api_key: str, name: str = "",
+               timeout: float = 30.0):
     if kind == "sabnzbd":
-        return Sab(url, api_key, name=name or "SABnzbd")
+        return Sab(url, api_key, timeout=timeout, name=name or "SABnzbd")
     if kind == "prowlarr":
-        return Prowlarr(url, api_key, name=name or "Prowlarr")
-    return Arr(kind, url, api_key, name=name or kind.capitalize())
+        return Prowlarr(url, api_key, timeout=timeout, name=name or "Prowlarr")
+    return Arr(kind, url, api_key, timeout=timeout, name=name or kind.capitalize())
+
+
+# A service that is switched off at the far end refuses the connection at once.
+# One that is simply gone swallows the packets, and then only the timeout ends
+# the wait. Keep that short here: this runs while somebody is looking at a
+# loading page.
+PROBE_TIMEOUT = 6.0
+
+
+def _probe(entry: dict) -> tuple[bool | None, str]:
+    connector = _connector(entry["kind"], entry["url"], entry["api_key"],
+                           entry["name"], timeout=PROBE_TIMEOUT)
+    try:
+        return connector.reachable()
+    except Exception as e:                                  # noqa: BLE001
+        return False, str(e)
+    finally:
+        connector.close()
+
+
+def _probe_all(entries: list[dict]) -> dict[int, tuple[bool | None, str]]:
+    """Contact every service at once rather than one after another.
+
+    Measured on four unreachable services: 11.8 seconds in sequence, and the
+    overview stayed blank for all of it — every thirty seconds, because the
+    page refreshes itself. In parallel it is the slowest single service, not
+    the sum of them.
+    """
+    active = [e for e in entries if e["enabled"]]
+    results: dict[int, tuple[bool | None, str]] = {
+        e["id"]: (None, "disabled") for e in entries if not e["enabled"]}
+    if not active:
+        return results
+    with ThreadPoolExecutor(max_workers=min(8, len(active))) as pool:
+        for entry, outcome in zip(active, pool.map(_probe, active), strict=True):
+            results[entry["id"]] = outcome
+    return results
 
 
 def _keep_stored_key(body: ServiceBody) -> ServiceBody:
@@ -483,23 +552,14 @@ def _keep_stored_key(body: ServiceBody) -> ServiceBody:
 
 @app.get("/api/services")
 def list_services(_: dict = Depends(require_user)):
-    out = []
-    for entry in store.services():
-        if entry["enabled"]:
-            connector = _connector(entry["kind"], entry["url"],
-                                   entry["api_key"], entry["name"])
-            try:
-                ok, info = connector.reachable()
-            finally:
-                connector.close()
-        else:
-            ok, info = None, "disabled"
-        out.append({**entry, "enabled": bool(entry["enabled"]),
-                    "webhook": bool(entry["webhook"]),
-                    # The key never leaves the server.
-                    "api_key": S.MASK if entry["api_key"] else "",
-                    "reachable": ok, "info": info})
-    return out
+    entries = store.services()
+    probed = _probe_all(entries)
+    return [{**entry, "enabled": bool(entry["enabled"]),
+             "webhook": bool(entry["webhook"]),
+             # The key never leaves the server.
+             "api_key": S.MASK if entry["api_key"] else "",
+             "reachable": probed[entry["id"]][0],
+             "info": probed[entry["id"]][1]} for entry in entries]
 
 
 @app.post("/api/services")
@@ -570,16 +630,11 @@ def test_service(body: ServiceBody, request: Request, _: dict = Depends(require_
 # ---------------------------------------------------------------------------
 @app.get("/api/status")
 def status(_: dict = Depends(require_user)):
-    services = []
-    for entry in store.services(enabled_only=True):
-        connector = _connector(entry["kind"], entry["url"],
-                               entry["api_key"], entry["name"])
-        try:
-            ok, info = connector.reachable()
-        finally:
-            connector.close()
-        services.append({"name": entry["name"], "kind": entry["kind"],
-                         "url": entry["url"], "ok": ok, "info": info})
+    entries = store.services(enabled_only=True)
+    probed = _probe_all(entries)
+    services = [{"name": entry["name"], "kind": entry["kind"], "url": entry["url"],
+                 "ok": probed[entry["id"]][0], "info": probed[entry["id"]][1]}
+                for entry in entries]
     recent = store.runs(1)
     jobs = {j.id: (j.next_run_time.isoformat() if j.next_run_time else None)
             for j in scheduler.get_jobs()}
@@ -763,7 +818,6 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
         data = row.get("data")
         if isinstance(data, str):
             try:
-                import json
                 data = json.loads(data)
             except (ValueError, TypeError):
                 data = {}

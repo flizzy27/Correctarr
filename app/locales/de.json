@@ -3,7 +3,6 @@
     "name": "Correctarr",
     "tagline": "Findet und behebt, was Radarr und Sonarr liegen lassen"
   },
-
   "nav": {
     "overview": "Übersicht",
     "fixed": "Behoben",
@@ -17,7 +16,6 @@
     "group_operations": "Betrieb",
     "group_configuration": "Einrichtung"
   },
-
   "page": {
     "overview": "Die Lage auf einen Blick",
     "fixed": "Was tatsächlich verändert wurde",
@@ -28,7 +26,6 @@
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
     "settings": "Takt, Pfade, Schwellen, Darstellung"
   },
-
   "action": {
     "check_fast": "Schnell prüfen",
     "check_deep": "Alles prüfen",
@@ -53,7 +50,6 @@
     "send_test": "Testnachricht senden",
     "show_advanced": "Auch Fortgeschrittenes zeigen"
   },
-
   "label": {
     "name": "Name",
     "kind": "Art",
@@ -103,7 +99,6 @@
     "only_problems": "nur Auffälligkeiten",
     "only_fixed": "nur behobene"
   },
-
   "unit": {
     "seconds": "Sekunden",
     "minutes": "Minuten",
@@ -118,18 +113,15 @@
     "gb": "GB",
     "mb": "MB"
   },
-
   "severity": {
     "error": "Fehler",
     "warning": "Warnung",
     "info": "Hinweis"
   },
-
   "direction": {
     "higher": "niedrig",
     "lower": "hoch"
   },
-
   "category": {
     "queue": "Warteschlange",
     "import": "Import",
@@ -138,7 +130,6 @@
     "indexers": "Indexer",
     "system": "System"
   },
-
   "theme": {
     "midnight": "Mitternacht",
     "deepsea": "Tiefsee",
@@ -148,13 +139,11 @@
     "moss": "Moos",
     "charcoal": "Kohle"
   },
-
   "density": {
     "spacious": "Weit",
     "normal": "Normal",
     "compact": "Eng"
   },
-
   "choice": {
     "auto": "Nach Browsersprache",
     "en": "English",
@@ -163,7 +152,6 @@
     "warning": "Warnung und schlimmer",
     "error": "Nur Fehler"
   },
-
   "tile": {
     "found_24h": "Funde in 24 Stunden",
     "fixed_24h": "davon behoben",
@@ -173,7 +161,6 @@
     "ready": "bereit",
     "busy": "prüft gerade …"
   },
-
   "overview": {
     "services_title": "Dienste",
     "services_help": "Jeder Zugang wird beim Laden dieser Seite tatsächlich angesprochen. Was hier grün ist, antwortet wirklich.",
@@ -185,21 +172,18 @@
     "no_services": "Noch kein Zugang eingerichtet — unter Zugänge anlegen.",
     "no_runs": "Noch kein Durchlauf"
   },
-
   "fixed_page": {
     "title": "Was behoben wurde",
     "help": "Nur Eingriffe, die wirklich stattgefunden haben — reine Meldungen und Testläufe stehen hier nicht. Das ist der Nachweis über die geleistete Arbeit.",
     "empty": "Bisher wurde nichts verändert. Das ist erst einmal eine gute Nachricht.",
     "no_match": "Nichts gefunden."
   },
-
   "findings_page": {
     "title": "Funde",
     "help": "Alles, was gefunden wurde — behoben oder nicht.",
     "empty": "Noch nichts protokolliert.",
     "reported_only": "nur gemeldet"
   },
-
   "queue_page": {
     "title": "Warteschlange",
     "subtitle": "mit heutiger Bewertung",
@@ -207,7 +191,6 @@
     "empty": "Die Warteschlange ist leer.",
     "blocked": "gesperrt"
   },
-
   "rules_page": {
     "title": "Regeln",
     "help": "<b>Prüfen</b> aus heißt: Die Regel läuft gar nicht. <b>Beheben</b> aus heißt: Der Fund wird nur gemeldet, nicht angefasst. Die Zahl rechts zeigt, wie oft die Regel bisher angeschlagen hat.",
@@ -219,7 +202,6 @@
     "report_only_done": "Alle Regeln stehen jetzt auf „nur melden“",
     "defaults_done": "Zurückgesetzt"
   },
-
   "rule_badge": {
     "deletes": "löscht",
     "modifies": "greift ein",
@@ -228,7 +210,6 @@
     "once_per_run": "einmal je Durchlauf",
     "only_kinds": "nur {kinds}"
   },
-
   "indexers_page": {
     "title": "Indexer-Bewertung",
     "subtitle": "rein lesend",
@@ -239,7 +220,6 @@
     "deviation": "Rang {actual} eingestellt, {target} gemessen — Priorität {priority} wäre besser bei {suggested}",
     "disabled": "aus"
   },
-
   "services_page": {
     "title": "Zugänge",
     "help": "Radarr, Sonarr, SABnzbd und Prowlarr. Jeder Arr-Zugang bekommt auf Wunsch eine Webhook-Verbindung, damit er sofort meldet, wenn er etwas greift oder Handarbeit verlangt. Dafür braucht es die Adresse dieser Oberfläche unter Einstellungen.",
@@ -249,7 +229,6 @@
     "confirm_remove": "Zugang „{name}“ wirklich entfernen?",
     "removed": "Entfernt"
   },
-
   "settings_page": {
     "group_schedule": "Takt",
     "group_schedule_help": "Wie oft geprüft wird. Der schnelle Durchlauf sieht nur die Warteschlange durch und dauert Sekunden; der vollständige geht zusätzlich die ganze Bibliothek und die Indexer durch.",
@@ -274,13 +253,11 @@
     "account_disabled": "Die Anmeldung ist über <code>AUTH=off</code> abgeschaltet. Es gibt kein Konto zu verwalten — und die Oberfläche ist für jeden erreichbar, der den Port erreicht.",
     "sessions_note": "Alle anderen Sitzungen werden dabei beendet."
   },
-
   "login": {
     "prompt": "Bitte anmelden, um fortzufahren.",
     "failed": "Anmeldung fehlgeschlagen ({status})",
     "no_connection": "Keine Verbindung zum Dienst."
   },
-
   "setup": {
     "welcome": "Willkommen",
     "intro": "Lege den Zugang an, mit dem du dich künftig anmeldest. Danach geht es weiter zu den Diensten.",
@@ -295,7 +272,6 @@
     "strength_3": "gut",
     "strength_4": "sehr gut"
   },
-
   "path": {
     "unset_required": "Ohne diesen Pfad bleiben die Dateiregeln aus.",
     "unset_optional": "Nicht gesetzt — in Ordnung, wenn es den Ordner nicht gibt.",
@@ -303,7 +279,6 @@
     "ok": "{count} Einträge",
     "read_only": "nur lesbar, Aufräumen geht nicht"
   },
-
   "time": {
     "just_now": "gerade eben",
     "in_a_moment": "gleich",
@@ -312,7 +287,6 @@
     "days_ago": "vor {count} Tagen",
     "never": "—"
   },
-
   "run": {
     "fast": "schnell",
     "deep": "vollständig",
@@ -323,7 +297,6 @@
     "result_errors": "{count} Fehler",
     "already_running": "Ein Durchlauf läuft bereits"
   },
-
   "message": {
     "saved": "Gespeichert",
     "password_changed": "Passwort geändert. Andere Sitzungen wurden beendet.",
@@ -339,7 +312,6 @@
     "on": "an",
     "off": "aus"
   },
-
   "notify": {
     "title": "{count} neue Meldung(en)",
     "title_fixed": ", {count} behoben",
@@ -347,7 +319,6 @@
     "truncated": "… gekürzt",
     "open": "In Correctarr ansehen"
   },
-
   "error": {
     "password_too_short": "Das Passwort braucht mindestens {min} Zeichen.",
     "password_whitespace": "Das Passwort darf nicht mit einem Leerzeichen beginnen oder enden.",
@@ -380,9 +351,9 @@
     "no_services": "Es ist kein Zugang eingerichtet. Unter Zugänge mindestens Radarr oder Sonarr eintragen.",
     "already_running": "Ein Durchlauf läuft bereits",
     "pushover_not_configured": "App- und Benutzerschlüssel fehlen",
-    "generic": "Da ist etwas schiefgegangen"
+    "generic": "Da ist etwas schiefgegangen",
+    "unknown_field_kind": "Intern: Eine Einstellung ist mit einer unbekannten Art angelegt ({value})."
   },
-
   "reason": {
     "marked_failed": "als fehlgeschlagen gekennzeichnet",
     "empty_folder": "leerer Ordner",
@@ -390,7 +361,6 @@
     "partial_video": "nur angebrochene Videodatei ({mb} MB)",
     "no_video": "kein Video, {count} Restdateien"
   },
-
   "finding": {
     "wrong_year": "Das Release nennt {found}, der Titel ist aber von {expected}. Das ist ein anderer Film.",
     "wrong_title": "Der Releasename ähnelt keinem der {count} bekannten Titel dieses Films (bester Wert {percent}). Vermutlich falsch zugeordnet.",
@@ -426,7 +396,6 @@
     "disk_space": "Nur noch {free} GB frei von {total} GB.",
     "passthrough": "{text}"
   },
-
   "rules": {
     "wrong_year": {
       "title": "Jahr passt nicht zum Titel",
@@ -533,7 +502,6 @@
       "help": "Betrachtet nur die Ablageorte, die als Wurzelordner eingetragen sind."
     }
   },
-
   "settings": {
     "fast_seconds": {
       "label": "Warteschlange prüfen alle",
@@ -643,11 +611,26 @@
       "label": "Abweichung melden ab",
       "help": "Um so viele Plätze darf ein Indexer falsch einsortiert sein, ohne dass es gemeldet wird. Mit 1 wären im Test fünf von sechs Indexern aufgefallen — reines Rauschen."
     },
-    "pushover_enabled": { "label": "Pushover einschalten", "help": "" },
-    "pushover_app": { "label": "App-Schlüssel", "help": "Aus deiner Pushover-Anwendung." },
-    "pushover_user": { "label": "Benutzerschlüssel", "help": "Steht auf deiner Pushover-Startseite." },
-    "pushover_devices": { "label": "Geräte", "help": "Kommagetrennt. Leer heißt: an alle Geräte." },
-    "pushover_sound": { "label": "Klang", "help": "Name eines Pushover-Klangs." },
+    "pushover_enabled": {
+      "label": "Pushover einschalten",
+      "help": ""
+    },
+    "pushover_app": {
+      "label": "App-Schlüssel",
+      "help": "Aus deiner Pushover-Anwendung."
+    },
+    "pushover_user": {
+      "label": "Benutzerschlüssel",
+      "help": "Steht auf deiner Pushover-Startseite."
+    },
+    "pushover_devices": {
+      "label": "Geräte",
+      "help": "Kommagetrennt. Leer heißt: an alle Geräte."
+    },
+    "pushover_sound": {
+      "label": "Klang",
+      "help": "Name eines Pushover-Klangs."
+    },
     "pushover_min_severity": {
       "label": "Ab welcher Schwere melden",
       "help": "„Warnung und schlimmer“ überspringt bloße Hinweise."
@@ -668,8 +651,14 @@
       "label": "Sprache",
       "help": "„Nach Browsersprache“ übernimmt, was der Browser anfordert."
     },
-    "theme": { "label": "Farbwelt", "help": "Alle Farbwelten sind dunkel." },
-    "density": { "label": "Dichte", "help": "Wie eng die Oberfläche gesetzt wird." },
+    "theme": {
+      "label": "Farbwelt",
+      "help": "Alle Farbwelten sind dunkel."
+    },
+    "density": {
+      "label": "Dichte",
+      "help": "Wie eng die Oberfläche gesetzt wird."
+    },
     "public_url": {
       "label": "Adresse dieser Oberfläche",
       "help": "Braucht Radarr, um den Webhook hierher zu schicken, und Pushover für die Verknüpfung in der Nachricht. Hinter einem Reverse Proxy die öffentliche Adresse eintragen, nicht die interne."

@@ -30,4 +30,11 @@ ignore = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-filterwarnings = ["error::DeprecationWarning"]
+# Our own deprecation warnings fail the run; the ones third party libraries
+# emit about each other do not. Turning every DeprecationWarning into an error
+# means an unrelated library release can break the build overnight.
+filterwarnings = [
+  "default",
+  "error::DeprecationWarning:app",
+  "error::DeprecationWarning:tests",
+]

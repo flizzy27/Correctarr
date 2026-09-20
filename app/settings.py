@@ -106,7 +106,7 @@ class Field:
                 raise ValueError(f"error.too_long|{self.key}")
             return text
 
-        raise ValueError(f"error.unknown_kind|{self.kind}")
+        raise ValueError(f"error.unknown_field_kind|{self.kind}")
 
 
 def _pretty(value: float) -> str:

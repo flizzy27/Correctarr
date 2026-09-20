@@ -8,6 +8,8 @@ lying around — the ones that sit there because nobody is looking.**
 [![Build](https://github.com/flizzy27/Correctarr/actions/workflows/docker.yml/badge.svg)](https://github.com/flizzy27/Correctarr/actions/workflows/docker.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+<img src="docs/screenshot-overview.png" alt="The overview page" width="900">
+
 </div>
 
 ---
@@ -99,6 +101,12 @@ between *check* and *fix*, plus a global dry run that stops every change.
 **Guiding principle: when in doubt, do nothing.** A rule that is not sure only
 reports. Better one finding left alone than one good file thrown away.
 
+<img src="docs/screenshot-rules.png" alt="Every rule can be switched between check and fix" width="900">
+
+Every rule shows what it does before you turn it on: whether it only reports,
+acts, or deletes; whether it runs on every pass or only the deep one; and how
+often it has matched so far.
+
 ## Two things Radarr cannot do itself
 
 **Radarr does not see the whole release name.** A custom format with a title
@@ -189,6 +197,16 @@ services:
 
 Everything else — schedule, paths, thresholds, notifications, appearance — is
 configured in the interface and survives every update.
+
+<img src="docs/screenshot-settings.png" alt="Every setting has an explanation" width="900">
+
+## Seeing what it did
+
+<img src="docs/screenshot-fixed.png" alt="A record of every change that was made" width="900">
+
+The *Fixed* page lists only changes that actually happened — plain reports and
+dry runs are not in there. It is the record of what the program did on your
+behalf, which matters for something that is allowed to delete files.
 
 ## Languages
 

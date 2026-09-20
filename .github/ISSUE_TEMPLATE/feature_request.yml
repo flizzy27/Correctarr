@@ -1,0 +1,29 @@
+name: Idea
+description: Suggest a rule or a change
+labels: ["idea"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+      description: |
+        Describe the situation you keep running into. A concrete case is worth
+        more than a general wish — most of the rules here exist because
+        something specific went wrong once.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+    validations:
+      required: true
+
+  - type: textarea
+    id: risk
+    attributes:
+      label: What could go wrong
+      description: |
+        If this would change or delete something, what would a false positive
+        cost? The guiding principle here is: when in doubt, do nothing.

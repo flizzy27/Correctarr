@@ -151,6 +151,12 @@ class Store:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._prepare()
         self._migrate()
+        # Deliberately outside _migrate: that returns early when there is
+        # nothing to migrate. If the schema step once succeeded and the copy
+        # then failed, the version has already moved on, so the next start
+        # would skip the migration — and with it the adoption — leaving that
+        # data stranded for good.
+        self._adopt_legacy()
 
     # -- connection ------------------------------------------------------------
     @contextmanager
@@ -207,9 +213,6 @@ class Store:
                     log.info("Schema version %d was already partly present: %s", number, e)
                 c.execute(f"PRAGMA user_version={number}")
                 c.commit()
-
-        if current == 0:
-            self._adopt_legacy()
         log.info("Database is at schema version %d", self.version())
 
     def _adopt_legacy(self) -> None:

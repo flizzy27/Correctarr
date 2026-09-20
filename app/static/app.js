@@ -715,33 +715,40 @@ function renderAccount() {
     $("#account").innerHTML = `<p class="hint">${t("settings_page.account_disabled")}</p>`;
     return;
   }
+  // Wrapped in a form on purpose: outside one, password managers neither offer
+  // to fill the fields nor to store the new password.
   $("#account").innerHTML = `
-    <div class="fields">
-      <div class="field"><label for="pw-current">${esc(t("label.current_password"))}</label>
-        <input type="password" id="pw-current" autocomplete="current-password"></div>
-      <div class="field"><label for="pw-new">${esc(t("label.new_password"))}</label>
-        <input type="password" id="pw-new" autocomplete="new-password"></div>
-      <div class="field"><label for="pw-repeat">${esc(t("label.repeat_password"))}</label>
-        <input type="password" id="pw-repeat" autocomplete="new-password"></div>
-    </div>
-    <div class="row" style="margin-top:13px">
-      <button class="btn" id="change-password">${esc(t("action.change_password"))}</button>
-      <span class="muted">${esc(t("settings_page.sessions_note"))}</span>
-    </div>`;
-  $("#change-password").addEventListener("click", async (event) => {
+    <form id="password-form" autocomplete="on">
+      <div class="fields">
+        <div class="field"><label for="pw-current">${esc(t("label.current_password"))}</label>
+          <input type="password" id="pw-current" autocomplete="current-password"></div>
+        <div class="field"><label for="pw-new">${esc(t("label.new_password"))}</label>
+          <input type="password" id="pw-new" autocomplete="new-password"></div>
+        <div class="field"><label for="pw-repeat">${esc(t("label.repeat_password"))}</label>
+          <input type="password" id="pw-repeat" autocomplete="new-password"></div>
+      </div>
+      <div class="row" style="margin-top:13px">
+        <button type="submit" class="btn" id="change-password">${
+          esc(t("action.change_password"))}</button>
+        <span class="muted">${esc(t("settings_page.sessions_note"))}</span>
+      </div>
+    </form>`;
+  $("#password-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
     const current = $("#pw-current").value;
     const replacement = $("#pw-new").value;
     if (replacement !== $("#pw-repeat").value) {
       toast(t("setup.mismatch"), "bad");
       return;
     }
-    event.target.disabled = true;
+    const button = $("#change-password");
+    button.disabled = true;
     try {
       const answer = await post("api/auth/password", { current, replacement });
       toast(answer.message, "good");
       $("#pw-current").value = $("#pw-new").value = $("#pw-repeat").value = "";
     } catch (error) { failed(error); }
-    finally { event.target.disabled = false; }
+    finally { button.disabled = false; }
   });
 }
 

@@ -59,11 +59,16 @@ def _flatten(node: Any, prefix: str = "") -> dict[str, str]:
     return out
 
 
-def t(key: str, language: str = DEFAULT, **fields: Any) -> str:
+def t(key: str, language: str = DEFAULT, /, **fields: Any) -> str:
     """Look a key up. Falls back to English, then to the key itself.
 
     Returning the key rather than an empty string is deliberate: a missing
     translation should be obvious in the interface, not invisible.
+
+    ``key`` and ``language`` are positional only. Placeholders called ``key``
+    or ``language`` are entirely reasonable — ``error.unknown_setting`` uses
+    ``{key}`` — and without the marker they collide with the parameter names
+    and raise a TypeError instead of returning a string.
     """
     text = bundle(language).get(key)
     if text is None and language != DEFAULT:
@@ -100,6 +105,10 @@ def negotiate(header: str | None) -> str:
                 weight = float(params.strip()[2:])
             except ValueError:
                 weight = 0.0
+        # q=0 means "not acceptable", so it must not win by being the only
+        # entry left.
+        if weight <= 0:
+            continue
         base = code.strip().split("-")[0].lower()
         if base in AVAILABLE:
             ranked.append((weight, base))

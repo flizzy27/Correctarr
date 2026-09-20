@@ -351,7 +351,8 @@
     "no_services": "No service is configured. Add at least Radarr or Sonarr under Services.",
     "already_running": "A run is already in progress",
     "pushover_not_configured": "The application and user keys are missing",
-    "generic": "Something went wrong"
+    "generic": "Something went wrong",
+    "unknown_field_kind": "Internal: a setting is declared with an unknown kind ({value})."
   },
   "reason": {
     "marked_failed": "marked as failed",

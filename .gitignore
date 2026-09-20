@@ -13,6 +13,7 @@ id_rsa*
 # Working notes, not shipped
 AGENTS.md
 tools/
+logo.png
 
 # Runtime and data
 __pycache__/

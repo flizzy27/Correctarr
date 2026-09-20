@@ -13,6 +13,33 @@ import pytest
 from app.storage import MIGRATIONS, SCHEMA_VERSION, Store
 
 
+def sqlite(path):
+    """Open a connection that both commits and closes.
+
+    ``closing(...)`` closes but does not commit; ``with connection`` commits but
+    does not close. Using only one of the two either loses the writes or leaks
+    the handle — the same trap the store itself documents.
+    """
+    connection = sqlite3.connect(path)
+    return _CommitAndClose(connection)
+
+
+class _CommitAndClose:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __enter__(self):
+        return self.connection
+
+    def __exit__(self, kind, value, traceback):
+        try:
+            if kind is None:
+                self.connection.commit()
+        finally:
+            self.connection.close()
+        return False
+
+
 @dataclass
 class Finding:
     rule: str = "test_rule"
@@ -51,7 +78,7 @@ def test_a_second_start_changes_nothing(tmp_path):
 
 
 def test_wal_is_enabled(store):
-    with sqlite3.connect(store.path) as connection:
+    with sqlite(store.path) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
 
 
@@ -63,7 +90,7 @@ def test_a_failed_migration_leaves_the_version_alone(tmp_path, monkeypatch):
                         [(1, dict(MIGRATIONS)[1]), (2, "THIS IS NOT SQL;")])
     with pytest.raises(sqlite3.Error):
         Store(path)
-    with sqlite3.connect(path) as connection:
+    with sqlite(path) as connection:
         assert int(connection.execute("PRAGMA user_version").fetchone()[0]) == 1
 
 
@@ -72,7 +99,7 @@ def test_data_from_a_previous_build_is_adopted(tmp_path):
     """A store written by a pre-release build used German table names. The rows
     are worth keeping; the names are not."""
     path = tmp_path / "legacy.db"
-    with sqlite3.connect(path) as connection:
+    with sqlite(path) as connection:
         connection.executescript("""
             CREATE TABLE einstellungen (schluessel TEXT PRIMARY KEY, wert TEXT NOT NULL);
             CREATE TABLE protokoll (
@@ -108,7 +135,7 @@ def test_data_from_a_previous_build_is_adopted(tmp_path):
     assert adopted.services()[0]["api_key"] == "secret"
     assert len(adopted.runs()) == 1
     # The old tables are gone once the rows have been copied.
-    with sqlite3.connect(path) as connection:
+    with sqlite(path) as connection:
         tables = {r[0] for r in connection.execute(
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert "protokoll" not in tables
@@ -128,7 +155,7 @@ def test_settings_survive_their_types(store):
 
 
 def test_an_unreadable_setting_falls_back_to_the_default(store):
-    with sqlite3.connect(store.path) as connection:
+    with sqlite(store.path) as connection:
         connection.execute("INSERT INTO settings VALUES('broken','{not json')")
     assert store.get("broken", "fallback") == "fallback"
     # And it does not poison reading everything else either.

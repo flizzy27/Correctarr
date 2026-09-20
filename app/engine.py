@@ -637,12 +637,8 @@ class Engine:
             errors.append(f"{rule.name}: {e}")
             return []
         for finding in found:
-            # Do not report a long-running problem on every pass. It is still
-            # fixed — just quietly.
-            key = "|".join((finding.service, finding.rule, finding.title,
-                            str(finding.data.get("release") or finding.data.get("file")
-                                or finding.data.get("path") or "")))
-            finding.is_new = self.store.is_new(key, int(cfg.get("recheck_hours", 12)))
+            finding.is_new = self.store.is_new(
+                _dedup_key(finding), int(cfg.get("recheck_hours", 12)))
         return found
 
     def _housekeep(self, cfg: dict) -> None:
@@ -658,6 +654,24 @@ class Engine:
                                      days=int(cfg.get("log_days", 90)))
         except Exception:                                       # noqa: BLE001
             log.exception("Housekeeping failed")
+
+
+def _dedup_key(finding: Finding) -> str:
+    """What makes this finding the same finding as last time.
+
+    Do not report a long-running problem on every pass — it is still fixed,
+    just quietly. Most findings carry something that identifies the thing they
+    are about; those that do not fall back to the rendered message, because the
+    title alone is not enough. Two different health problems reported by the
+    same source share a title, and deduplicating on that would hide the second
+    one entirely.
+    """
+    identifier = (finding.data.get("release") or finding.data.get("file")
+                  or finding.data.get("path") or finding.data.get("indexer")
+                  or finding.data.get("nzo_id"))
+    if not identifier:
+        identifier = finding.describe("en")[:120]
+    return "|".join((finding.service, finding.rule, finding.title, str(identifier)))
 
 
 class _Recordable:

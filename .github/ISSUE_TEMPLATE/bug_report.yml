@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is not working the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before you start: please redact API keys from anything you paste.
+        Correctarr redacts them in its own log, but Radarr, Sonarr and SABnzbd
+        do not always do the same.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Correctarr version
+      description: Shown under the name in the sidebar.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: How are you running it
+      options:
+        - Unraid (Community Applications)
+        - Docker
+        - Docker Compose
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: services
+    attributes:
+      label: Which services are configured
+      description: Radarr, Sonarr, SABnzbd, Prowlarr — and their versions if you have them handy.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        `docker logs correctarr --tail 100`. Set LOGLEVEL=DEBUG first if the
+        normal output says nothing.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the paths on the Overview page and they are reported as present
+        - label: I removed any API keys from what I pasted
