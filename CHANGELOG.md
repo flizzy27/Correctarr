@@ -37,7 +37,9 @@ that break an existing installation.
   different thing from one nobody has started: eight of ten episodes means a
   season pack that imported partly, or two episodes that failed months ago and
   were never noticed. Costs no extra request — the counts arrive with the
-  series list.
+  series list. Its search asks for the missing episodes rather than the whole
+  season, so filling two holes does not make Sonarr query every indexer for
+  every episode it already has.
 * **`series_incomplete`** *(Sonarr)*. A series that has finished airing and is
   still missing episodes. A running series missing last week is waiting for an
   indexer to catch up; one that ended four years ago is missing them for good.

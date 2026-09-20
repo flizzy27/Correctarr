@@ -487,3 +487,50 @@ def test_a_finding_from_the_other_kind_still_lands_somewhere(engine, monkeypatch
     engine.run()
     assert sonarr.removed == [(42, True, True)]
     assert radarr.removed == []
+
+
+def test_a_season_gap_is_searched_episode_by_episode(engine, monkeypatch):
+    """Searching the series to fill two holes makes Sonarr query every indexer
+    for every episode it already has, against whatever daily limit they impose."""
+    class Sonarr(FakeArr):
+        def __init__(self):
+            super().__init__("sonarr")
+            self.episode_searches = []
+
+        def episodes(self, series_id):
+            return [
+                {"id": 1, "seasonNumber": 2, "monitored": True, "hasFile": True},
+                {"id": 2, "seasonNumber": 2, "monitored": True, "hasFile": False},
+                {"id": 3, "seasonNumber": 2, "monitored": True, "hasFile": False},
+                {"id": 4, "seasonNumber": 2, "monitored": False, "hasFile": False},
+                {"id": 5, "seasonNumber": 3, "monitored": True, "hasFile": False},
+            ]
+
+        def search_episodes(self, ids):
+            self.episode_searches.append(list(ids))
+
+    service = Sonarr()
+    finding = a_finding(rule="season_gaps", service="sonarr", entry_id=None,
+                        data={"item_id": 7, "season": 2})
+    use_rules(monkeypatch, finding_rule("season_gaps", finding, acts=True,
+                                        action="search"))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+
+    engine.run()
+    assert service.episode_searches == [[2, 3]]
+    assert service.searched == [], "the whole series must not be searched"
+
+
+def test_a_series_with_no_season_named_is_searched_whole(engine, monkeypatch):
+    """A series that ended incomplete is missing episodes across the board."""
+    service = FakeArr("sonarr")
+    finding = a_finding(rule="series_incomplete", service="sonarr", entry_id=None,
+                        data={"item_id": 7})
+    use_rules(monkeypatch, finding_rule("series_incomplete", finding, acts=True,
+                                        action="search"))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+
+    engine.run()
+    assert service.searched == [[7]]

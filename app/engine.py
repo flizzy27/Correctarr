@@ -435,6 +435,13 @@ class Engine:
                     is_dry: bool) -> policy.Outcome | None:
         item_id = finding.data.get("item_id")
         episodes = [int(e) for e in (finding.data.get("episode_ids") or [])]
+        # A gap in a season names the season but not the episodes in it — that
+        # would mean fetching every episode of every series on every pass, for
+        # a rule that mostly has nothing to report. So the list is worked out
+        # here, once, for the one series being acted on.
+        if not episodes and arr.kind == "sonarr" and item_id \
+                and finding.data.get("season") is not None:
+            episodes = self._gaps_in_season(arr, item_id, finding.data["season"])
         by_episode = bool(episodes) and arr.kind == "sonarr"
         if not item_id and not episodes:
             return None
@@ -641,6 +648,23 @@ class Engine:
             return done("action.result.matched_imported", gb=gb)
         return done("action.result.matched_imported_cleaned", gb=gb,
                     client=cleared)
+
+    def _gaps_in_season(self, arr: Arr, series_id: int, season) -> list[int]:
+        """The monitored episodes of one season that have no file.
+
+        Searching the series instead would make Sonarr query every indexer for
+        every episode it already has — a full season to fill two holes, on
+        every indexer, against whatever daily limit they impose.
+        """
+        try:
+            listing = arr.episodes(int(series_id))
+        except (ArrError, TypeError, ValueError) as e:
+            log.warning("Could not read the episodes of series %s: %s", series_id, e)
+            return []
+        return [episode["id"] for episode in listing
+                if episode.get("seasonNumber") == season
+                and episode.get("monitored") and not episode.get("hasFile")
+                and episode.get("id")]
 
     def _episodes_at(self, arr: Arr, path: str) -> list[int]:
         """Which episodes Sonarr thinks this file holds."""
