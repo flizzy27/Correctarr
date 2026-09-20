@@ -40,74 +40,92 @@ Three ways, at the same time:
 
 ## The rules
 
-**27 rules across six categories.** Each one can be switched independently
-between *check* and *fix*, plus a global dry run that stops every change.
+**27 rules across six categories.** For each one you decide what happens when
+it finds something — not just on or off:
+
+| | |
+|---|---|
+| **report only** | write it down, change nothing |
+| **remove from the queue** | it may be grabbed again |
+| **blocklist** | and never this release again |
+| **blocklist and search again** | and look for a replacement now |
+| **import** / **import and clean up** | bring the file in, optionally clearing the download client entry |
+| **search** / **read the file again** | ask the service to look again |
+| **delete** | remove the files from disk |
+
+On top of that, a rule can carry **conditions**: *wait at least six hours*,
+*nothing over 20 GB*, *only when the match is at least 90 % certain*. A finding
+that fails one is still reported — it is just not acted on, and it says why.
+
+And a single **dry run** switch stops every change at once, across every rule.
 
 <details>
 <summary><strong>All 27 rules</strong></summary>
 
 ### Queue
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `wrong_year` | Year in the release name does not match the title | fixes |
-| `wrong_title` | Release name resembles no known title | reports |
-| `profile_violation` | Download breaks today's profile rules | fixes |
-| `not_an_upgrade` | Import would not be an upgrade | fixes |
-| `stalled` | A started download stopped moving | reports |
-| `grab_loop` | The same title is grabbed over and over | reports |
+| `wrong_year` | Year in the release name does not match the title | *Blocklist and search again* |
+| `wrong_title` | Release name resembles no known title | Report only |
+| `profile_violation` | Download breaks today's profile rules | *Blocklist and search again* |
+| `not_an_upgrade` | Import would not be an upgrade | *Blocklist* |
+| `stalled` | A started download stopped moving | Report only |
+| `grab_loop` | The same title is grabbed over and over | Report only |
 
 ### Import
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `manual_import` | Import waiting on manual work, but the match is right | fixes |
-| `unpack_failed` | Unpacking really failed | reports |
-| `detached_folder` | Service and container see different download folders | reports |
-| `leftover_files` | Leftover download debris | **deletes** |
-| `unmatched_files` | File without a match — matches it itself | **imports** |
+| `manual_import` | Import waiting on manual work, but the match is right | *Import* |
+| `unpack_failed` | Unpacking really failed | Report only |
+| `detached_folder` | Service and container see different download folders | Report only |
+| `leftover_files` | Leftover download debris | **Delete from disk** |
+| `unmatched_files` | File without a match — matches it itself | *Import and clean up* |
 
 ### Library *(deep pass only)*
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `missing_audio_language` | Existing file lacks the wanted audio language | reports |
-| `unreadable_file` | File cannot be read | reports |
-| `below_profile` | Existing file would be blocked today | reports |
-| `missing_items` | Monitored and released, but no file | reports |
+| `missing_audio_language` | Existing file lacks the wanted audio language | Report only |
+| `unreadable_file` | File cannot be read | Report only |
+| `below_profile` | Existing file would be blocked today | Report only |
+| `missing_items` | Monitored and released, but no file | Report only |
 
 ### Download client
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `downloader_warning` | SABnzbd is reporting a warning | **clears it** |
-| `downloader_stale_entry` | Entry finished, file long since imported | **cleans up** |
-| `downloader_paused` | The download client is paused | reports |
-| `downloader_disk_space` | Little free space | reports |
-| `downloader_update` | A new version is available | reports |
+| `downloader_warning` | SABnzbd is reporting a warning | *Acknowledge the warning* |
+| `downloader_stale_entry` | Entry finished, file long since imported | **Remove the entry and its folder** |
+| `downloader_paused` | The download client is paused | Report only |
+| `downloader_disk_space` | Little free space | Report only |
+| `downloader_update` | A new version is available | Report only |
 
 ### Indexers *(read only)*
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `indexer_disabled` | Prowlarr has switched an indexer off | reports |
-| `indexer_ineffective` | Many queries, practically no grabs | reports |
-| `indexer_ranking` | The order contradicts the measured usefulness | reports |
-| `indexer_unknown` | Indexer bypasses Prowlarr | reports |
+| `indexer_disabled` | Prowlarr has switched an indexer off | Report only |
+| `indexer_ineffective` | Many queries, practically no grabs | Report only |
+| `indexer_ranking` | The order contradicts the measured usefulness | Report only |
+| `indexer_unknown` | Indexer bypasses Prowlarr | Report only |
 
 ### System
-| Rule | What it finds | Default |
+| Rule | What it finds | Default action |
 |---|---|---|
-| `service_health` | The service reports a problem about itself | reports |
-| `disk_space` | Free space is running low | reports |
+| `service_health` | The service reports a problem about itself | Report only |
+| `disk_space` | Free space is running low | Report only |
+| `api_changes` | The service marked a call this makes as on its way out | Report only |
 
 </details>
 
 **Guiding principle: when in doubt, do nothing.** A rule that is not sure only
 reports. Better one finding left alone than one good file thrown away.
 
-<img src="docs/screenshot-rules.png" alt="Every rule can be switched between check and fix" width="900">
+<img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
 Every rule shows what it does before you turn it on: whether it only reports,
 acts, or deletes; whether it runs on every pass or only the deep one; and how
-often it has matched so far.
+often it has matched so far. A rule only offers the conditions its own findings
+can actually answer, so you cannot set one that could never be met.
 
-## Two things Radarr cannot do itself
+## Three things Radarr cannot do itself
 
 **Radarr does not see the whole release name.** A custom format with a title
 regex is applied to what is left after the recognised title has been split off.
@@ -122,6 +140,33 @@ Radarr structurally cannot reject those. Correctarr checks the raw name.
 
 **Radarr scores only once.** Waiting downloads are never re-examined against
 changed profile rules. Correctarr re-scores them.
+
+**Radarr compares years exactly.** Its own year check accepts the filed year
+and the premiere year, and nothing else. That is narrow in one direction and
+blind in the other — see below.
+
+### The year check, in detail
+
+Comparing the year in a release name with the year the service holds looks like
+a subtraction. It is not, and getting it wrong is expensive both ways.
+
+*It accuses good releases.* `1917.German.DL.1080p.BluRay.x264-GROUP` states no
+release year at all — but read the first four digits and you "find" 1917 and
+compare it with 2019. Same for `2012`, `Blade Runner 2049`,
+`2001: A Space Odyssey`, and a resolution written out as `1920x1080`.
+
+*It also rejects differences that are perfectly normal.* A film that premiered
+at a festival one year and reached cinemas the next is filed under different
+years by different databases, and release groups follow the earlier one. A film
+that opened in a handful of cinemas on 25 December and went wide in January is
+filed under December. A Japanese film released at home a year before it reached
+the West carries its home year. Reject those and the same release is grabbed,
+rejected and grabbed again, forever.
+
+Correctarr discounts numbers that belong to the title, ignores spelled-out
+resolutions, and accepts the premiere year and every release date the service
+already holds instead of guessing a window. Each finding carries a confidence,
+so you can have it act on a twenty-year gap and merely report a two-year one.
 
 Everything else that turned up in production is written down in
 [`docs/background.md`](docs/background.md).
@@ -176,11 +221,16 @@ services:
 ### Then
 
 1. Open the interface → **create an account** (username and password).
-2. **Services** → add Radarr, Sonarr, SABnzbd and Prowlarr, and test each one.
-3. **Settings → Appearance** → enter the public address of this interface.
-   Only then can the webhook be set up.
-4. **Settings → Schedule** → turn *dry run* on and watch one pass before
-   anything is changed.
+2. A **setup assistant** opens by itself and walks you through the rest: adding
+   Radarr, Sonarr, SABnzbd and Prowlarr with a connection test for each,
+   checking the paths, setting the address the webhooks call back on, and
+   notifications.
+3. It finishes by offering a **dry run** — one full pass that changes nothing.
+   Do that before letting anything act. Every rule that acts was built that way
+   first, and every single time it turned something up.
+
+All of it can be done later by hand under *Services* and *Settings*; the
+assistant is reachable again from the sidebar at any time.
 
 ## Configuration
 
@@ -234,9 +284,21 @@ HTTPS connection as plain and sets the session cookie without `Secure`.
 
 ## Notifications
 
-Pushover, bundled at the end of a pass and grouped by rule. Two brakes stop
-floods: **deduplication** (the same finding reports again no sooner than 12
-hours later) and a **cooldown** (5 minutes of quiet after a message).
+**Pushover, Telegram, Discord, ntfy, Gotify and plain webhooks.** Set up as many
+connections as you like, of any mix.
+
+Each connection decides for itself what it wants to hear about — a minimum
+severity, specific rules, specific categories, or only the things that were
+actually changed. So an errors-only push to your phone and a full log into a
+chat channel can sit side by side without either one being noise.
+
+Messages are bundled at the end of a pass and grouped by rule, never sent one
+finding at a time. Two brakes stop floods: **deduplication** (the same finding
+reports again no sooner than 12 hours later) and a **cooldown** (quiet for a
+configurable period after a message).
+
+The Telegram connection can find your chat id for you — start a chat with your
+bot, press the button, pick the chat from the list.
 
 ## Security
 

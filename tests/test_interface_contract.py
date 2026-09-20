@@ -9,6 +9,7 @@ somebody opens exactly that view.
 from __future__ import annotations
 
 import ast
+import json
 import re
 from pathlib import Path
 
@@ -18,7 +19,8 @@ from app import i18n
 from app import settings as S
 from app.rules import ALL, CATEGORIES
 
-APP = Path(__file__).resolve().parent.parent / "app"
+ROOT = Path(__file__).resolve().parent.parent
+APP = ROOT / "app"
 JS = (APP / "static" / "app.js").read_text(encoding="utf-8")
 MAIN = (APP / "main.py").read_text(encoding="utf-8")
 ENGLISH = set(i18n.bundle("en"))
@@ -332,3 +334,32 @@ def test_every_view_has_a_page_and_a_nav_button():
     loaders = re.search(r"const LOADERS = \{(.*?)\};", JS, re.S).group(1)
     for view in VIEWS:
         assert f"{view}:" in loaders, f"no loader for {view}"
+
+
+# ---------------------------------------------------------------------------
+# The public description
+# ---------------------------------------------------------------------------
+def test_the_readme_lists_every_rule_with_the_right_default():
+    """The README is the first thing anyone reads, and it promises behaviour.
+
+    Claiming a rule deletes by default when it does not — or the other way
+    round — is worse than saying nothing, so the two are kept in step here.
+    """
+    import re
+
+    from app.rules import ALL, BY_NAME
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    rows = dict(re.findall(r"^\| `([a-z_]+)` \| .+? \| (.+?) \|$", readme, re.M))
+
+    missing = sorted({r.name for r in ALL} - set(rows))
+    assert not missing, f"the README does not mention: {missing}"
+
+    invented = sorted(set(rows) - set(BY_NAME))
+    assert not invented, f"the README mentions rules that do not exist: {invented}"
+
+    labels = json.loads(
+        (APP / "locales" / "en.json").read_text(encoding="utf-8"))["policy"]["action"]
+    for name, stated in rows.items():
+        expected = labels[BY_NAME[name].default_action]
+        assert expected.lower() in stated.lower(), \
+            f"{name}: the README says {stated!r}, the rule does {expected!r}"
