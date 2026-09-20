@@ -496,7 +496,7 @@ function renderServices() {
             ).join("")}</select></div>
           <div class="field"><label>${esc(t("label.url"))}</label>
             <input type="text" data-f="url" value="${esc(s.url)}"
-                   placeholder="http://192.168.1.10:7878" spellcheck="false"></div>
+                   placeholder="http://radarr:7878" spellcheck="false"></div>
           <div class="field"><label>${esc(t("label.api_key"))}</label>
             <input type="password" data-f="api_key" value="${esc(s.api_key)}"
                    autocomplete="off" spellcheck="false">
