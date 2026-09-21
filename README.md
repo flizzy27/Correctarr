@@ -164,6 +164,43 @@ rather than against a viewport that ignores the browser's own toolbars.
 
 <br clear="right">
 
+## Video profiles
+
+<img src="docs/screenshot-profiles.png" alt="Building a quality profile from six answers" width="900">
+
+A quality profile decides what gets fetched. Building one by hand means a
+ladder of qualities plus a pile of custom formats whose numbers have to agree
+with one another, and getting it wrong is how a library ends up grabbing the
+same release every hour for a week.
+
+Six questions instead — which resolutions, how good the sound, which languages
+and whether they are compulsory, which codec, what size, may a file be replaced
+— and Correctarr writes the profile and every custom format behind it into
+Radarr and Sonarr. Beside the form is the whole plan: every format, what it is
+worth, and why it is there. Nothing is written until you say so.
+
+**It cannot cause a download loop.** That is a property, not a hope. A loop
+happens when the service believes the file it has is worse than something it
+can fetch and is wrong about that. One setting decides whether that is
+possible — *upgrade until custom format score* — and published profiles set it
+to ten or fifty thousand so the best available is always chased. That works
+right up until a file scores lower after import than its release scored before
+it, and then the service is permanently shopping. Here it is set to the same
+number a release had to clear to be grabbed at all: **a file that was good
+enough to fetch is good enough to keep.** Resolution upgrades still happen,
+because a ladder is finite. A profile that could never be satisfied is refused
+rather than written.
+
+**If you only want German, say so.** The language is asked for with a custom
+format rather than the profile's language setting, because before the import
+the service reads the language out of the release *name* — and the German
+marker `.DL.` is not one its parser knows. A profile that demands German throws
+away most of the German releases it was set up to find. A custom format sees
+the whole name: `German DL`, `GerDub`, `[DE+EN]`, and the bare `DL` that the
+majority of them actually carry.
+
+---
+
 ## Three things Radarr cannot do itself
 
 **Radarr does not see the whole release name.** A custom format with a title

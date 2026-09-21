@@ -36,6 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import __version__, auth, i18n, logging_setup, notifications, policy
+from . import profiles as vprofiles
 from . import settings as S
 from .arr import Arr, ArrError
 from .engine import Engine
@@ -1225,6 +1226,124 @@ def telegram_chats(body: NotificationBody, request: Request,
         raise HTTPException(502, str(e)) from e
     return {"ok": True, "bot": bot.get("username") or bot.get("first_name", ""),
             "chats": chats}
+
+
+# ---------------------------------------------------------------------------
+# Video profiles
+# ---------------------------------------------------------------------------
+class ProfileWish(BaseModel):
+    """What the page asks for. Everything else is worked out from it."""
+    name: str = Field(default="Correctarr 1080p", max_length=60)
+    resolutions: list[str] = Field(default_factory=lambda: ["1080p"])
+    allow_remux: bool = False
+    audio: str = "gut"
+    codec: str = "any"
+    languages: list[str] = Field(default_factory=lambda: ["de"])
+    language_required: bool = False
+    allow_3d: bool = False
+    prefer_hdr: bool = False
+    block_rubbish: bool = True
+    min_gb: float = 0.0
+    max_gb: float = 0.0
+    upgrade: bool = True
+    #: Which services to write it to. Empty means every Radarr and Sonarr.
+    services: list[int] = Field(default_factory=list)
+
+    def wish(self) -> vprofiles.Wish:
+        return vprofiles.Wish(
+            name=self.name, resolutions=tuple(self.resolutions),
+            allow_remux=self.allow_remux, audio=self.audio, codec=self.codec,
+            languages=tuple(self.languages),
+            language_required=self.language_required,
+            allow_3d=self.allow_3d, prefer_hdr=self.prefer_hdr,
+            block_rubbish=self.block_rubbish,
+            min_gb=self.min_gb, max_gb=self.max_gb, upgrade=self.upgrade)
+
+
+@app.get("/api/profiles/options")
+def profile_options(_: dict = Depends(require_user)):
+    """Everything the page needs to draw itself, and where it can send one."""
+    return {
+        "resolutions": list(vprofiles.RESOLUTIONS),
+        "audio": list(vprofiles.AUDIO_TIERS),
+        "codecs": list(vprofiles.CODECS),
+        "languages": list(vprofiles.LANGUAGES),
+        "mark": vprofiles.MARK,
+        "services": [{"id": entry["id"], "name": entry["name"],
+                      "kind": entry["kind"]}
+                     for entry in store.services(enabled_only=True)
+                     if entry["kind"] in ("radarr", "sonarr")],
+    }
+
+
+def _described(blueprint, language: str) -> dict:
+    """A blueprint with every reason and warning already in words."""
+    out = blueprint.as_dict()
+    for entry, source in zip(out["formats"], blueprint.formats, strict=True):
+        params = dict(source.why_params)
+        # The sound step is carried as a key. Putting the key in front of a
+        # person is how "sehr_gut" ends up in the middle of a German sentence.
+        if "tier" in params:
+            label = i18n.t(f"profiles_page.audio_{params['tier']}", language)
+            params["tier"] = label.split("—")[0].strip()
+        # Same for the language: "wanted in DE" is a code, not a language.
+        if "language" in params:
+            params["language"] = i18n.t(
+                f"language.{str(params['language']).lower()}", language)
+        entry["why"] = i18n.t(source.why, language, **params) if source.why else ""
+    out["notes"] = [i18n.t(key, language, **params)
+                    for key, params in blueprint.notes]
+    out["problems"] = [i18n.t(key, language, **params)
+                       for key, params in vprofiles.check(blueprint)]
+    return out
+
+
+@app.post("/api/profiles/preview")
+def preview_profile(body: ProfileWish, request: Request,
+                    _: dict = Depends(require_user)):
+    """What would be created, before anything is.
+
+    Nothing is written. The point is that a profile is a set of rules somebody
+    is going to let loose on their library, and being able to read it first is
+    the difference between trusting it and hoping.
+    """
+    return _described(vprofiles.build(body.wish()), language_for(request))
+
+
+@app.post("/api/profiles/apply")
+def apply_profile(body: ProfileWish, request: Request,
+                  _: dict = Depends(require_user)):
+    """Write the profile and its formats into the chosen services."""
+    blueprint = vprofiles.build(body.wish())
+    problems = vprofiles.check(blueprint)
+    if problems:
+        key, params = problems[0]
+        raise HTTPException(400, i18n.t(key, language_for(request), **params))
+
+    wanted = set(body.services)
+    entries = [e for e in store.services(enabled_only=True)
+               if e["kind"] in ("radarr", "sonarr")
+               and (not wanted or e["id"] in wanted)]
+    if not entries:
+        raise _fail(request, 400, "error.no_services")
+
+    done, failures = [], []
+    for entry in entries:
+        connector = Arr(entry["kind"], entry["url"], entry["api_key"],
+                        name=entry["name"], service_id=entry["id"])
+        try:
+            done.append(vprofiles.apply_to(connector, blueprint))
+        except (ArrError, ValueError) as e:
+            failures.append({"service": entry["name"], "error": str(e)[:300]})
+            log.warning("Could not write the profile to %s: %s",
+                        entry["name"], e)
+        finally:
+            connector.close()
+    if not done:
+        raise HTTPException(502, "; ".join(
+            f["service"] + ": " + f["error"] for f in failures) or "failed")
+    return {"ok": True, "written": done, "failed": failures,
+            "blueprint": _described(blueprint, language_for(request))}
 
 
 # ---------------------------------------------------------------------------

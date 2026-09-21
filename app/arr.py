@@ -231,6 +231,39 @@ class Arr:
                 log.warning("File lookup failed: %s", e)
         return out
 
+    # -- quality profiles and custom formats -----------------------------------
+    def quality_profile_schema(self) -> dict:
+        """An empty profile, with this service's own ladder already in it.
+
+        Asked for rather than assembled. The numbers behind the quality names
+        are not the same in Radarr and Sonarr and have moved between versions,
+        so a ladder written down here would be right for one install and
+        quietly wrong for the next — and a profile whose cutoff points at a
+        quality that does not exist is one the service can never satisfy.
+        """
+        return self._call("GET", "qualityprofile/schema") or {}
+
+    def custom_format_schema(self) -> list[dict]:
+        """A template for every kind of condition this service understands."""
+        return self._call("GET", "customformat/schema") or []
+
+    def languages(self) -> list[dict]:
+        return self._call("GET", "language") or []
+
+    def save_custom_format(self, body: dict,
+                           existing_id: int | None = None) -> dict:
+        if existing_id:
+            return self._call("PUT", f"customformat/{existing_id}",
+                              json={**body, "id": existing_id}) or {}
+        return self._call("POST", "customformat", json=body) or {}
+
+    def save_quality_profile(self, body: dict,
+                             existing_id: int | None = None) -> dict:
+        if existing_id:
+            return self._call("PUT", f"qualityprofile/{existing_id}",
+                              json={**body, "id": existing_id}) or {}
+        return self._call("POST", "qualityprofile", json=body) or {}
+
     # -- acting ----------------------------------------------------------------
     def remove_from_queue(self, entry_id: int, blocklist: bool = True,
                           search_again: bool = True) -> None:

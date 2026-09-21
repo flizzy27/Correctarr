@@ -29,6 +29,13 @@
     reporting it to blocklisting, importing, searching again or deleting. Conditions
     such as "wait six hours first" or "nothing over 20 GB" narrow that down further.
     &#13;
+    It also builds quality profiles. Six questions &#8212; which resolutions,
+    how good the sound, which languages and whether they are compulsory, which
+    codec, what size, may a file be replaced &#8212; and it writes the profile
+    and every custom format behind it into Radarr and Sonarr, showing you the
+    whole plan first. Those profiles cannot cause a download loop: they never
+    upgrade on score, only up the resolution ladder, which is finite.
+    &#13;
     A dry run switch stops every change at once, and it is ON after a fresh
     install: everything is found and reported, nothing is touched, until you have
     seen the findings and turned it off yourself.

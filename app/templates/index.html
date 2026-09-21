@@ -60,6 +60,11 @@
              stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
         <span data-t="nav.rules"></span> <span class="nav-count" id="count-rules"></span>
       </button>
+      <button class="nav-item" data-target="profiles">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5A2.5 2.5 0 014.5 4h15A2.5 2.5 0 0122 6.5v11a2.5 2.5 0 01-2.5 2.5h-15A2.5 2.5 0 012 17.5z"/><path d="M10 9l5 3-5 3z"/></svg>
+        <span data-t="nav.profiles"></span>
+      </button>
       <button class="nav-item" data-target="indexers">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
@@ -224,6 +229,20 @@
               <span class="muted" data-t="indexers_page.subtitle"></span></h2>
           <p class="hint" data-t="indexers_page.help" data-t-html></p>
           <div id="indexers-content"></div>
+        </div>
+      </section>
+
+      <!-- ============================================ profiles -->
+      <section id="page-profiles" class="page">
+        <div class="card">
+          <h2 data-t="profiles_page.title"></h2>
+          <p class="hint" data-t="profiles_page.help"></p>
+          <div id="profile-form"></div>
+        </div>
+        <div class="card">
+          <h2 data-t="profiles_page.preview_title"></h2>
+          <p class="hint" data-t="profiles_page.preview_help"></p>
+          <div id="profile-preview"></div>
         </div>
       </section>
 

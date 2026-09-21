@@ -744,6 +744,263 @@ async function loadIndexers() {
         </tr>`).join("")}</tbody></table></div>`).join("");
 }
 
+/* ============================================================== profiles */
+/* Six questions, and everything else is worked out on the server.
+ *
+ * The preview beside the form is the point of the page. A quality profile is a
+ * set of rules somebody is about to let loose on their library, and the
+ * difference between trusting it and hoping is being able to read it first —
+ * every format it will create, what each one is worth, and why it is there. */
+let profileOptions = null;
+let profileWish = null;
+
+const DEFAULT_WISH = {
+  name: "Correctarr 1080p", resolutions: ["1080p"], allow_remux: false,
+  audio: "gut", codec: "any", languages: ["de"], language_required: false,
+  allow_3d: false, prefer_hdr: false, block_rubbish: true,
+  min_gb: 0, max_gb: 0, upgrade: true, services: [],
+};
+
+async function loadProfiles() {
+  if (!profileOptions) profileOptions = await api("api/profiles/options");
+  if (!profileWish) profileWish = { ...DEFAULT_WISH };
+  renderProfileForm();
+  await refreshPreview();
+}
+
+function renderProfileForm() {
+  const o = profileOptions;
+  const w = profileWish;
+  $("#profile-form").innerHTML = `
+    <div class="fields">
+      <div class="field wide">
+        <label for="p-name">${esc(t("profiles_page.name"))}</label>
+        <input type="text" id="p-name" data-p="name" value="${esc(w.name)}"
+               maxlength="60">
+        <div class="help">${esc(t("profiles_page.name_help"))}</div>
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.picture"))}</h3>
+    <div class="fields">
+      <div class="field">
+        <label>${esc(t("profiles_page.resolutions"))}</label>
+        <div class="chips">${o.resolutions.map((r) => chip(
+          `res-${r}`, r, w.resolutions.includes(r), `data-p-res="${esc(r)}"`)).join("")}</div>
+        <div class="help">${esc(t("profiles_page.resolutions_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.codec"))}</label>
+        <select data-p="codec">${o.codecs.map((c) =>
+          `<option value="${esc(c)}"${w.codec === c ? " selected" : ""}>${
+            esc(t("profiles_page.codec_" + c))}</option>`).join("")}</select>
+        <div class="help">${esc(t("profiles_page.codec_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.extras"))}</label>
+        ${switchField(t("profiles_page.allow_remux"), 'data-p="allow_remux"',
+                      w.allow_remux, "p-remux")}
+        ${switchField(t("profiles_page.prefer_hdr"), 'data-p="prefer_hdr"',
+                      w.prefer_hdr, "p-hdr")}
+        ${switchField(t("profiles_page.allow_3d"), 'data-p="allow_3d"',
+                      w.allow_3d, "p-3d")}
+        ${switchField(t("profiles_page.block_rubbish"), 'data-p="block_rubbish"',
+                      w.block_rubbish, "p-rubbish")}
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.sound"))}</h3>
+    <div class="fields">
+      <div class="field wide">
+        <label>${esc(t("profiles_page.audio"))}</label>
+        <div class="chips">${o.audio.map((a) => chip(
+          `aud-${a}`, t("profiles_page.audio_" + a), w.audio === a,
+          `data-p-audio="${esc(a)}"`, true)).join("")}</div>
+        <div class="help">${esc(t("profiles_page.audio_help"))}</div>
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.language"))}</h3>
+    <div class="fields">
+      <div class="field">
+        <label>${esc(t("profiles_page.languages"))}</label>
+        <div class="chips">${o.languages.map((code) => chip(
+          `lang-${code}`, t("language." + code), w.languages.includes(code),
+          `data-p-lang="${esc(code)}"`)).join("")}</div>
+        <div class="help">${esc(t("profiles_page.languages_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.language_required"))}</label>
+        ${switchField(t("profiles_page.language_required_label"),
+                      'data-p="language_required"', w.language_required, "p-lang-req")}
+        <div class="help">${esc(t("profiles_page.language_required_help"))}</div>
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.size"))}</h3>
+    <div class="fields">
+      <div class="field">
+        <label for="p-min">${esc(t("profiles_page.min_gb"))}</label>
+        <div class="field-row">
+          <input type="number" id="p-min" data-p="min_gb" min="0" max="2000"
+                 step="0.5" value="${esc(w.min_gb)}"><span class="unit">GB</span></div>
+      </div>
+      <div class="field">
+        <label for="p-max">${esc(t("profiles_page.max_gb"))}</label>
+        <div class="field-row">
+          <input type="number" id="p-max" data-p="max_gb" min="0" max="2000"
+                 step="0.5" value="${esc(w.max_gb)}"><span class="unit">GB</span></div>
+        <div class="help">${esc(t("profiles_page.size_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.upgrade"))}</label>
+        ${switchField(t("profiles_page.upgrade_label"), 'data-p="upgrade"',
+                      w.upgrade, "p-upgrade")}
+        <div class="help">${esc(t("profiles_page.upgrade_help"))}</div>
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.where"))}</h3>
+    ${o.services.length ? `<div class="chips">${o.services.map((service) => chip(
+        `svc-${service.id}`, `${service.name}`,
+        !w.services.length || w.services.includes(service.id),
+        `data-p-service="${esc(service.id)}"`)).join("")}</div>`
+      : `<p class="empty">${esc(t("profiles_page.no_services"))}</p>`}
+
+    <div class="row" style="margin-top:18px">
+      <button class="btn primary" id="p-apply"${o.services.length ? "" : " disabled"}>${
+        esc(t("profiles_page.apply"))}</button>
+      <button class="btn" id="p-reset">${esc(t("profiles_page.reset"))}</button>
+      <span class="muted" id="p-note"></span>
+    </div>`;
+
+  $$("#profile-form [data-p]").forEach((element) =>
+    element.addEventListener("change", onWishChanged));
+  $$("#profile-form .chip").forEach((element) =>
+    element.addEventListener("click", onChipClicked));
+  $("#p-apply").addEventListener("click", applyProfile);
+  $("#p-reset").addEventListener("click", () => {
+    profileWish = { ...DEFAULT_WISH };
+    renderProfileForm();
+    refreshPreview();
+  });
+}
+
+/* A chip is a checkbox you can see. `one` makes the group behave like a set
+   of radio buttons without needing a name shared across a redraw. */
+function chip(id, text, on, attributes, one = false) {
+  return `<button type="button" class="chip ${on ? "on" : ""}" id="${esc(id)}"
+    ${attributes} data-one="${one ? "1" : ""}"
+    aria-pressed="${on ? "true" : "false"}">${esc(text)}</button>`;
+}
+
+function onChipClicked(event) {
+  const chipElement = event.currentTarget;
+  const w = profileWish;
+  if (chipElement.dataset.pRes !== undefined) {
+    w.resolutions = toggleIn(w.resolutions, chipElement.dataset.pRes);
+  } else if (chipElement.dataset.pLang !== undefined) {
+    w.languages = toggleIn(w.languages, chipElement.dataset.pLang);
+  } else if (chipElement.dataset.pAudio !== undefined) {
+    w.audio = chipElement.dataset.pAudio;
+  } else if (chipElement.dataset.pService !== undefined) {
+    const id = Number(chipElement.dataset.pService);
+    const all = profileOptions.services.map((s) => s.id);
+    const current = w.services.length ? w.services : all;
+    w.services = toggleIn(current, id);
+  }
+  renderProfileForm();
+  refreshPreview();
+}
+
+const toggleIn = (list, value) =>
+  list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
+
+function onWishChanged(event) {
+  const element = event.currentTarget;
+  const key = element.dataset.p;
+  profileWish[key] = element.type === "checkbox" ? element.checked
+    : element.type === "number" ? Number(element.value) : element.value;
+  refreshPreview();
+}
+
+let previewTimer = null;
+
+function refreshPreview() {
+  clearTimeout(previewTimer);
+  return new Promise((resolve) => {
+    previewTimer = setTimeout(async () => {
+      try {
+        renderPreview(await post("api/profiles/preview", profileWish));
+      } catch (error) {
+        $("#profile-preview").innerHTML =
+          `<p class="empty">${esc(error.message)}</p>`;
+      }
+      resolve();
+    }, 180);
+  });
+}
+
+function renderPreview(plan) {
+  const rows = plan.formats.map((f) => `
+    <tr>
+      <td><strong>${esc(f.name)}</strong>
+        ${f.why ? `<div class="muted">${esc(f.why)}</div>` : ""}</td>
+      <td class="num ${f.score < 0 ? "blocked" : ""}">${f.score > 0 ? "+" : ""}${
+        num(f.score)}</td>
+    </tr>`).join("");
+
+  $("#profile-preview").innerHTML = `
+    ${plan.problems.length ? `<div class="notice error" style="margin-bottom:14px">
+        ${plan.problems.map(esc).join("<br>")}</div>` : ""}
+    ${plan.notes.length ? `<div class="notice warning" style="margin-bottom:14px">
+        ${plan.notes.map(esc).join("<br>")}</div>` : ""}
+    <div class="path-row"><span class="what">${esc(t("profiles_page.floor"))}</span>
+      <span class="note">${esc(t("profiles_page.floor_is", {
+        score: num(plan.min_score) }))}</span></div>
+    <div class="path-row"><span class="what">${esc(t("profiles_page.ceiling"))}</span>
+      <span class="note">${esc(t("profiles_page.ceiling_is", {
+        score: num(plan.cutoff_score) }))}</span></div>
+    <div class="path-row"><span class="what">${esc(t("profiles_page.step"))}</span>
+      <span class="note">${esc(t("profiles_page.step_is", {
+        score: num(plan.upgrade_step) }))}</span></div>
+    <div class="notice good" style="margin:14px 0">${
+      esc(t("profiles_page.no_loops"))}</div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>${esc(t("profiles_page.format"))}</th>
+        <th class="num">${esc(t("profiles_page.score"))}</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="2" class="empty">${
+        esc(t("profiles_page.nothing_yet"))}</td></tr>`}</tbody>
+    </table></div>`;
+}
+
+async function applyProfile(event) {
+  const button = event.currentTarget;
+  const note = $("#p-note");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = t("action.saving");
+  note.textContent = "";
+  try {
+    const answer = await post("api/profiles/apply", profileWish);
+    const where = answer.written.map((w) => w.service).join(", ");
+    note.textContent = t("profiles_page.written", {
+      name: profileWish.name, services: where });
+    toast(note.textContent, "good");
+    (answer.failed || []).forEach((f) => toast(`${f.service}: ${f.error}`, "bad"));
+  } catch (error) {
+    failed(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 /* ============================================================== services */
 const KINDS = { radarr: "Radarr", sonarr: "Sonarr",
                 sabnzbd: "SABnzbd", prowlarr: "Prowlarr" };
@@ -1693,9 +1950,9 @@ const DEFAULT_URL = {
 /* ============================================================ navigation */
 const LOADERS = {
   overview: loadOverview, fixed: loadFixed, findings: loadFindings,
-  queue: loadQueue, rules: loadRules, indexers: loadIndexers,
-  services: loadServices, notifications: loadNotifications,
-  settings: loadSettings,
+  queue: loadQueue, rules: loadRules, profiles: loadProfiles,
+  indexers: loadIndexers, services: loadServices,
+  notifications: loadNotifications, settings: loadSettings,
 };
 
 async function go(target, remember = true) {

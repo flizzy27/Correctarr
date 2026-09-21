@@ -3,6 +3,48 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.2.0
+
+### Added
+
+* **Video profiles.** A quality profile is the thing that decides what gets
+  fetched, and building one by hand means a ladder of qualities plus a pile of
+  custom formats with numbers on them that have to agree with each other. This
+  asks six questions instead — which resolutions, how good the sound, which
+  languages and whether they are compulsory, which codec, what size, may a file
+  be replaced — and writes the profile and every format behind it into Radarr
+  and Sonarr.
+
+  Beside the form is the whole plan: every format it will create, what each one
+  is worth, and why it is there. Nothing is written until you say so.
+
+  **It cannot cause a download loop, and that is a property rather than a
+  hope.** A loop happens when the service believes the file it has is worse
+  than something it can go and fetch, and is wrong about that — so it fetches
+  the same release again, and again. One setting decides whether that is
+  possible: *upgrade until custom format score*. Published profiles set it to
+  ten or fifty thousand so that the best available is always chased, which
+  works right up until a file scores lower after import than its release scored
+  before it. Here it is set to the same number a release had to clear to be
+  grabbed at all: a file that was good enough to fetch is good enough to keep.
+  Resolution upgrades still happen, because a ladder is finite and ordered. On
+  top of that a replacement has to be a *meaningful* improvement, so two
+  near-identical releases cannot take turns, and a profile that could never be
+  satisfied — a cutoff on a quality that is switched off, a floor no release
+  could reach — is refused rather than written.
+
+  **The language is asked for with a custom format, not with the profile's
+  language setting.** That is not a style choice. Before the import the service
+  reads the language out of the release *name*, and the German marker `.DL.`
+  (German plus the original audio) is not one its parser knows — so a profile
+  that demands German throws away most of the German releases it was set up to
+  find. A custom format sees the whole name, including `German DL`, `GerDub`,
+  `[DE+EN]` and the bare `DL` that the majority of them actually carry.
+
+  Everything it writes is named after this program, so saving twice changes the
+  same profile instead of leaving a second one behind — and a format somebody
+  made by hand is never touched.
+
 ## 1.1.2
 
 ### Added

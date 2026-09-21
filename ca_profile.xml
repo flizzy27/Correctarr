@@ -21,6 +21,15 @@ again, import, search, or delete. Conditions narrow that down further — *wait 
 least six hours*, *nothing over 20 GB*, *only when the match is at least 90 %
 certain* — and a finding that fails one is still reported, with the reason.
 
+**Quality profiles built from six answers.** Which resolutions, how good the
+sound, which languages and whether they are compulsory, which codec, what size,
+may a file be replaced — and Correctarr writes the profile and every custom
+format behind it into Radarr and Sonarr, showing the whole plan first. Those
+profiles cannot cause a download loop: they never upgrade on score, only up the
+resolution ladder, which is finite. If you only want German, the language is
+asked for with a custom format rather than the profile's language setting,
+because the services cannot read the German `DL` marker out of a release name.
+
 A single dry run switch stops every change at once, and it is **on after a
 fresh install** — everything is found and reported, nothing is touched, until
 you have looked at the findings and turned it off yourself.

@@ -25,9 +25,10 @@ JS = (APP / "static" / "app.js").read_text(encoding="utf-8")
 MAIN = (APP / "main.py").read_text(encoding="utf-8")
 ENGLISH = set(i18n.bundle("en"))
 
-# The eight views the sidebar can reach.
-VIEWS = ("overview", "fixed", "findings", "queue", "rules", "indexers",
-         "services", "notifications", "settings")
+# Every view the sidebar can reach. Listing one here is what makes the tests
+# below demand a page, a nav button, a loader and a pair of translations for it.
+VIEWS = ("overview", "fixed", "findings", "queue", "rules", "profiles",
+         "indexers", "services", "notifications", "settings")
 
 
 # ---------------------------------------------------------------------------
@@ -331,8 +332,10 @@ def test_every_id_the_script_uses_exists_in_the_page():
     created = {"loading", "change-password", "compact", "rerun-setup",
                "password-form", "pw-current", "pw-new", "pw-repeat"}
     used = set(re.findall(r'\$\("#([a-zA-Z0-9_-]+)"\)', JS))
+    # "w-" belongs to the setup assistant and "p-" to the profile builder;
+    # both draw their own forms, so their ids are not in the page.
     missing = sorted(i for i in used - present - created
-                     if not i.startswith("w-"))
+                     if not i.startswith(("w-", "p-")))
     assert not missing, f"app.js looks for ids that are not in the page: {missing}"
 
 
@@ -410,7 +413,9 @@ def test_the_phone_breakpoints_are_there():
 
 def test_touch_targets_are_raised_on_phones():
     """A finger is about 9 mm across. Anything smaller has to be aimed at."""
-    phone = CSS.split("@media (max-width: 620px)")[1]
+    # Every phone block, not "the one after the first split". Adding a second
+    # breakpoint elsewhere in the file used to move which one this looked at.
+    phone = "".join(CSS.split("@media (max-width: 620px)")[1:])
     assert "min-height: 40px" in phone
     assert ".toggle { width: 44px" in phone
 

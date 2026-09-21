@@ -15,7 +15,8 @@
     "group_insight": "Überblick",
     "group_operations": "Betrieb",
     "group_configuration": "Einrichtung",
-    "notifications": "Benachrichtigungen"
+    "notifications": "Benachrichtigungen",
+    "profiles": "Videoprofile"
   },
   "page": {
     "overview": "Die Lage auf einen Blick",
@@ -26,7 +27,8 @@
     "indexers": "Gemessene Leistung je Quelle",
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
     "settings": "Takt, Pfade, Schwellen, Darstellung",
-    "notifications": "Wohin die Funde gehen"
+    "notifications": "Wohin die Funde gehen",
+    "profiles": "Sechs Antworten, den Rest erledigt Correctarr"
   },
   "action": {
     "check_fast": "Schnell prüfen",
@@ -1028,5 +1030,99 @@
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",
     "nothing": "in {seconds} Sekunden nichts gefunden — die Suche läuft vielleicht noch, oder es gibt nichts"
+  },
+  "language": {
+    "de": "Deutsch",
+    "en": "Englisch",
+    "fr": "Französisch",
+    "es": "Spanisch",
+    "it": "Italienisch",
+    "nl": "Niederländisch",
+    "pl": "Polnisch",
+    "pt": "Portugiesisch",
+    "ru": "Russisch",
+    "ja": "Japanisch",
+    "ko": "Koreanisch"
+  },
+  "profiles_page": {
+    "title": "Ein Qualitätsprofil bauen",
+    "help": "Sechs Fragen beantworten — Correctarr schreibt das Profil und alle Custom Formats dahinter in Radarr und Sonarr. Alles, was dabei entsteht, trägt seinen Namen, deshalb ändert ein zweites Speichern dasselbe Profil und legt kein weiteres an.",
+    "preview_title": "Was angelegt wird",
+    "preview_help": "Geschrieben wird erst, wenn Sie es sagen. Hier steht jedes Format, das das Profil bekommt, was es wert ist und warum es da ist.",
+    "name": "Name des Profils",
+    "name_help": "So taucht es in Radarr und Sonarr auf.",
+    "picture": "Bild",
+    "resolutions": "Erlaubte Auflösungen",
+    "resolutions_help": "Mehrere auswählen heißt: das Profil bessert von der kleineren auf die größere nach.",
+    "codec": "Codec",
+    "codec_help": "Eine Vorliebe, keine Bedingung. x265 ist bei gleicher Qualität etwa halb so groß, und nicht jedes Gerät spielt es ab.",
+    "codec_any": "Keine Vorliebe",
+    "codec_x265": "x265 / HEVC bevorzugen",
+    "codec_x264": "x264 / AVC bevorzugen",
+    "extras": "Außerdem",
+    "allow_remux": "Remux erlauben (sehr groß)",
+    "prefer_hdr": "HDR und Dolby Vision bevorzugen",
+    "allow_3d": "3D erlauben",
+    "block_rubbish": "Cam, Screener und Upscale ablehnen",
+    "sound": "Ton",
+    "audio": "Schlechtester Ton, den Sie noch nehmen",
+    "audio_help": "Alles darüber wird auch genommen und höher bewertet. Alles darunter wird nicht abgelehnt — es ist nur weniger wert als eine Alternative.",
+    "audio_nah": "Naja — MP3, AAC 2.0",
+    "audio_ok": "OK — Dolby Digital, AAC",
+    "audio_gut": "Gut — DD+, DTS",
+    "audio_sehr_gut": "Sehr gut — TrueHD, Atmos, DTS-HD",
+    "language": "Sprache",
+    "languages": "Gewünschte Sprachen",
+    "languages_help": "Die erste zählt am meisten. Geprüft wird der Releasename, wo die Kennung auch wirklich steht — einschließlich des deutschen „DL“, das die Dienste von allein nicht erkennen.",
+    "language_required": "Darauf bestehen",
+    "language_required_label": "Nur Releases in diesen Sprachen holen",
+    "language_required_help": "Aus: bevorzugt, aber nicht Bedingung. An: ein Release, dessen Name keine davon nennt, wird abgelehnt. Genau richtig, wenn Sie nur deutsche Filme wollen.",
+    "size": "Größe und Nachbessern",
+    "min_gb": "Kleinste Datei",
+    "max_gb": "Größte Datei",
+    "size_help": "Null heißt keine Grenze. Was außerhalb liegt, wird abgelehnt und nicht bloß hinten einsortiert.",
+    "upgrade": "Ersetzen",
+    "upgrade_label": "Darf eine vorhandene Datei ersetzen",
+    "upgrade_help": "Nur die Auflösungsleiter hinauf, und nur einmal — nie nach Punkten. Genau das verhindert, dass dasselbe Release ewig neu geholt wird.",
+    "where": "Schreiben nach",
+    "no_services": "Erst unter Zugänge Radarr oder Sonarr eintragen.",
+    "apply": "Profil anlegen",
+    "reset": "Von vorn",
+    "written": "„{name}“ nach {services} geschrieben.",
+    "floor": "Untergrenze",
+    "floor_is": "ein Release unter {score} Punkten wird abgelehnt",
+    "ceiling": "Nachbessern bis",
+    "ceiling_is": "{score} — dieselbe Zahl wie die Untergrenze: was gut genug war zum Holen, ist gut genug zum Behalten",
+    "step": "Kleinste Verbesserung",
+    "step_is": "{score} Punkte, damit zwei fast gleiche Releases sich nicht abwechselnd ersetzen",
+    "no_loops": "Dieses Profil kann keine Download-Schleife auslösen: es bessert nie nach Punkten nach, sondern nur die Auflösungsleiter hinauf, und die ist endlich.",
+    "format": "Custom Format",
+    "score": "Punkte",
+    "nothing_yet": "Noch nichts ausgewählt."
+  },
+  "profiles": {
+    "why": {
+      "language": "gewünscht auf {language}",
+      "audio": "Ton ab „{tier}“ aufwärts",
+      "codec": "bevorzugt {codec}",
+      "hdr": "bevorzugt größeren Farbumfang",
+      "no_3d": "lehnt Releases mit zwei Bildern ab",
+      "rubbish": "lehnt Cam, Screener, Disc-Abbild und Upscale ab",
+      "too_small": "lehnt alles unter {gb} GB ab",
+      "too_large": "lehnt alles über {gb} GB ab"
+    },
+    "note": {
+      "language_required": "Geholt werden nur Releases, deren Name {language} nennt. Wenn Ihre Indexer überwiegend andere Sprachen führen, kommt wenig an.",
+      "size_window": "Die größte Datei ist nicht größer als die kleinste, dazwischen passt also nichts.",
+      "big_files": "2160p ohne Obergrenze bedeutet auch mal Dateien von 60 GB und mehr."
+    },
+    "problem": {
+      "no_quality": "Es ist keine Auflösung ausgewählt, das Profil könnte also nie etwas annehmen.",
+      "cutoff_above_floor": "Das Nachbesser-Ziel ({cutoff}) liegt über der Untergrenze ({floor}). Genau daraus entstehen Download-Schleifen; das wird hier abgelehnt.",
+      "floor_too_high": "Die Untergrenze ({floor}) liegt über dem Höchsten, das ein Release erreichen kann ({best}) — es würde nie etwas geholt.",
+      "impossible_size": "Die kleinste Datei ({min} GB) ist nicht kleiner als die größte ({max} GB).",
+      "language_without_one": "Eine Sprache wird verlangt, aber keine ist ausgewählt.",
+      "bad_pattern": "Ein Muster ließ sich nicht übersetzen: {error}"
+    }
   }
 }

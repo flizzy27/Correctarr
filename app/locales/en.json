@@ -15,7 +15,8 @@
     "group_insight": "Insight",
     "group_operations": "Operations",
     "group_configuration": "Configuration",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "profiles": "Video profiles"
   },
   "page": {
     "overview": "How things stand",
@@ -26,7 +27,8 @@
     "indexers": "Measured performance per source",
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
     "settings": "Schedule, paths, thresholds, appearance",
-    "notifications": "Where findings get sent"
+    "notifications": "Where findings get sent",
+    "profiles": "Six answers, and the rest is worked out"
   },
   "action": {
     "check_fast": "Quick check",
@@ -1028,5 +1030,99 @@
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",
     "nothing": "nothing found in {seconds} seconds — the search may still be running, or there is nothing out there"
+  },
+  "language": {
+    "de": "German",
+    "en": "English",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ja": "Japanese",
+    "ko": "Korean"
+  },
+  "profiles_page": {
+    "title": "Build a quality profile",
+    "help": "Answer six questions and Correctarr writes the profile and every custom format behind it into Radarr and Sonarr. Anything it writes is named after it, so saving twice changes the same profile instead of leaving a second one.",
+    "preview_title": "What will be created",
+    "preview_help": "Nothing is written until you say so. This is every format the profile will have, what each is worth, and why it is there.",
+    "name": "Name of the profile",
+    "name_help": "How it will appear in Radarr and Sonarr.",
+    "picture": "Picture",
+    "resolutions": "Resolutions to accept",
+    "resolutions_help": "Pick more than one and the profile will upgrade from the lower to the higher.",
+    "codec": "Codec",
+    "codec_help": "A preference, not a requirement. x265 is about half the size at the same quality and not every device plays it.",
+    "codec_any": "No preference",
+    "codec_x265": "Prefer x265 / HEVC",
+    "codec_x264": "Prefer x264 / AVC",
+    "extras": "Also",
+    "allow_remux": "Allow remux (very large)",
+    "prefer_hdr": "Prefer HDR and Dolby Vision",
+    "allow_3d": "Allow 3D",
+    "block_rubbish": "Refuse cam, screener and upscale",
+    "sound": "Sound",
+    "audio": "Lowest sound quality you will accept",
+    "audio_help": "Everything above it is accepted too, and scored higher. Nothing below it is refused outright — it is simply worth less than an alternative.",
+    "audio_nah": "Basic — MP3, AAC 2.0",
+    "audio_ok": "OK — Dolby Digital, AAC",
+    "audio_gut": "Good — DD+, DTS",
+    "audio_sehr_gut": "Very good — TrueHD, Atmos, DTS-HD",
+    "language": "Language",
+    "languages": "Languages you want",
+    "languages_help": "The first one you pick counts for most. Matched against the release name, where the marker actually is — including the German “DL”, which the services do not recognise by themselves.",
+    "language_required": "Insist on it",
+    "language_required_label": "Only grab releases in these languages",
+    "language_required_help": "Off: preferred but not required. On: a release whose name does not say one of them is refused. Use it if you only want German.",
+    "size": "Size and upgrades",
+    "min_gb": "Smallest file",
+    "max_gb": "Largest file",
+    "size_help": "Zero means no limit. Anything outside the window is refused, not merely ranked last.",
+    "upgrade": "Replacing",
+    "upgrade_label": "May replace a file it already has",
+    "upgrade_help": "Only up the resolution ladder, and only once — never on score. That is what stops it grabbing the same release for ever.",
+    "where": "Write it to",
+    "no_services": "Add Radarr or Sonarr under Services first.",
+    "apply": "Create the profile",
+    "reset": "Start over",
+    "written": "“{name}” written to {services}.",
+    "floor": "Floor",
+    "floor_is": "a release scoring below {score} is refused",
+    "ceiling": "Upgrade until",
+    "ceiling_is": "{score} — the same as the floor, so a file that was good enough to fetch is good enough to keep",
+    "step": "Smallest improvement",
+    "step_is": "{score} points, so two near-identical releases cannot take turns replacing each other",
+    "no_loops": "This profile cannot cause a download loop: it never upgrades on score, only up the resolution ladder, which is finite.",
+    "format": "Custom format",
+    "score": "Points",
+    "nothing_yet": "Nothing selected yet."
+  },
+  "profiles": {
+    "why": {
+      "language": "wanted in {language}",
+      "audio": "sound at “{tier}” or better",
+      "codec": "prefers {codec}",
+      "hdr": "prefers a wider range of colour",
+      "no_3d": "refuses releases with two pictures in them",
+      "rubbish": "refuses cam, screener, disc image and upscale",
+      "too_small": "refuses anything under {gb} GB",
+      "too_large": "refuses anything over {gb} GB"
+    },
+    "note": {
+      "language_required": "Only releases whose name states {language} will be grabbed. If your indexers mostly carry other languages, little will arrive.",
+      "size_window": "The largest file is not larger than the smallest one, so nothing can fit between them.",
+      "big_files": "2160p without an upper size limit can mean files of 60 GB and more."
+    },
+    "problem": {
+      "no_quality": "No resolution is selected, so there is nothing the profile could ever accept.",
+      "cutoff_above_floor": "The upgrade target ({cutoff}) is above the floor ({floor}). That is what causes download loops and is refused here.",
+      "floor_too_high": "The floor ({floor}) is higher than the best a release could score ({best}), so nothing would ever be grabbed.",
+      "impossible_size": "The smallest file ({min} GB) is not smaller than the largest ({max} GB).",
+      "language_without_one": "A language is required but none is selected.",
+      "bad_pattern": "A pattern could not be compiled: {error}"
+    }
   }
 }
