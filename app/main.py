@@ -1294,6 +1294,7 @@ class ProfileWish(BaseModel):
     block_rubbish: bool = True
     block_hardcoded_subs: bool = True
     block_retagged: bool = True
+    block_collections: bool = True
     min_gb: float = 0.0
     max_gb: float = 0.0
     upgrade: bool = True
@@ -1316,6 +1317,7 @@ class ProfileWish(BaseModel):
             block_rubbish=self.block_rubbish,
             block_hardcoded_subs=self.block_hardcoded_subs,
             block_retagged=self.block_retagged,
+            block_collections=self.block_collections,
             min_gb=self.min_gb, max_gb=self.max_gb, upgrade=self.upgrade,
             allow_remux=self.allow_remux)
 

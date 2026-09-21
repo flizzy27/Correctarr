@@ -482,7 +482,8 @@
     "cutoff_unmet_season": "{count} episode(s) of season {season} ({episodes}) are on disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}. Nothing goes looking for a better copy on its own.",
     "missing_nothing_out_there": "Searched {tries} times since {since} and nothing turned up. It looks like this simply is not available anywhere your indexers can see. Nothing further will be searched for by itself.",
     "missing_episodes_nothing_out_there": "{count} episode(s) of season {season} ({episodes}) are still missing after {tries} searches since {since}. It looks like they are not out there. Nothing further will be searched for by itself.",
-    "cutoff_nothing_better": "On disk as {quality}. The profile “{profile}” would like {cutoff}, but {tries} searches since {since} have turned up nothing better — this is probably the best copy there is. Nothing further will be searched for by itself."
+    "cutoff_nothing_better": "On disk as {quality}. The profile “{profile}” would like {cutoff}, but {tries} searches since {since} have turned up nothing better — this is probably the best copy there is. Nothing further will be searched for by itself.",
+    "collection_pack": "This is not one film, it is the set: {reason} ({span}), {gb} GB. Radarr cannot import that — it downloads all of them and then fails, or takes the wrong one."
   },
   "rules": {
     "wrong_year": {
@@ -612,6 +613,10 @@
     "stale_blocklist": {
       "title": "An old refusal that may be why a title never arrives",
       "help": "Only raised where the title is still missing. A blocklisted release for something that has since arrived is doing its job."
+    },
+    "collection_pack": {
+      "title": "A box set, when one film was asked for",
+      "help": "Blocklists it and searches again straight away. Only above 80 % certainty by default, because it throws a download away — every signal is measured against the film's own title, so a year in the title does not count against it."
     }
   },
   "settings": {
@@ -1140,7 +1145,8 @@
     "block_retagged": "Refuse scrambled and retagged names",
     "streamers": "Streaming service",
     "streamers_label": "Prefer these, where it matters",
-    "streamers_help": "Only a preference, and only between releases that are otherwise equal. Leave it empty if you do not mind."
+    "streamers_help": "Only a preference, and only between releases that are otherwise equal. Leave it empty if you do not mind.",
+    "block_collections": "Refuse box sets and collections"
   },
   "profiles": {
     "why": {
@@ -1162,7 +1168,8 @@
       "edition": "prefers the {edition}",
       "streamer": "prefers {streamer}",
       "hardcoded": "refuses subtitles burned into the picture",
-      "retagged": "refuses names that have been scrambled or stripped"
+      "retagged": "refuses names that have been scrambled or stripped",
+      "collection": "refuses a set of films when one was asked for — the service cannot import such a thing"
     },
     "note": {
       "language_required": "Only releases whose name states {language} will be grabbed. If your indexers mostly carry other languages, little will arrive.",
@@ -1180,6 +1187,15 @@
       "language_without_one": "A language is required but none is selected.",
       "bad_pattern": "A pattern could not be compiled: {error}",
       "no_source": "No source is selected, so there is nothing the profile could ever accept."
+    }
+  },
+  "pack": {
+    "reason": {
+      "span": "the name spans several years",
+      "several_years": "the name lists several separate years",
+      "collection_word": "the name says it is a collection",
+      "numbered_range": "the name gives a range of parts",
+      "complete": "the name says complete"
     }
   }
 }

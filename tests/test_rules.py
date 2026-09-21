@@ -16,6 +16,7 @@ from app import settings as S
 from app.rules import (
     check_api_changes,
     check_below_profile,
+    check_collection_pack,
     check_cutoff_unmet,
     check_detached_folder,
     check_disk_space,
@@ -1015,3 +1016,42 @@ def test_a_mixed_library_yields_both_kinds_of_file():
            "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv"}]}
     labels = [label for _item, _file, label in _library_files(FakeArr(), ctx)]
     assert labels == ["The Film", "The Series — ep01.mkv"]
+
+
+# ===========================================================================
+# A box set when one film was asked for
+# ===========================================================================
+def test_a_box_set_in_the_queue_is_reported():
+    """Nothing else catches this: the year is right and the name does start
+    with the title — it simply carries on and names four more."""
+    entry = queue_entry(
+        "Transformers.2007-2018.COMPLETE.UHD.BluRay.2160p.TrueHD.Atmos-GRP",
+        year=2007, item_title="Transformers", size=68 * 1024 ** 3)
+    found = check_collection_pack(FakeArr(), {"queue": [entry]}, config())
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert found[0].data["confidence"] >= 0.8
+    assert found[0].data["span"] == "2007\u20132018"
+    assert "2007\u20132018" in found[0].describe("en")
+
+
+def test_the_single_film_that_should_be_grabbed_instead_is_left_alone():
+    entry = queue_entry("Transformers.2007.2160p.UHD.BluRay.x265-GRP",
+                        year=2007, item_title="Transformers")
+    assert check_collection_pack(FakeArr(), {"queue": [entry]}, config()) == []
+
+
+def test_a_year_in_the_films_own_title_is_not_a_box_set():
+    entry = queue_entry("Blade.Runner.2049.2017.2160p.UHD.BluRay-GRP",
+                        year=2017, item_title="Blade Runner 2049")
+    assert check_collection_pack(FakeArr(), {"queue": [entry]}, config()) == []
+
+
+def test_the_box_set_finding_carries_what_the_action_needs():
+    entry = queue_entry("Rocky.I-V.1976-1990.1080p.BluRay-GRP",
+                        year=1976, item_title="Rocky")
+    found = check_collection_pack(FakeArr(), {"queue": [entry]}, config())
+    # Blocklisting needs the queue entry; searching again needs the film.
+    assert found[0].entry_id == entry["id"]
+    assert found[0].data["item_id"] == 1
+    assert found[0].data["release"] == entry["title"]

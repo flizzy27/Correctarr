@@ -158,6 +158,7 @@ class Wish:
     block_rubbish: bool = True
     block_hardcoded_subs: bool = True
     block_retagged: bool = True
+    block_collections: bool = True
     min_gb: float = 0.0
     max_gb: float = 0.0
     upgrade: bool = True
@@ -191,6 +192,7 @@ class Wish:
             block_rubbish=bool(self.block_rubbish),
             block_hardcoded_subs=bool(self.block_hardcoded_subs),
             block_retagged=bool(self.block_retagged),
+            block_collections=bool(self.block_collections),
             min_gb=max(0.0, min(2000.0, float(self.min_gb or 0))),
             max_gb=max(0.0, min(2000.0, float(self.max_gb or 0))),
             upgrade=bool(self.upgrade),
@@ -389,6 +391,28 @@ HARDCODED_SUBS = (r"(?i)(?<![a-z0-9])(hc|hardcoded|hard[. _-]?sub(bed|s)?"
 RETAGGED = (r"(?i)(?<![a-z0-9])(obfuscated|scrambled|postbot|xpost|rartv"
             r"|rarbg|1xbet|mrn|qxr|nogr(ou)?p|nogrp)(?![a-z0-9])")
 
+#: Every film in the series at once, when one was asked for. The service
+#: cannot import such a thing — it downloads the lot and then fails, or picks
+#: the wrong one — so this is a refusal rather than a preference.
+#:
+#: Narrower than the rule in ``app/packs.py`` does it, and deliberately: that
+#: one knows which film was asked for and can take the title out of the name
+#: before judging it, so it can tell a box set from a film called *The
+#: Collection*. A custom format sees the name and nothing else, so it sticks to
+#: the markers that cannot be anything but a box: a span of years, and the
+#: words nobody writes by accident.
+COLLECTION_PATTERN = (
+    r"(?i)(?:"
+    r"(?<![0-9])(?:19|20)[0-9]{2}\s*[-\u2013\u2014]\s*(?:19|20)[0-9]{2}(?![0-9])"
+    r"|(?<![a-z0-9])(?:collection|kollektion|anthology|anthologie|trilogy"
+    r"|trilogie|duology|dilogie|quadrilogy|quadrilogie|tetralogy|tetralogie"
+    r"|pentalogy|pentalogie|hexalogy|hexalogie|box[. _-]?set|boxset"
+    r"|gesamtedition|gesamtbox|filmreihe|movie[. _-]?pack|film[. _-]?pack"
+    r"|all[. _-]?movies|alle[. _-]?filme)(?![a-z0-9])"
+    r"|(?<![a-z0-9])(?:teile?|parts?|filme?|movies?)[. _-]*"
+    r"(?:[0-9]{1,2})\s*[-\u2013\u2014]\s*(?:[0-9]{1,2})(?![a-z0-9])"
+    r")")
+
 #: A release put out again because the first one was broken. Worth a little:
 #: it is the same thing, fixed.
 REPACK_PATTERN = r"(?i)(?<![a-z0-9])(repack[0-9]?|proper[0-9]?|real)(?![a-z0-9])"
@@ -546,6 +570,11 @@ def build(wish: Wish) -> Blueprint:
         formats.append(Format(
             name="Retagged or scrambled", score=refuse,
             conditions=[_title(RETAGGED)], why="profiles.why.retagged"))
+    if wish.block_collections:
+        formats.append(Format(
+            name="Box set", score=refuse,
+            conditions=[_title(COLLECTION_PATTERN)],
+            why="profiles.why.collection"))
 
     if wish.min_gb > 0:
         formats.append(Format(

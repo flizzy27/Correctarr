@@ -122,8 +122,14 @@ class Engine:
                 saved = {**saved,
                          **policy.from_legacy_switch(bool(saved["fix"]),
                                                      rule.default_action)}
-            chosen = policy.parse(saved, rule.actions, rule.default_action,
-                                  rule.conditions)
+            # A rule's own condition defaults apply only where nothing has
+            # been decided. Somebody who has set a condition, including back
+            # to zero, has decided; a later build must not quietly put its own
+            # number back.
+            starting = {key: value for key, value in rule.default_conditions.items()
+                        if key not in saved}
+            chosen = policy.parse({**starting, **saved}, rule.actions,
+                                  rule.default_action, rule.conditions)
             out[rule.name] = {"enabled": bool(saved.get("enabled", True)),
                               **chosen.as_dict()}
         return out

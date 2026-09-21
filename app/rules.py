@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import compat, policy, years
+from . import compat, packs, policy, years
 from .arr import Arr
 from .i18n import t
 from .indexers import UNKNOWN_TO_PROWLARR, rank_deviation
@@ -97,6 +97,12 @@ class Rule:
     #: findings carry no data for would be a trap: it could never be met, and
     #: the rule would silently stop acting.
     conditions: tuple[str, ...] = ()
+    #: What those conditions are set to on a fresh install. Most rules want
+    #: nothing, which is why this is usually empty — but a rule that throws a
+    #: download away needs to be sure before it does, and "sure" is a number.
+    #: Leaving it to the person means it is zero until somebody thinks to
+    #: change it, which is the wrong way round for a default that deletes.
+    default_conditions: dict[str, float] = field(default_factory=dict)
     scope: str = "service"                 # "service" | "once"
     only_kinds: tuple[str, ...] = ()       # empty = every kind
     deep: bool = False                     # only in the full pass
@@ -607,6 +613,48 @@ def check_premature_grab(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
                   "days_early": days, "gb": _gb(entry),
                   # Three weeks out is a judgement call, three months is not.
                   "confidence": round(min(1.0, days / 21), 3)},
+        ))
+    return findings
+
+
+def check_collection_pack(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """The release is a box set, and one film was asked for.
+
+    ``Transformers.2007-2018.COMPLETE.UHD.BluRay.2160p`` against a request for
+    *Transformers* (2007): sixty-eight gigabytes of which one film is wanted.
+
+    Nothing else catches it. The year check cannot — 2007 is in the name and
+    2007 is the right year, so as far as it is concerned the release agrees
+    with the film. The title check cannot either, because the name does start
+    with the title; it just carries on and names four more. The service
+    downloads the lot and then fails to import it, or imports the wrong one.
+
+    The judgement lives in :mod:`app.packs`, which measures every signal
+    against the item's own title so that *Blade Runner 2049* is not accused of
+    being a box set for having a year in its name, and a film actually called
+    *The Collection* is not accused for being called that.
+
+    Acting by default, because the alternative is watching sixty-eight
+    gigabytes arrive and then throwing them away by hand — but only above a
+    confidence, which is set for a fresh install rather than left at zero.
+    """
+    findings = []
+    for entry in ctx["queue"]:
+        item = _item(entry)
+        release = entry.get("title") or ""
+        verdict = packs.judge(release, item)
+        if not verdict.is_pack:
+            continue
+        findings.append(Finding(
+            rule="collection_pack", severity="error", service=arr.kind,
+            entry_id=entry["id"], title=item.get("title", "?"),
+            message="finding.collection_pack",
+            params={"reason": ", ".join(t(key, "en") for key in verdict.reasons),
+                    "span": verdict.span or "?",
+                    "gb": f"{_gb(entry):.1f}"},
+            data={"release": release, "confidence": verdict.confidence,
+                  "reasons": list(verdict.reasons), "span": verdict.span,
+                  "item_id": item.get("id"), "gb": _gb(entry)},
         ))
     return findings
 
@@ -1855,6 +1903,16 @@ ALL: tuple[Rule, ...] = (
     Rule("stalled", "queue", check_stalled,
          actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
          conditions=("min_age_hours", "max_gb")),
+    # Acting by default, and on every fast pass rather than only the full one:
+    # the point is to stop it before the sixty-eight gigabytes arrive, not to
+    # report on them afterwards. The confidence it ships with is high on
+    # purpose — this one throws a download away.
+    Rule("collection_pack", "queue", check_collection_pack,
+         actions=(policy.REPORT, "remove", "blocklist", "blocklist_and_search"),
+         default_action="blocklist_and_search",
+         conditions=("max_gb", "min_confidence"),
+         default_conditions={"min_confidence": 0.8},
+         only_kinds=("radarr",)),
     # Reporting by default: an early release in one region is rare but real,
     # and being wrong here throws away the only copy there is.
     Rule("premature_grab", "queue", check_premature_grab,

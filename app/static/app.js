@@ -816,7 +816,7 @@ const DEFAULT_WISH = {
   colour: "sdr", edition: "none", streamers: [],
   good_groups: true, prefer_repack: true,
   allow_3d: false, block_rubbish: true,
-  block_hardcoded_subs: true, block_retagged: true,
+  block_hardcoded_subs: true, block_retagged: true, block_collections: true,
   min_gb: 0, max_gb: 0, upgrade: true, services: [],
 };
 
@@ -892,6 +892,9 @@ function renderProfileForm() {
                       "p-hc")}
         ${switchField(t("profiles_page.block_retagged"),
                       'data-p="block_retagged"', w.block_retagged, "p-retag")}
+        ${switchField(t("profiles_page.block_collections"),
+                      'data-p="block_collections"', w.block_collections,
+                      "p-collections")}
       </div>
     </div>
 

@@ -785,3 +785,72 @@ def test_a_batch_does_not_wait_for_every_search(engine, monkeypatch):
                       data={"item_id": n}) for n in (1, 2, 3)]
     engine.act_many(rows, "search")
     assert waited == [], "a batch must not wait on the history"
+
+
+# ---------------------------------------------------------------------------
+# A rule that ships with a condition already set
+# ---------------------------------------------------------------------------
+def test_a_rule_can_ship_with_a_condition_set(engine):
+    """A rule that throws a download away needs to be sure before it does, and
+    "sure" is a number. Leaving it at zero until somebody thinks to change it
+    is the wrong way round for a default that deletes."""
+    settings = engine.rule_settings()
+    assert settings["collection_pack"]["min_confidence"] == 0.8
+    assert settings["collection_pack"]["action"] == "blocklist_and_search"
+
+
+def test_a_condition_somebody_has_set_is_not_overwritten(engine):
+    """Including back to zero. Somebody who has set it has decided, and a
+    later build must not quietly put its own number back."""
+    engine.store.set("rules", {"collection_pack": {"min_confidence": 0.0}})
+    assert engine.rule_settings()["collection_pack"]["min_confidence"] == 0.0
+
+    engine.store.set("rules", {"collection_pack": {"min_confidence": 0.95}})
+    assert engine.rule_settings()["collection_pack"]["min_confidence"] == 0.95
+
+
+def test_a_rule_without_its_own_defaults_still_starts_at_nothing(engine):
+    assert engine.rule_settings()["stalled"]["min_age_hours"] == 0.0
+
+
+def test_a_box_set_is_blocklisted_and_searched_for_again(engine, monkeypatch):
+    """What the whole thing is for: stop it before the sixty-eight gigabytes
+    arrive, and go and find the one film instead."""
+    service = FakeArr()
+    finding = Finding(
+        rule="collection_pack", severity="error", title="Transformers",
+        message="finding.collection_pack", service="radarr", entry_id=77,
+        data={"confidence": 0.96, "item_id": 5,
+              "release": "Transformers.2007-2018.COMPLETE.2160p-GRP"})
+    use_rules(monkeypatch, Rule(
+        "collection_pack", "queue", lambda arr, ctx, cfg: [finding],
+        actions=("report", "blocklist_and_search"),
+        default_action="blocklist_and_search",
+        conditions=("min_confidence",),
+        default_conditions={"min_confidence": 0.8}))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+
+    engine.run()
+    assert service.removed == [(77, True, True)], \
+        "blocklisted, and told to look for a replacement"
+
+
+def test_a_box_set_below_the_confidence_is_only_reported(engine, monkeypatch):
+    service = FakeArr()
+    finding = Finding(
+        rule="collection_pack", severity="error", title="The Matrix",
+        message="finding.collection_pack", service="radarr", entry_id=78,
+        data={"confidence": 0.55, "item_id": 5})
+    use_rules(monkeypatch, Rule(
+        "collection_pack", "queue", lambda arr, ctx, cfg: [finding],
+        actions=("report", "blocklist_and_search"),
+        default_action="blocklist_and_search",
+        conditions=("min_confidence",),
+        default_conditions={"min_confidence": 0.8}))
+    engine.store.set("dry_run", False)
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+
+    engine.run()
+    assert service.removed == [], "not sure enough to throw a download away"
+    assert finding.data["_held"] == "policy.not_confident_enough"

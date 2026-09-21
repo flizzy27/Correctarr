@@ -482,7 +482,8 @@
     "cutoff_unmet_season": "{count} Folge(n) der Staffel {season} ({episodes}) liegen als {quality} vor. Das Profil „{profile}“ bessert bis {cutoff} nach. Von allein sucht niemand eine bessere Kopie.",
     "missing_nothing_out_there": "Seit {since} {tries}-mal gesucht, ohne Ergebnis. Es sieht so aus, als gäbe es das bei Ihren Indexern schlicht nicht. Von allein wird nicht weiter gesucht.",
     "missing_episodes_nothing_out_there": "{count} Folge(n) der Staffel {season} ({episodes}) fehlen auch nach {tries} Suchen seit {since}. Es sieht so aus, als gäbe es sie nicht. Von allein wird nicht weiter gesucht.",
-    "cutoff_nothing_better": "Liegt als {quality} vor. Das Profil „{profile}“ hätte gern {cutoff}, aber {tries} Suchen seit {since} haben nichts Besseres gebracht — das ist vermutlich die beste Kopie, die es gibt. Von allein wird nicht weiter gesucht."
+    "cutoff_nothing_better": "Liegt als {quality} vor. Das Profil „{profile}“ hätte gern {cutoff}, aber {tries} Suchen seit {since} haben nichts Besseres gebracht — das ist vermutlich die beste Kopie, die es gibt. Von allein wird nicht weiter gesucht.",
+    "collection_pack": "Das ist nicht ein Film, das ist die ganze Reihe: {reason} ({span}), {gb} GB. Radarr kann das nicht importieren — es lädt alle herunter und scheitert dann, oder nimmt den falschen."
   },
   "rules": {
     "wrong_year": {
@@ -612,6 +613,10 @@
     "stale_blocklist": {
       "title": "Eine alte Sperre, an der ein Titel hängen bleiben könnte",
       "help": "Nur dort gemeldet, wo der Titel weiterhin fehlt. Eine Sperre für etwas, das inzwischen da ist, tut ihre Arbeit."
+    },
+    "collection_pack": {
+      "title": "Eine Sammelbox, obwohl ein Film gefragt war",
+      "help": "Sperrt sie und sucht sofort neu. Standardmäßig erst ab 80 % Sicherheit, weil ein Download weggeworfen wird — jedes Anzeichen wird gegen den Filmtitel selbst geprüft, eine Jahreszahl im Titel zählt also nicht dagegen."
     }
   },
   "settings": {
@@ -1140,7 +1145,8 @@
     "block_retagged": "Verwürfelte und umbenannte Namen ablehnen",
     "streamers": "Streamingdienst",
     "streamers_label": "Diese bevorzugen, wo es darauf ankommt",
-    "streamers_help": "Nur eine Vorliebe, und nur zwischen sonst gleichen Releases. Leer lassen, wenn es egal ist."
+    "streamers_help": "Nur eine Vorliebe, und nur zwischen sonst gleichen Releases. Leer lassen, wenn es egal ist.",
+    "block_collections": "Sammelboxen und Collections ablehnen"
   },
   "profiles": {
     "why": {
@@ -1162,7 +1168,8 @@
       "edition": "bevorzugt {edition}",
       "streamer": "bevorzugt {streamer}",
       "hardcoded": "lehnt ins Bild gebrannte Untertitel ab",
-      "retagged": "lehnt verwürfelte oder entkleidete Namen ab"
+      "retagged": "lehnt verwürfelte oder entkleidete Namen ab",
+      "collection": "lehnt eine Filmreihe ab, wenn ein Film gefragt war — der Dienst kann so etwas nicht importieren"
     },
     "note": {
       "language_required": "Geholt werden nur Releases, deren Name {language} nennt. Wenn Ihre Indexer überwiegend andere Sprachen führen, kommt wenig an.",
@@ -1180,6 +1187,15 @@
       "language_without_one": "Eine Sprache wird verlangt, aber keine ist ausgewählt.",
       "bad_pattern": "Ein Muster ließ sich nicht übersetzen: {error}",
       "no_source": "Es ist keine Quelle ausgewählt, das Profil könnte also nie etwas annehmen."
+    }
+  },
+  "pack": {
+    "reason": {
+      "span": "der Name umspannt mehrere Jahre",
+      "several_years": "der Name nennt mehrere einzelne Jahre",
+      "collection_word": "der Name sagt, dass es eine Sammlung ist",
+      "numbered_range": "der Name nennt eine Spanne von Teilen",
+      "complete": "der Name sagt „complete“"
     }
   }
 }

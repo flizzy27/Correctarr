@@ -40,7 +40,7 @@ Three ways, at the same time:
 
 ## The rules
 
-**32 rules across six categories.** For each one you decide what happens when
+**33 rules across six categories.** For each one you decide what happens when
 it finds something — not just on or off:
 
 | | |
@@ -64,7 +64,7 @@ finds and touches nothing, until you have seen the findings and turned it off
 yourself.
 
 <details>
-<summary><strong>All 32 rules</strong></summary>
+<summary><strong>All 33 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default action |
@@ -75,6 +75,7 @@ yourself.
 | `not_an_upgrade` | Import would not be an upgrade | *Blocklist* |
 | `stalled` | A started download stopped moving | Report only |
 | `premature_grab` | A release for something that is not out yet | Report only |
+| `collection_pack` | A box set, when one film was asked for *(Radarr)* | ***Blocklist and search again*** |
 | `grab_loop` | The same title is grabbed over and over | Report only |
 
 ### Import
@@ -217,6 +218,27 @@ marker `.DL.` is not one its parser knows. A profile that demands German throws
 away most of the German releases it was set up to find. A custom format sees
 the whole name: `German DL`, `GerDub`, `[DE+EN]`, and the bare `DL` that the
 majority of them actually carry.
+
+---
+
+### The one that gets everybody
+
+```
+Transformers.2007-2018.COMPLETE.UHD.BluRay.2160p.TrueHD.Atmos.7.1.HEVC-GRP
+```
+
+You asked for *Transformers* (2007). That is all five of them, sixty-eight
+gigabytes, and Radarr cannot import it — it will fetch the lot and then fail,
+or take the wrong one. Nothing catches it on its own: the year check cannot,
+because 2007 is in the name and 2007 is the right year; the title check cannot,
+because the name *does* start with the title and simply carries on.
+
+`collection_pack` does, on every fast pass, and blocklists it and searches
+again — on by default, above 80 % certainty. Four signals, each measured
+against the film's own title, so *Blade Runner 2049 (2017)* is not read as a
+span of years and a film actually called *The Collection* is not read as one.
+Profiles built here refuse box sets as well, so it is usually never grabbed at
+all.
 
 ---
 

@@ -24,7 +24,7 @@
     title, and leftover debris in the download folders.
     &#13;
     It works three ways at once: in real time through webhooks, on a short schedule
-    for the queue, and on a full pass for the library and the indexers. 32 rules, and
+    for the queue, and on a full pass for the library and the indexers. 33 rules, and
     you decide per rule what happens when one of them finds something &#8212; from
     reporting it to blocklisting, importing, searching again or deleting. Conditions
     such as "wait six hours first" or "nothing over 20 GB" narrow that down further.

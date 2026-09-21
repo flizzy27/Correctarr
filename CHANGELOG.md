@@ -3,6 +3,54 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.4.0
+
+### Added
+
+* **`collection_pack`: a box set, when one film was asked for.** Switched on
+  and acting by default, on every fast pass rather than only the full one,
+  because the point is to stop it before the download arrives.
+
+  The case it was written for:
+
+  ```
+  Transformers.2007-2018.COMPLETE.UHD.BluRay.2160p.TrueHD.Atmos.7.1.HEVC-GRP
+  ```
+
+  asked for as *Transformers* (2007). Sixty-eight gigabytes, of which one film
+  is wanted. Radarr cannot import such a thing — it fetches the lot and then
+  fails, or takes the wrong one — and **nothing caught it.** The year check
+  cannot: 2007 is in the name and 2007 is the right year, so as far as it is
+  concerned the release agrees with the film. The title check cannot either,
+  because the name does start with the title; it simply carries on and names
+  four more.
+
+  Four signals, each close to conclusive on its own, each measured **against
+  the film's own title**: a span of years, a word that means more than one
+  film, a numbered range, and several separate years. One is enough to say so;
+  the confidence rises with each, and the action only fires above 80 % — a
+  figure the rule ships with rather than leaving at zero, because it throws a
+  download away.
+
+  Half the work is in what it must *not* catch, and there are tests for every
+  one of them: *Blade Runner 2049 (2017)* is not a span, *1917* and *2012* are
+  not lists of years, a film actually called *The Collection* is not a
+  collection, `7.1` and `DDP5.1` are not ranges, `2007-06-12` is a date, and
+  "COMPLETE UHD BLURAY" on a single disc means nothing was left out of that one
+  film.
+
+* **Profiles refuse box sets too**, so one is never grabbed in the first place.
+  On by default. The custom format is deliberately narrower than the rule: it
+  sees the release name and nothing else, so it sticks to the markers that
+  cannot be anything but a box, while the rule — which knows which film was
+  asked for — can take the title out of the name before judging it.
+
+* **A rule can ship with a condition already set.** Most want nothing, which is
+  why this is rare. A rule whose default action throws a download away is the
+  exception: leaving its confidence at zero until somebody thinks to raise it
+  is the wrong way round. A condition somebody has set, including back to zero,
+  is never overwritten by a later build.
+
 ## 1.3.0
 
 ### Added

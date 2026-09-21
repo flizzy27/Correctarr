@@ -211,7 +211,7 @@ def test_a_missing_path_is_reported_but_still_saved(signed_in):
 # ---------------------------------------------------------------------------
 def test_all_rules_are_listed(signed_in):
     body = signed_in.get("/api/rules").json()
-    assert len(body["rules"]) == 32
+    assert len(body["rules"]) == 33
     assert set(body["categories"]) == {"queue", "import", "library",
                                        "downloader", "indexers", "system"}
 
