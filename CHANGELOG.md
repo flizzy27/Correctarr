@@ -3,6 +3,63 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.3.0
+
+### Added
+
+* **Deal with everything at once.** A button above the findings list applies
+  each finding's own action to all of them — and to exactly what is in the list
+  as it is filtered right now, so narrowing to one rule and pressing it means
+  that rule and nothing else. Anything that deletes is left out; those keep
+  their own button, because a single press that removes forty folders is not a
+  convenience.
+
+  The services are contacted once for the whole batch rather than once per
+  finding, and a batch does not wait on each search: one search is worth twenty
+  seconds of somebody's attention, forty is not, and what came of them shows up
+  in the list on the next pass either way.
+
+* **It works out when there is simply nothing better out there.** A title that
+  is below its cutoff, or missing, was reported on every pass for ever — and
+  searched for again on every pass, at the cost of an indexer query each time,
+  even when the answer had been the same for months.
+
+  Nothing has to tell it whether a search helped. The next full pass answers
+  that for free: a title that was searched for last time and is *still* on the
+  list is one the search did not help. After a few of those the conclusion is
+  drawn — **there is no better copy out there** — and the finding says so
+  instead: "on disk as HDTV-720p; three searches since 4 March have turned up
+  nothing better, this is probably the best copy there is". It stops being
+  searched for by itself. It is still reported, the button still works, and the
+  verdict is forgotten after six months, because the world gets new releases.
+
+* **A great deal more to ask of a video profile.** It was six questions; it is
+  now closer to fifteen, and they are the ones that actually decide what lands:
+
+  * **Where it came from** — HDTV, WEBRip, WEB-DL, Blu-ray, Remux, picked
+    separately from the resolution. A disc rip and a broadcast capture at 1080p
+    are both "1080p" and are not the same thing. The order is the preference,
+    and the ladder itself is narrowed to what was asked for.
+  * **Colour** — HDR, or Dolby Vision. Asking for Dolby Vision also **refuses
+    it when there is no HDR10 layer underneath**, because such a file plays
+    washed out and green on a television that does not speak Dolby Vision, and
+    it looks like the best release in the list right up until it plays.
+  * **Release groups** — two tiers of groups with a reputation for getting the
+    encode right, scored accordingly.
+  * **Surround** over stereo, **repacks and propers** over the release they
+    fix, an **edition** where more than one cut exists, and a **streaming
+    service** where you have a preference.
+  * **Refusals** for burned-in subtitles and for names that have been scrambled
+    or stripped of the group that made them.
+
+* **A refusal cannot be outvoted.** With enough preferences switched on, a
+  camera recording with the right language, the right sound and a well-regarded
+  group on it could collect more in bonuses than a fixed penalty took away, and
+  be grabbed on merit. The penalty is now worked out from the bonuses each
+  profile actually hands out, so one unwanted marker always puts a release
+  below the floor — and `check` refuses to write a profile where that is not
+  true.
+
 ## 1.2.0
 
 ### Added

@@ -39,8 +39,9 @@ def test_the_upgrade_target_never_rises_above_the_floor():
     """
     for answers in (wish(), wish(language_required=True),
                     wish(languages=("de", "en"), language_required=True),
-                    wish(audio="sehr_gut", codec="x265", prefer_hdr=True,
-                         min_gb=4, max_gb=40, language_required=True)):
+                    wish(audio="sehr_gut", codec="x265", colour="dv",
+                         min_gb=4, max_gb=40, language_required=True),
+                    _everything()):
         plan = profiles.build(answers)
         assert plan.cutoff_score == plan.min_score
         assert not profiles.check(plan)
@@ -94,14 +95,47 @@ def test_a_compulsory_language_raises_the_floor_to_exactly_its_own_score():
     assert german.score == plan.min_score
 
 
+def _everything() -> profiles.Wish:
+    """Every preference switched on at once — the hardest case for a refusal."""
+    return profiles.Wish(
+        name="Everything", resolutions=("720p", "1080p", "2160p"),
+        sources=profiles.SOURCES, audio="nah", surround=True, codec="x265",
+        languages=("de", "en", "fr"), language_required=True, colour="dv",
+        edition="extended", streamers=profiles.STREAMERS, good_groups=True,
+        prefer_repack=True, min_gb=2, max_gb=90)
+
+
 def test_what_is_unwanted_is_worth_less_than_every_bonus_together():
-    """Otherwise a cam with the right language and good sound outscores the
-    floor and is grabbed, which is the opposite of the point."""
-    plan = profiles.build(wish(language_required=True, audio="nah",
-                               codec="x265", prefer_hdr=True,
-                               languages=("de", "en")))
-    bonuses = sum(f.score for f in plan.formats if f.score > 0)
-    assert profiles.UNWANTED + bonuses < plan.min_score
+    """Otherwise a camera recording with the right language, the right sound
+    and a well-regarded group on it scores its way over the floor and is
+    grabbed on merit — which is the opposite of the point.
+
+    A fixed figure stopped being enough the moment the builder learned a new
+    preference, so it is worked out from the bonuses each profile hands out.
+    """
+    for answers in (wish(language_required=True), _everything()):
+        plan = profiles.build(answers)
+        bonuses = sum(f.score for f in plan.formats if f.score > 0)
+        worst = min(f.score for f in plan.formats if f.score < 0)
+        assert bonuses + worst < plan.min_score, (
+            f"a refused release could still reach the floor: "
+            f"{bonuses} + {worst} >= {plan.min_score}")
+
+
+def test_a_refusal_that_could_be_outvoted_is_refused():
+    plan = profiles.build(_everything())
+    for entry in plan.formats:
+        if entry.score < 0:
+            entry.score = -10          # far too small to matter
+    assert "profiles.problem.refusal_too_weak" in dict(profiles.check(plan))
+
+
+def test_the_refusal_grows_with_the_number_of_preferences():
+    """More things to like means a bigger number needed to say no."""
+    plain = min(f.score for f in profiles.build(wish()).formats if f.score < 0)
+    loaded = min(f.score for f in profiles.build(_everything()).formats
+                 if f.score < 0)
+    assert loaded < plain
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +337,7 @@ def test_a_condition_the_service_does_not_have_is_refused():
 
 
 def test_every_format_the_builder_makes_can_be_built_for_the_service():
-    plan = profiles.build(wish(min_gb=4, max_gb=25, prefer_hdr=True,
-                               codec="x265", allow_3d=False))
+    plan = profiles.build(_everything())
     for entry in plan.formats:
         body = profiles.custom_format_body(FORMAT_SCHEMA, entry)
         assert body["name"].startswith(profiles.MARK + ":")
@@ -337,8 +370,113 @@ def test_the_profile_does_not_demand_a_language_of_the_service():
 def test_everything_it_writes_is_named_after_this_program():
     """So it can be written again without leaving a second copy behind, and so
     a profile somebody made by hand is never touched."""
-    plan = profiles.build(wish(min_gb=4, prefer_hdr=True))
+    plan = profiles.build(_everything())
     assert all(f.full_name.startswith("Correctarr: ") for f in plan.formats)
+
+
+# ---------------------------------------------------------------------------
+# Where it came from
+# ---------------------------------------------------------------------------
+def test_the_ladder_follows_the_sources_as_well_as_the_resolutions():
+    """A disc rip and a broadcast capture at 1080p are both "1080p" and are not
+    the same thing, so asking for one without the other has to be possible."""
+    items, _best = profiles.quality_items(
+        SCHEMA_ITEMS, ("1080p",), False, ("bluray",))
+    on = [i.get("quality", {}).get("name") or i.get("name")
+          for i in items if i["allowed"]]
+    assert on == ["Bluray-1080p"]
+
+
+def test_asking_for_web_only_leaves_the_disc_out():
+    items, _best = profiles.quality_items(
+        SCHEMA_ITEMS, ("1080p",), False, ("webdl", "webrip"))
+    on = [i.get("quality", {}).get("name") or i.get("name")
+          for i in items if i["allowed"]]
+    assert on == ["WEB 1080p"]
+
+
+def test_no_source_at_all_is_refused():
+    plan = profiles.build(wish())
+    object.__setattr__(plan.wish, "sources", ())
+    assert "profiles.problem.no_source" in dict(profiles.check(plan))
+
+
+def test_a_later_source_in_the_list_is_worth_more():
+    """The order is the preference: a disc beats a broadcast capture."""
+    plan = profiles.build(wish(sources=("hdtv", "webdl", "bluray")))
+    scores = {f.name: f.score for f in plan.formats}
+    assert scores["Source hdtv"] < scores["Source webdl"] < scores["Source bluray"]
+
+
+# ---------------------------------------------------------------------------
+# Dolby Vision that plays green
+# ---------------------------------------------------------------------------
+def test_dolby_vision_without_a_fallback_is_refused_not_ranked_last():
+    """It looks like the best release in the list right up until it plays."""
+    plan = profiles.build(wish(colour="dv"))
+    entry = next(f for f in plan.formats
+                 if f.name == "Dolby Vision without fallback")
+    assert entry.score < 0
+
+
+def test_nothing_is_said_about_dolby_vision_when_it_was_not_asked_for():
+    plan = profiles.build(wish(colour="sdr"))
+    assert not any("Dolby" in f.name for f in plan.formats)
+
+
+@pytest.mark.parametrize("name,refused", [
+    ("Movie.2020.2160p.DV.WEB-DL-GRP", True),
+    ("Movie.2020.2160p.DV.HDR10.WEB-DL-GRP", False),
+    ("Movie.2020.2160p.DoVi.HYBRID.BluRay-GRP", False),
+    ("Movie.2020.2160p.HDR.WEB-DL-GRP", False),
+    ("Movie.2020.1080p.BluRay-GRP", False),
+])
+def test_only_dolby_vision_on_its_own_is_caught(name, refused):
+    assert bool(re.search(profiles.DV_NO_FALLBACK, name)) is refused
+
+
+# ---------------------------------------------------------------------------
+# The rest of the new preferences
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("name,hit", [
+    ("A.2020.1080p.DDP5.1.WEB-DL", True),
+    ("A.2020.1080p.TrueHD.7.1.BluRay", True),
+    ("A.2020.1080p.AAC2.0.WEB-DL", False),
+])
+def test_surround_is_told_from_stereo(name, hit):
+    assert bool(re.search(profiles.SURROUND_PATTERN, name)) is hit
+
+
+@pytest.mark.parametrize("name,hit", [
+    ("A.2020.1080p.HC.HDRip.x264", True),
+    ("A.2020.1080p.KORSUB.WEB-DL", True),
+    ("A.2020.1080p.WEB-DL.x264-GRP", False),
+])
+def test_burned_in_subtitles_are_seen(name, hit):
+    assert bool(re.search(profiles.HARDCODED_SUBS, name)) is hit
+
+
+@pytest.mark.parametrize("name,hit", [
+    ("A.2020.1080p.WEB.x264-RARBG", True),
+    ("A.2020.1080p.WEB.x264[OBFUSCATED]", True),
+    ("A.2020.1080p.WEB.x264-GRP", False),
+])
+def test_a_scrambled_name_is_seen(name, hit):
+    assert bool(re.search(profiles.RETAGGED, name)) is hit
+
+
+def test_a_web_dl_is_not_a_webrip():
+    """They are re-encodes of each other and people care about the difference."""
+    assert re.search(profiles.SOURCE_PATTERNS["webdl"], "A.2020.1080p.WEB-DL")
+    assert not re.search(profiles.SOURCE_PATTERNS["webdl"], "A.2020.1080p.WEBRip")
+    assert re.search(profiles.SOURCE_PATTERNS["webrip"], "A.2020.1080p.WEBRip")
+
+
+def test_an_old_wish_with_the_remux_switch_still_loads():
+    """The switch beside the resolutions became a source. A page cached from
+    an older build still sends the switch."""
+    tidy = profiles.Wish(sources=("bluray",), allow_remux=True).tidy()
+    assert "remux" in tidy.sources
 
 
 # ---------------------------------------------------------------------------
@@ -431,7 +569,7 @@ def test_a_format_somebody_made_by_hand_is_left_alone():
 def test_every_format_the_service_knows_is_listed_on_the_profile():
     """A profile that names some and not others is refused by the service."""
     service = FakeService(existing_formats=[{"id": 55, "name": "Other"}])
-    plan = profiles.build(wish(prefer_hdr=True))
+    plan = profiles.build(wish(colour="hdr"))
     profiles.apply_to(service, plan)
     _existing, profile = service.saved_profiles[0]
     assert {f["name"] for f in profile["formatItems"]} == {

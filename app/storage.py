@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _now() -> str:
@@ -135,9 +135,20 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE INDEX IF NOT EXISTS idx_notifications_enabled ON notifications(enabled);
 """
 
+_M3 = """
+CREATE TABLE IF NOT EXISTS attempts (
+    key        TEXT PRIMARY KEY,
+    tries      INTEGER NOT NULL DEFAULT 0,
+    first_try  TEXT NOT NULL,
+    last_try   TEXT NOT NULL,
+    settled    INTEGER NOT NULL DEFAULT 0
+);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _M1),
     (2, _M2),
+    (3, _M3),
 ]
 
 # Column mapping used when adopting a store written by a pre-release build.
@@ -571,6 +582,53 @@ class Store:
             except ValueError:
                 return 0.0
         return (now - since).total_seconds() / 60
+
+    # -- searches that have already been tried ---------------------------------
+    def note_attempt(self, key: str) -> int:
+        """Record that something was searched for. Returns how often now.
+
+        There is no result column on purpose. Whether a search helped is not
+        something this has to be told — the next full pass answers it for
+        free: if the title is still on the list, the search did not help. A
+        result recorded here would be a second, worse copy of that answer.
+        """
+        now = _now()
+        with _lock, self._conn() as c:
+            c.execute(
+                "INSERT INTO attempts(key,tries,first_try,last_try) "
+                "VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET "
+                "tries=tries+1, last_try=excluded.last_try", (key, now, now))
+            row = c.execute("SELECT tries FROM attempts WHERE key=?",
+                            (key,)).fetchone()
+        return int(row["tries"]) if row else 1
+
+    def attempt(self, key: str) -> dict | None:
+        with _lock, self._conn() as c:
+            row = c.execute("SELECT * FROM attempts WHERE key=?",
+                            (key,)).fetchone()
+        return dict(row) if row else None
+
+    def settle(self, key: str, settled: bool = True) -> None:
+        """Mark, or unmark, something as "there is nothing better out there"."""
+        with _lock, self._conn() as c:
+            c.execute("UPDATE attempts SET settled=? WHERE key=?",
+                      (1 if settled else 0, key))
+
+    def forget_attempt(self, key: str) -> None:
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM attempts WHERE key=?", (key,))
+
+    def prune_attempts(self, days: int = 180) -> None:
+        """Let a settled title be looked at again eventually.
+
+        "There is nothing better out there" is true about the world on the day
+        it was decided, and the world gets new releases. Forgetting after a few
+        months means a title that was genuinely unavailable in 2024 is tried
+        once more rather than written off for good.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM attempts WHERE last_try < ?", (cutoff,))
 
     def prune_progress(self, active: set[str], prefix: str = "") -> None:
         """Drop entries that are no longer in the queue they belong to.

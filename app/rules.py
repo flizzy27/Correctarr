@@ -231,6 +231,51 @@ def _file_label(info: dict) -> str:
     return f"Season {season}" if season is not None else "?"
 
 
+def searching_for(arr: Arr, rule: str, item_id, season=None) -> str:
+    """The key under which attempts at one title are remembered."""
+    scope = f"{getattr(arr, 'service_id', None) or arr.kind}"
+    tail = "" if season is None else f":s{season}"
+    return f"{scope}:{rule}:{item_id}{tail}"
+
+
+def _settled(ctx: dict, key: str, cfg: dict) -> dict | None:
+    """Has this already been searched for, often enough, without result?
+
+    Nothing has to tell this module whether a search helped. The full pass
+    answers it for free: a title that was searched for last time and is *still*
+    on the list is a title the search did not help. After a few of those there
+    is a conclusion to draw — there is no better copy out there — and going on
+    reporting it as something to be done about is how a page of findings stops
+    being read.
+
+    The judgement is never silent. The finding is still reported, it simply
+    says what it now knows and stops being acted on by itself.
+    """
+    store = ctx.get("store")
+    if store is None:
+        return None
+    limit = int(cfg.get("search_attempts", 3))
+    if limit <= 0:
+        return None
+    record = store.attempt(key)
+    if not record or int(record.get("tries") or 0) < limit:
+        return record
+    if not record.get("settled"):
+        store.settle(key)
+        record = {**record, "settled": 1}
+    return record
+
+
+def _settled_bits(record: dict | None) -> tuple[bool, dict, dict]:
+    """``(settled, extra params, extra data)`` for a finding."""
+    if not record or not record.get("settled"):
+        return False, {}, {}
+    tries = int(record.get("tries") or 0)
+    since = str(record.get("first_try") or "")[:10]
+    return True, {"tries": tries, "since": since}, {
+        "settled": True, "tries": tries, "searched_since": since}
+
+
 def quality_of(row: dict) -> str:
     """What is on disk, as the service names it."""
     info = row.get("movieFile") or row.get("episodeFile") or {}
@@ -1177,24 +1222,30 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     if arr.kind == "sonarr":
         return _season_findings(
             arr, ctx.get("missing", []), rule="missing_items",
-            message="finding.missing_episodes", severity="info")
+            message="finding.missing_episodes", severity="info",
+            ctx=ctx, cfg=cfg,
+            settled_message="finding.missing_episodes_nothing_out_there")
 
     findings = []
     for item in ctx.get("missing", []):
         item_id, title, extra = _wanted_entry(arr, item)
         if not item_id:
             continue
+        done, said, noted = _settled_bits(_settled(
+            ctx, searching_for(arr, "missing_items", item_id), cfg))
         findings.append(Finding(
             rule="missing_items", severity="info", service=arr.kind, title=title,
-            message="finding.missing_items",
-            params={"year": item.get("year") or "?"},
-            data={"item_id": item_id, **extra},
+            message="finding.missing_nothing_out_there" if done
+                    else "finding.missing_items",
+            params={"year": item.get("year") or "?", **said},
+            data={"item_id": item_id, **extra, **noted},
         ))
     return findings
 
 
 def _season_findings(arr: Arr, rows: list[dict], *, rule: str, message: str,
-                     severity: str, extra_params=None) -> list[Finding]:
+                     severity: str, extra_params=None, ctx=None,
+                     cfg=None, settled_message: str = "") -> list[Finding]:
     """One finding per season, carrying every episode in it."""
     findings = []
     for group in _season_groups(rows).values():
@@ -1207,15 +1258,22 @@ def _season_findings(arr: Arr, rows: list[dict], *, rule: str, message: str,
                   "episodes": span or "—"}
         if extra_params:
             params.update(extra_params(group))
+
+        done, said, noted = False, {}, {}
+        if ctx is not None and settled_message:
+            done, said, noted = _settled_bits(_settled(
+                ctx, searching_for(arr, rule, group["series_id"], season),
+                cfg or {}))
         findings.append(Finding(
             rule=rule, severity=severity, service=arr.kind,
             title=f"{series.get('title') or '?'} — {label}",
-            message=message, params=params,
+            message=settled_message if done else message,
+            params={**params, **said},
             data={"item_id": group["series_id"], "season": season,
                   "episode_ids": group["episode_ids"],
                   "count": len(group["episode_ids"]),
                   "quality": ", ".join(group["qualities"]) or None,
-                  "year": series.get("year")},
+                  "year": series.get("year"), **noted},
         ))
     return findings
 
@@ -1258,7 +1316,9 @@ def check_cutoff_unmet(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 
         return _season_findings(arr, rows, rule="cutoff_unmet",
                                 message="finding.cutoff_unmet_season",
-                                severity="info", extra_params=season_extras)
+                                severity="info", extra_params=season_extras,
+                                ctx=ctx, cfg=cfg,
+                                settled_message="finding.cutoff_nothing_better")
 
     findings = []
     for item in ctx.get("below_cutoff", []):
@@ -1266,13 +1326,16 @@ def check_cutoff_unmet(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         if not item_id:
             continue
         profile, cutoff = wanted_for(item)
+        done, said, noted = _settled_bits(_settled(
+            ctx, searching_for(arr, "cutoff_unmet", item_id), cfg))
         findings.append(Finding(
             rule="cutoff_unmet", severity="info", service=arr.kind, title=title,
-            message="finding.cutoff_unmet",
+            message="finding.cutoff_nothing_better" if done
+                    else "finding.cutoff_unmet",
             params={"quality": quality_of(item) or "?",
-                    "profile": profile or "?", "cutoff": cutoff or "?"},
+                    "profile": profile or "?", "cutoff": cutoff or "?", **said},
             data={"item_id": item_id, "quality": quality_of(item),
-                  "profile": profile, "cutoff": cutoff, **extra},
+                  "profile": profile, "cutoff": cutoff, **extra, **noted},
         ))
     return findings
 

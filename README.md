@@ -141,7 +141,17 @@ rule would take — *search for a replacement*, *blocklist and search again*,
 *import* — as a button, with the rest behind a short list beside it. A search
 waits for the answer: it reports what was grabbed and from which indexer, or
 that there was nothing out there. Actions that remove something are marked and
-ask first.
+ask first. One button above the list does the lot, for exactly what the filters
+are showing.
+
+**It also works out when there is nothing better to find.** A title below its
+cutoff used to be reported and searched for again on every pass, for ever. It
+does not have to be told whether a search helped: a title searched for last
+time that is still on the list is one the search did not help, and after a few
+of those the finding says so — "three searches since 4 March have turned up
+nothing better, this is probably the best copy there is" — and stops being
+searched for by itself. The verdict lapses after six months, because the world
+gets new releases.
 
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
@@ -173,11 +183,20 @@ ladder of qualities plus a pile of custom formats whose numbers have to agree
 with one another, and getting it wrong is how a library ends up grabbing the
 same release every hour for a week.
 
-Six questions instead — which resolutions, how good the sound, which languages
-and whether they are compulsory, which codec, what size, may a file be replaced
-— and Correctarr writes the profile and every custom format behind it into
-Radarr and Sonarr. Beside the form is the whole plan: every format, what it is
-worth, and why it is there. Nothing is written until you say so.
+A page of questions instead — which resolutions, **off what** (HDTV, WEBRip,
+WEB-DL, Blu-ray, Remux), how good the sound and whether surround matters, which
+languages and whether they are compulsory, which codec, how much colour, which
+edition, which groups, what size, may a file be replaced — and Correctarr
+writes the profile and every custom format behind it into Radarr and Sonarr.
+Beside the form is the whole plan: every format, what it is worth, and why it
+is there. Nothing is written until you say so.
+
+Two details worth having: asking for Dolby Vision also **refuses it when there
+is no HDR10 layer underneath**, because that plays green on a television that
+cannot read it — and it looks like the best release in the list right up until
+it does. And a refusal cannot be outvoted: the penalty is worked out from the
+bonuses the profile hands out, so a camera recording with the right language
+and a good group on it still cannot score its way past the floor.
 
 **It cannot cause a download loop.** That is a property, not a hope. A loop
 happens when the service believes the file it has is worse than something it

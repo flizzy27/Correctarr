@@ -330,7 +330,8 @@ def test_every_id_the_script_uses_exists_in_the_page():
     # wizard renders is prefixed "w-", so it is covered by the prefix rule
     # below rather than by an ever-growing list.
     created = {"loading", "change-password", "compact", "rerun-setup",
-               "password-form", "pw-current", "pw-new", "pw-repeat"}
+               "password-form", "pw-current", "pw-new", "pw-repeat",
+               "fix-all"}
     used = set(re.findall(r'\$\("#([a-zA-Z0-9_-]+)"\)', JS))
     # "w-" belongs to the setup assistant and "p-" to the profile builder;
     # both draw their own forms, so their ids are not in the page.

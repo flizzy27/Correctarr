@@ -1051,6 +1051,50 @@ def act_on_finding(finding_id: int, body: ActNow, request: Request,
         raise HTTPException(502, str(e)) from e
 
 
+class ActOnMany(BaseModel):
+    """Which findings, and optionally what to do with all of them."""
+    ids: list[int] = Field(default_factory=list, max_length=500)
+    action: str | None = None
+    #: Anything that removes files is left out unless this says otherwise.
+    #: A single button that deletes forty folders because it was pressed once
+    #: is not a convenience.
+    allow_destructive: bool = False
+
+
+@app.post("/api/findings/act")
+def act_on_many(body: ActOnMany, request: Request,
+                _: dict = Depends(require_user)):
+    """Do the same thing to a list of findings.
+
+    Searches are not waited on here. One of them is worth twenty seconds of
+    somebody's attention; forty of them is not, and what came of them shows up
+    in the list on the next pass either way.
+    """
+    if not body.ids:
+        raise _fail(request, 400, "error.nothing_selected")
+
+    rows, skipped = [], 0
+    for finding_id in dict.fromkeys(body.ids):
+        row = store.finding(finding_id)
+        if row is None:
+            continue
+        rule = BY_NAME.get(row.get("rule"))
+        if rule is None:
+            continue
+        offers = [a for a in rule.actions if a != policy.REPORT]
+        if not offers:
+            continue
+        if not body.allow_destructive and set(offers) & policy.DESTRUCTIVE:
+            skipped += 1
+            continue
+        rows.append(row)
+
+    if not rows:
+        raise _fail(request, 400, "error.nothing_to_do")
+    answer = engine.act_many(rows, body.action, language_for(request))
+    return {**answer, "skipped": skipped}
+
+
 @app.get("/api/runs")
 def runs(limit: int = 50, _: dict = Depends(require_user)):
     return store.runs(max(1, min(limit, 200)))
@@ -1235,29 +1279,45 @@ class ProfileWish(BaseModel):
     """What the page asks for. Everything else is worked out from it."""
     name: str = Field(default="Correctarr 1080p", max_length=60)
     resolutions: list[str] = Field(default_factory=lambda: ["1080p"])
-    allow_remux: bool = False
+    sources: list[str] = Field(default_factory=lambda: ["webdl", "bluray"])
     audio: str = "gut"
+    surround: bool = True
     codec: str = "any"
     languages: list[str] = Field(default_factory=lambda: ["de"])
     language_required: bool = False
+    colour: str = "sdr"
+    edition: str = "none"
+    streamers: list[str] = Field(default_factory=list)
+    good_groups: bool = True
+    prefer_repack: bool = True
     allow_3d: bool = False
-    prefer_hdr: bool = False
     block_rubbish: bool = True
+    block_hardcoded_subs: bool = True
+    block_retagged: bool = True
     min_gb: float = 0.0
     max_gb: float = 0.0
     upgrade: bool = True
+    #: What the switch beside the resolutions used to be. Remux is a source
+    #: now; a page cached from an older build still sends this.
+    allow_remux: bool = False
     #: Which services to write it to. Empty means every Radarr and Sonarr.
     services: list[int] = Field(default_factory=list)
 
     def wish(self) -> vprofiles.Wish:
         return vprofiles.Wish(
             name=self.name, resolutions=tuple(self.resolutions),
-            allow_remux=self.allow_remux, audio=self.audio, codec=self.codec,
+            sources=tuple(self.sources), audio=self.audio,
+            surround=self.surround, codec=self.codec,
             languages=tuple(self.languages),
             language_required=self.language_required,
-            allow_3d=self.allow_3d, prefer_hdr=self.prefer_hdr,
+            colour=self.colour, edition=self.edition,
+            streamers=tuple(self.streamers), good_groups=self.good_groups,
+            prefer_repack=self.prefer_repack, allow_3d=self.allow_3d,
             block_rubbish=self.block_rubbish,
-            min_gb=self.min_gb, max_gb=self.max_gb, upgrade=self.upgrade)
+            block_hardcoded_subs=self.block_hardcoded_subs,
+            block_retagged=self.block_retagged,
+            min_gb=self.min_gb, max_gb=self.max_gb, upgrade=self.upgrade,
+            allow_remux=self.allow_remux)
 
 
 @app.get("/api/profiles/options")
@@ -1265,9 +1325,13 @@ def profile_options(_: dict = Depends(require_user)):
     """Everything the page needs to draw itself, and where it can send one."""
     return {
         "resolutions": list(vprofiles.RESOLUTIONS),
+        "sources": list(vprofiles.SOURCES),
         "audio": list(vprofiles.AUDIO_TIERS),
         "codecs": list(vprofiles.CODECS),
         "languages": list(vprofiles.LANGUAGES),
+        "ranges": list(vprofiles.RANGES),
+        "editions": list(vprofiles.EDITIONS),
+        "streamers": list(vprofiles.STREAMERS),
         "mark": vprofiles.MARK,
         "services": [{"id": entry["id"], "name": entry["name"],
                       "kind": entry["kind"]}
@@ -1290,6 +1354,10 @@ def _described(blueprint, language: str) -> dict:
         if "language" in params:
             params["language"] = i18n.t(
                 f"language.{str(params['language']).lower()}", language)
+        for key, prefix in (("source", "profiles_page.source_"),
+                            ("edition", "profiles_page.edition_")):
+            if key in params:
+                params[key] = i18n.t(f"{prefix}{params[key]}", language)
         entry["why"] = i18n.t(source.why, language, **params) if source.why else ""
     out["notes"] = [i18n.t(key, language, **params)
                     for key, params in blueprint.notes]

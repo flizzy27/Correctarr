@@ -28,7 +28,7 @@
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
     "settings": "Schedule, paths, thresholds, appearance",
     "notifications": "Where findings get sent",
-    "profiles": "Six answers, and the rest is worked out"
+    "profiles": "Answer what matters, and the rest is worked out"
   },
   "action": {
     "check_fast": "Quick check",
@@ -160,7 +160,8 @@
     "percent": "%",
     "gb": "GB",
     "mb": "MB",
-    "episodes": "episodes"
+    "episodes": "episodes",
+    "attempts": "searches"
   },
   "severity": {
     "error": "Error",
@@ -236,7 +237,11 @@
     "severity_filter": "Every severity",
     "or_else": "or…",
     "working": "Doing it…",
-    "confirm_destructive": "{action} — this cannot be undone. Go ahead?"
+    "confirm_destructive": "{action} — this cannot be undone. Go ahead?",
+    "fix_all": "Deal with all {count}",
+    "fix_all_help": "Everything in the list as it is filtered right now. Anything that deletes is left out — those have their own button.",
+    "confirm_all": "{count} finding(s): {what}. Go ahead?",
+    "all_done": "{done} done, {failed} failed."
   },
   "queue_page": {
     "title": "Queue",
@@ -423,7 +428,8 @@
     "out_of_range": "“{field}” has to be between {range}.",
     "condition_not_allowed": "This rule has no “{field}” condition.",
     "no_such_finding": "That finding is no longer in the log.",
-    "nothing_to_do": "There is nothing this rule can do about it."
+    "nothing_to_do": "There is nothing this rule can do about it.",
+    "nothing_selected": "Nothing was selected."
   },
   "reason": {
     "marked_failed": "marked as failed",
@@ -473,7 +479,10 @@
     "series_incomplete": "The series has finished airing and {missing} of {total} episodes are still missing. This will not fix itself.",
     "stale_blocklist": "Blocklisted {days} days ago: {release}. The title is still missing, so this refusal may be the reason.",
     "missing_episodes": "{count} episode(s) of season {season} are missing ({episodes}). Monitored and aired, with no file — nothing will look for them until a search is started.",
-    "cutoff_unmet_season": "{count} episode(s) of season {season} ({episodes}) are on disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}. Nothing goes looking for a better copy on its own."
+    "cutoff_unmet_season": "{count} episode(s) of season {season} ({episodes}) are on disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}. Nothing goes looking for a better copy on its own.",
+    "missing_nothing_out_there": "Searched {tries} times since {since} and nothing turned up. It looks like this simply is not available anywhere your indexers can see. Nothing further will be searched for by itself.",
+    "missing_episodes_nothing_out_there": "{count} episode(s) of season {season} ({episodes}) are still missing after {tries} searches since {since}. It looks like they are not out there. Nothing further will be searched for by itself.",
+    "cutoff_nothing_better": "On disk as {quality}. The profile “{profile}” would like {cutoff}, but {tries} searches since {since} have turned up nothing better — this is probably the best copy there is. Nothing further will be searched for by itself."
   },
   "rules": {
     "wrong_year": {
@@ -753,6 +762,10 @@
     "blocklist_stale_days": {
       "label": "Age at which a blocklist entry is questioned",
       "help": "Only entries for titles that are still missing are raised. Zero switches the check off."
+    },
+    "search_attempts": {
+      "label": "Searches before giving up on a title",
+      "help": "After this many fruitless searches for the same thing, the conclusion is drawn that there is no better copy out there, and it stops being searched for by itself. It is still reported, and the button still works. Zero searches for ever."
     }
   },
   "notifications_page": {
@@ -1025,7 +1038,8 @@
     "too_large": "{size} GB is over the limit of {limit} GB",
     "size_unknown": "no size known for this finding",
     "not_confident_enough": "match is {confidence} certain, {needed} required",
-    "confidence_unknown": "no confidence known for this finding"
+    "confidence_unknown": "no confidence known for this finding",
+    "nothing_better": "searched {tries} times already, nothing better exists"
   },
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",
@@ -1046,7 +1060,7 @@
   },
   "profiles_page": {
     "title": "Build a quality profile",
-    "help": "Answer six questions and Correctarr writes the profile and every custom format behind it into Radarr and Sonarr. Anything it writes is named after it, so saving twice changes the same profile instead of leaving a second one.",
+    "help": "Answer what matters to you and Correctarr writes the profile and every custom format behind it into Radarr and Sonarr. Anything it writes is named after it, so saving twice changes the same profile instead of leaving a second one.",
     "preview_title": "What will be created",
     "preview_help": "Nothing is written until you say so. This is every format the profile will have, what each is worth, and why it is there.",
     "name": "Name of the profile",
@@ -1098,7 +1112,35 @@
     "no_loops": "This profile cannot cause a download loop: it never upgrades on score, only up the resolution ladder, which is finite.",
     "format": "Custom format",
     "score": "Points",
-    "nothing_yet": "Nothing selected yet."
+    "nothing_yet": "Nothing selected yet.",
+    "sources": "Where it came from",
+    "sources_help": "A disc rip and a broadcast capture at 1080p are both “1080p” and are not the same thing. Later in the list counts for more.",
+    "source_hdtv": "HDTV",
+    "source_webrip": "WEBRip",
+    "source_webdl": "WEB-DL",
+    "source_bluray": "Blu-ray",
+    "source_remux": "Remux (very large)",
+    "colour": "Colour",
+    "colour_help": "Dolby Vision without an HDR10 layer underneath plays green on a television that does not speak it, so that combination is refused outright.",
+    "colour_sdr": "No preference",
+    "colour_hdr": "Prefer HDR",
+    "colour_dv": "Prefer Dolby Vision",
+    "edition": "Edition",
+    "edition_help": "A preference where more than one cut exists.",
+    "edition_none": "No preference",
+    "edition_extended": "Extended, director's cut, uncut",
+    "edition_theatrical": "Theatrical",
+    "edition_imax": "IMAX or open matte",
+    "channels": "Channels",
+    "surround": "Prefer surround over stereo",
+    "surround_help": "5.1 and upwards, where the release name says so.",
+    "good_groups": "Prefer groups with a reputation",
+    "prefer_repack": "Prefer a repack or proper",
+    "block_hardcoded": "Refuse burned-in subtitles",
+    "block_retagged": "Refuse scrambled and retagged names",
+    "streamers": "Streaming service",
+    "streamers_label": "Prefer these, where it matters",
+    "streamers_help": "Only a preference, and only between releases that are otherwise equal. Leave it empty if you do not mind."
   },
   "profiles": {
     "why": {
@@ -1109,12 +1151,26 @@
       "no_3d": "refuses releases with two pictures in them",
       "rubbish": "refuses cam, screener, disc image and upscale",
       "too_small": "refuses anything under {gb} GB",
-      "too_large": "refuses anything over {gb} GB"
+      "too_large": "refuses anything over {gb} GB",
+      "source": "prefers {source}",
+      "dv": "prefers Dolby Vision",
+      "dv_only": "refuses Dolby Vision with no HDR10 underneath — it plays green on a television that cannot read it",
+      "surround": "prefers surround over stereo",
+      "groups": "prefers groups with a reputation for getting it right",
+      "groups_second": "and these, a little less",
+      "repack": "prefers a release that was put out again, fixed",
+      "edition": "prefers the {edition}",
+      "streamer": "prefers {streamer}",
+      "hardcoded": "refuses subtitles burned into the picture",
+      "retagged": "refuses names that have been scrambled or stripped"
     },
     "note": {
       "language_required": "Only releases whose name states {language} will be grabbed. If your indexers mostly carry other languages, little will arrive.",
       "size_window": "The largest file is not larger than the smallest one, so nothing can fit between them.",
-      "big_files": "2160p without an upper size limit can mean files of 60 GB and more."
+      "big_files": "2160p without an upper size limit can mean files of 60 GB and more.",
+      "x265_at_1080p": "At 1080p the saving from x265 is small, and a fair number of players have to transcode it — which looks worse than the x264 it replaced.",
+      "dv_needs_2160p": "Dolby Vision is almost only released at 2160p.",
+      "remux_only": "Remux only means files of 30 to 80 GB and nothing else will be accepted."
     },
     "problem": {
       "no_quality": "No resolution is selected, so there is nothing the profile could ever accept.",
@@ -1122,7 +1178,8 @@
       "floor_too_high": "The floor ({floor}) is higher than the best a release could score ({best}), so nothing would ever be grabbed.",
       "impossible_size": "The smallest file ({min} GB) is not smaller than the largest ({max} GB).",
       "language_without_one": "A language is required but none is selected.",
-      "bad_pattern": "A pattern could not be compiled: {error}"
+      "bad_pattern": "A pattern could not be compiled: {error}",
+      "no_source": "No source is selected, so there is nothing the profile could ever accept."
     }
   }
 }

@@ -6,8 +6,10 @@ Getting that pile right is the part nobody enjoys. It is also the part that
 goes wrong quietly — a profile that looks sensible can grab the same release
 every hour for a week.
 
-So this asks six questions a person can actually answer — how good, how loud,
-which language, which codec, how big, may it be replaced — and writes the rest.
+So this asks questions a person can actually answer — how many pixels, off
+what, how loud, in which language, from whom, how big, may it be replaced — and
+writes the rest: a ladder narrowed to what was asked for, and two dozen custom
+formats with numbers on them that agree with one another.
 
 Why a profile loops, and what is done about it here
 ---------------------------------------------------
@@ -90,6 +92,34 @@ QUALITY_NAMES: dict[str, tuple[str, ...]] = {
 REMUX_NAMES = ("Bluray-1080p Remux", "Remux-1080p",
                "Bluray-2160p Remux", "Remux-2160p")
 
+#: Where a release came from, worst first. This is the other half of the
+#: ladder: "1080p" says how many pixels, a source says what they were made
+#: from, and a disc rip and a broadcast capture at the same resolution are not
+#: the same thing at all.
+SOURCES = ("hdtv", "webrip", "webdl", "bluray", "remux")
+
+#: Which of the service's quality names belong to each source, per rung.
+SOURCE_NAMES: dict[str, tuple[str, ...]] = {
+    "hdtv": ("HDTV-720p", "HDTV-1080p", "HDTV-2160p"),
+    "webrip": ("WEBRip-720p", "WEBRip-1080p", "WEBRip-2160p"),
+    "webdl": ("WEBDL-720p", "WEBDL-1080p", "WEBDL-2160p"),
+    "bluray": ("Bluray-720p", "Bluray-1080p", "Bluray-2160p"),
+    "remux": ("Bluray-1080p Remux", "Remux-1080p",
+              "Bluray-2160p Remux", "Remux-2160p"),
+}
+
+#: How much colour. "dv" also asks for the HDR10 fallback, because a Dolby
+#: Vision file without one plays green and washed out on a television that
+#: does not speak Dolby Vision — which is most of them.
+RANGES = ("sdr", "hdr", "dv")
+
+#: The services people actually pull from, for anyone who has a preference.
+#: These are release-name markers, not the companies.
+STREAMERS = ("amzn", "nf", "dsnp", "atvp", "max", "hulu", "pcok", "sky")
+
+#: Editions worth preferring when they exist.
+EDITIONS = ("none", "extended", "theatrical", "imax")
+
 #: How good the sound has to be. Four steps, worst first; picking one asks for
 #: it **and** everything above it, with more points the further up it goes.
 AUDIO_TIERS = ("nah", "ok", "gut", "sehr_gut")
@@ -113,36 +143,58 @@ class Wish:
     """The answers. Everything else is derived from these."""
     name: str = "Correctarr 1080p"
     resolutions: tuple[str, ...] = ("1080p",)
-    allow_remux: bool = False
+    sources: tuple[str, ...] = ("webdl", "bluray")
     audio: str = "gut"
+    surround: bool = True
     codec: str = "any"
     languages: tuple[str, ...] = ("de",)
     language_required: bool = False
+    colour: str = "sdr"
+    edition: str = "none"
+    streamers: tuple[str, ...] = ()
+    good_groups: bool = True
+    prefer_repack: bool = True
     allow_3d: bool = False
-    prefer_hdr: bool = False
     block_rubbish: bool = True
+    block_hardcoded_subs: bool = True
+    block_retagged: bool = True
     min_gb: float = 0.0
     max_gb: float = 0.0
     upgrade: bool = True
+
+    #: Kept so a wish stored by an earlier build still loads. Remux is a
+    #: source now, not a switch beside the resolutions.
+    allow_remux: bool = False
 
     def tidy(self) -> Wish:
         """The same wish with anything nonsensical straightened out."""
         resolutions = tuple(r for r in RESOLUTIONS if r in self.resolutions)
         languages = tuple(code for code in LANGUAGES if code in self.languages)
+        sources = tuple(s for s in SOURCES if s in self.sources)
+        if self.allow_remux and "remux" not in sources:
+            sources = (*sources, "remux")
         return Wish(
             name=(self.name or "Correctarr").strip()[:60],
             resolutions=resolutions or ("1080p",),
-            allow_remux=bool(self.allow_remux),
+            sources=sources or ("webdl", "bluray"),
             audio=self.audio if self.audio in AUDIO_TIERS else "gut",
+            surround=bool(self.surround),
             codec=self.codec if self.codec in CODECS else "any",
             languages=languages,
             language_required=bool(self.language_required and languages),
+            colour=self.colour if self.colour in RANGES else "sdr",
+            edition=self.edition if self.edition in EDITIONS else "none",
+            streamers=tuple(x for x in STREAMERS if x in self.streamers),
+            good_groups=bool(self.good_groups),
+            prefer_repack=bool(self.prefer_repack),
             allow_3d=bool(self.allow_3d),
-            prefer_hdr=bool(self.prefer_hdr),
             block_rubbish=bool(self.block_rubbish),
+            block_hardcoded_subs=bool(self.block_hardcoded_subs),
+            block_retagged=bool(self.block_retagged),
             min_gb=max(0.0, min(2000.0, float(self.min_gb or 0))),
             max_gb=max(0.0, min(2000.0, float(self.max_gb or 0))),
             upgrade=bool(self.upgrade),
+            allow_remux="remux" in sources,
         )
 
 
@@ -158,9 +210,23 @@ class Wish:
 WANTED_LANGUAGE = 1000       # the first language asked for
 OTHER_LANGUAGE = 700         # any further one
 AUDIO_STEP = 100             # per step above the one asked for
+SURROUND_BONUS = 80
 CODEC_BONUS = 150
+SOURCE_STEP = 60             # per step up the source order
 HDR_BONUS = 120
-UNWANTED = -3000             # 3D when it is not wanted, rubbish, wrong size
+DV_BONUS = 140
+GROUP_BONUS = 200            # a group with a reputation for getting it right
+GROUP_SECOND = 90
+STREAMER_BONUS = 70
+EDITION_BONUS = 110
+REPACK_BONUS = 60
+#: The least a refusal is ever worth. The real figure is worked out per
+#: profile, because it has to beat every bonus that profile hands out put
+#: together — see :func:`refusal`. A fixed number was wrong the moment the
+#: builder learned a new preference: with enough of them, a release with a
+#: camera in front of the screen could collect more in bonuses than the
+#: refusal took away and be grabbed on merit.
+UNWANTED = -3000
 
 #: How much better a release has to be before anything already on disk is
 #: replaced. Without a step, two releases a few points apart can take turns
@@ -276,8 +342,74 @@ RUBBISH_PATTERN = (r"(?i)(?<![a-z0-9])(cam(rip)?|hdcam|ts|telesync|tc|telecine"
                    r"|scr|screener|dvdscr|workprint|br[. _-]?disk|bdmv|avchd"
                    r"|upscaled?|ai[. _-]?upscale)(?![a-z0-9])")
 
-HDR_PATTERN = (r"(?i)(?<![a-z0-9])(hdr10\+?|hdr|dv|dovi|dolby[. _-]?vision"
-               r"|pq|hlg)(?![a-z0-9])")
+HDR_PATTERN = (r"(?i)(?<![a-z0-9])(hdr10\+?|hdr|pq|hlg)(?![a-z0-9])")
+
+DV_PATTERN = (r"(?i)(?<![a-z0-9])(dv|dovi|dolby[. _-]?vision)(?![a-z0-9])")
+
+#: Dolby Vision carried on its own, with no HDR10 layer underneath it. On a
+#: television that does not speak Dolby Vision — which is most of them — such a
+#: file plays washed out and green. Worth refusing rather than ranking last,
+#: because it looks like the best release in the list right up until it plays.
+DV_NO_FALLBACK = (r"(?i)^(?=.*(?<![a-z0-9])(dv|dovi|dolby[. _-]?vision)(?![a-z0-9]))"
+                  r"(?!.*(?<![a-z0-9])(hdr10|hdr|hybrid)(?![a-z0-9])).*$")
+
+#: Where the picture came from. "WEB-DL" is the stream as it was served;
+#: "WEBRip" is that stream re-encoded by somebody, which is not the same.
+SOURCE_PATTERNS: dict[str, str] = {
+    "hdtv": r"(?i)(?<![a-z0-9])(hdtv|pdtv|dsr|dtheater)(?![a-z0-9])",
+    "webrip": r"(?i)(?<![a-z0-9])(web[. _-]?rip|webhd)(?![a-z0-9])",
+    "webdl": r"(?i)(?<![a-z0-9])(web[. _-]?dl|web(?![. _-]?rip))(?![a-z0-9])",
+    "bluray": r"(?i)(?<![a-z0-9])(blu[. _-]?ray|bd[. _-]?rip|br[. _-]?rip"
+              r"|bdr(?![a-z0-9]))(?![a-z0-9])",
+    "remux": r"(?i)(?<![a-z0-9])(remux)(?![a-z0-9])",
+}
+
+#: Surround, as opposed to two speakers. Written as a channel count because
+#: that is how release names state it.
+SURROUND_PATTERN = (r"(?i)(?<![0-9])(5[. _]?1|7[. _]?1|6[. _]?1"
+                    r"|ddp?5|ddp?7|atmos)(?![0-9])")
+
+#: Groups with a reputation for getting the encode right, in two tiers. Kept
+#: short and uncontroversial on purpose: a long list of names is a list that
+#: goes out of date, and a group that has gone quiet scoring nothing is
+#: harmless while a bad guess is not.
+GOOD_GROUPS_FIRST = (r"(?i)-(framestor|flux|ctrlhd|decibel|hqmux|esir|tayto"
+                     r"|nima4k|zq|blurayd(esu)?m|w4nk3r|hifi|geek)(?![a-z0-9])")
+GOOD_GROUPS_SECOND = (r"(?i)-(sartre|hone|ntb|tepes|t6d|nosivid|dvsux|kitsune"
+                      r"|playweb|scenetime|cmrg|evo(?!lve)|ggez|ggwp|flame"
+                      r"|trollhd|trolluhd)(?![a-z0-9])")
+
+#: Burned into the picture and impossible to switch off.
+HARDCODED_SUBS = (r"(?i)(?<![a-z0-9])(hc|hardcoded|hard[. _-]?sub(bed|s)?"
+                  r"|korsub|vostfr|subbed)(?![a-z0-9])")
+
+#: A name that has been scrambled to get past a filter, or stripped of the
+#: group that made it. What is inside is anybody's guess, and the service
+#: cannot parse it either.
+RETAGGED = (r"(?i)(?<![a-z0-9])(obfuscated|scrambled|postbot|xpost|rartv"
+            r"|rarbg|1xbet|mrn|qxr|nogr(ou)?p|nogrp)(?![a-z0-9])")
+
+#: A release put out again because the first one was broken. Worth a little:
+#: it is the same thing, fixed.
+REPACK_PATTERN = r"(?i)(?<![a-z0-9])(repack[0-9]?|proper[0-9]?|real)(?![a-z0-9])"
+
+EDITION_PATTERNS: dict[str, str] = {
+    "extended": r"(?i)(?<![a-z0-9])(extended|director[' ._-]?s?[. _-]?cut"
+                r"|uncut|unrated|langfassung|final[. _-]?cut)(?![a-z0-9])",
+    "theatrical": r"(?i)(?<![a-z0-9])(theatrical|kinofassung)(?![a-z0-9])",
+    "imax": r"(?i)(?<![a-z0-9])(imax|open[. _-]?matte)(?![a-z0-9])",
+}
+
+STREAMER_PATTERNS: dict[str, str] = {
+    "amzn": r"(?i)(?<![a-z0-9])(amzn|amazon)(?![a-z0-9])",
+    "nf": r"(?i)(?<![a-z0-9])(nf|netflix)(?![a-z0-9])",
+    "dsnp": r"(?i)(?<![a-z0-9])(dsnp|dsny|disney)(?![a-z0-9])",
+    "atvp": r"(?i)(?<![a-z0-9])(atvp|appletv)(?![a-z0-9])",
+    "max": r"(?i)(?<![a-z0-9])(hmax|max|hbo)(?![a-z0-9])",
+    "hulu": r"(?i)(?<![a-z0-9])(hulu)(?![a-z0-9])",
+    "pcok": r"(?i)(?<![a-z0-9])(pcok|peacock)(?![a-z0-9])",
+    "sky": r"(?i)(?<![a-z0-9])(sky(show)?|now[. _-]?tv)(?![a-z0-9])",
+}
 
 
 def _title(pattern: str, *, negate: bool = False,
@@ -315,6 +447,11 @@ def build(wish: Wish) -> Blueprint:
             conditions=[_title(AUDIO_PATTERNS[tier])],
             why="profiles.why.audio", why_params={"tier": tier}))
 
+    if wish.surround:
+        formats.append(Format(
+            name="Surround", score=SURROUND_BONUS,
+            conditions=[_title(SURROUND_PATTERN)], why="profiles.why.surround"))
+
     # -- codec -------------------------------------------------------------
     if wish.codec != "any":
         formats.append(Format(
@@ -322,43 +459,104 @@ def build(wish: Wish) -> Blueprint:
             conditions=[_title(CODEC_PATTERNS[wish.codec])],
             why="profiles.why.codec", why_params={"codec": wish.codec}))
 
-    # -- range -------------------------------------------------------------
-    if wish.prefer_hdr:
+    # -- where it came from --------------------------------------------------
+    # A preference in the order the sources are listed in, rather than a
+    # requirement: the ladder already refuses anything not asked for, and this
+    # decides between two releases that are both acceptable.
+    for step, source in enumerate(
+            [s for s in SOURCES if s in wish.sources], start=1):
+        formats.append(Format(
+            name=f"Source {source}", score=SOURCE_STEP * step,
+            conditions=[_title(SOURCE_PATTERNS[source])],
+            why="profiles.why.source", why_params={"source": source}))
+
+    # -- how much colour -----------------------------------------------------
+    if wish.colour in ("hdr", "dv"):
         formats.append(Format(
             name="HDR", score=HDR_BONUS,
             conditions=[_title(HDR_PATTERN)], why="profiles.why.hdr"))
+    if wish.colour == "dv":
+        formats.append(Format(
+            name="Dolby Vision", score=DV_BONUS,
+            conditions=[_title(DV_PATTERN)], why="profiles.why.dv"))
 
-    # -- what is not wanted ------------------------------------------------
-    # These are worth less than nothing by a margin no collection of bonuses
-    # can climb back over, so a release carrying one is refused rather than
-    # merely ranked last. Ranking it last still grabs it when it is the only
-    # thing there.
+    # -- who made it ---------------------------------------------------------
+    if wish.good_groups:
+        formats.append(Format(
+            name="Known good group", score=GROUP_BONUS,
+            conditions=[_title(GOOD_GROUPS_FIRST)], why="profiles.why.groups"))
+        formats.append(Format(
+            name="Solid group", score=GROUP_SECOND,
+            conditions=[_title(GOOD_GROUPS_SECOND)],
+            why="profiles.why.groups_second"))
+
+    if wish.prefer_repack:
+        formats.append(Format(
+            name="Repack or proper", score=REPACK_BONUS,
+            conditions=[_title(REPACK_PATTERN)], why="profiles.why.repack"))
+
+    if wish.edition != "none":
+        formats.append(Format(
+            name=f"Edition {wish.edition}", score=EDITION_BONUS,
+            conditions=[_title(EDITION_PATTERNS[wish.edition])],
+            why="profiles.why.edition", why_params={"edition": wish.edition}))
+
+    for code in wish.streamers:
+        formats.append(Format(
+            name=f"Source {code.upper()}", score=STREAMER_BONUS,
+            conditions=[_title(STREAMER_PATTERNS[code])],
+            why="profiles.why.streamer", why_params={"streamer": code.upper()}))
+
+    # -- the floor -----------------------------------------------------------
+    #
+    # What a release has to clear to be grabbed at all. Zero unless a language
+    # was made compulsory, in which case it is exactly the first language's
+    # score: enough to demand it, never more.
+    min_score = WANTED_LANGUAGE if wish.language_required else 0
+
+    # -- what is not wanted --------------------------------------------------
+    # Worth less than nothing by a margin no collection of bonuses can climb
+    # back over, so a release carrying one is *refused* rather than merely
+    # ranked last — ranking it last still grabs it when it is the only thing
+    # there. The margin is worked out from the bonuses this profile actually
+    # hands out, because a fixed number stops being enough as soon as there
+    # are more preferences than there used to be.
+    refuse = refusal(formats, min_score)
+
+    if wish.colour in ("hdr", "dv"):
+        # Refused rather than ranked last, because it looks like the best
+        # release in the list right up until it plays green on a television
+        # that does not speak Dolby Vision.
+        formats.append(Format(
+            name="Dolby Vision without fallback", score=refuse,
+            conditions=[_title(DV_NO_FALLBACK)], why="profiles.why.dv_only"))
     if not wish.allow_3d:
         formats.append(Format(
-            name="3D", score=UNWANTED,
+            name="3D", score=refuse,
             conditions=[_title(THREE_D_PATTERN)], why="profiles.why.no_3d"))
     if wish.block_rubbish:
         formats.append(Format(
-            name="Cam and upscale", score=UNWANTED,
+            name="Cam and upscale", score=refuse,
             conditions=[_title(RUBBISH_PATTERN)], why="profiles.why.rubbish"))
+    if wish.block_hardcoded_subs:
+        formats.append(Format(
+            name="Hardcoded subtitles", score=refuse,
+            conditions=[_title(HARDCODED_SUBS)], why="profiles.why.hardcoded"))
+    if wish.block_retagged:
+        formats.append(Format(
+            name="Retagged or scrambled", score=refuse,
+            conditions=[_title(RETAGGED)], why="profiles.why.retagged"))
 
     if wish.min_gb > 0:
         formats.append(Format(
-            name=f"Under {_tidy(wish.min_gb)} GB", score=UNWANTED,
+            name=f"Under {_tidy(wish.min_gb)} GB", score=refuse,
             conditions=[_size(0.0, wish.min_gb)],
             why="profiles.why.too_small", why_params={"gb": _tidy(wish.min_gb)}))
     if wish.max_gb > 0:
         formats.append(Format(
-            name=f"Over {_tidy(wish.max_gb)} GB", score=UNWANTED,
+            name=f"Over {_tidy(wish.max_gb)} GB", score=refuse,
             conditions=[_size(wish.max_gb, 2000.0)],
             why="profiles.why.too_large", why_params={"gb": _tidy(wish.max_gb)}))
-
-    # -- the two numbers that decide whether this can loop -----------------
-    #
-    # The floor a release has to clear to be grabbed at all. Zero unless a
-    # language was made compulsory, in which case it is exactly the first
-    # language's score: enough to demand it, never more.
-    min_score = WANTED_LANGUAGE if wish.language_required else 0
 
     # And the one that matters. "Keep upgrading until the file scores this."
     # Set to the same floor, which says: a file that was good enough to fetch
@@ -374,10 +572,32 @@ def build(wish: Wish) -> Blueprint:
         notes.append(("profiles.note.size_window", {}))
     if "2160p" in wish.resolutions and not wish.max_gb:
         notes.append(("profiles.note.big_files", {}))
+    if wish.codec == "x265" and "2160p" not in wish.resolutions:
+        # Widely held, and true: at 1080p the saving is small and a fair number
+        # of players and televisions have to transcode it, which looks worse
+        # than the x264 it replaced.
+        notes.append(("profiles.note.x265_at_1080p", {}))
+    if wish.colour == "dv" and "2160p" not in wish.resolutions:
+        notes.append(("profiles.note.dv_needs_2160p", {}))
+    if wish.sources == ("remux",):
+        notes.append(("profiles.note.remux_only", {}))
 
     return Blueprint(wish=wish, formats=formats, min_score=min_score,
                      cutoff_score=cutoff_score, resolutions=wish.resolutions,
                      notes=notes)
+
+
+def refusal(formats: list[Format], min_score: int) -> int:
+    """What one unwanted marker has to be worth for the answer to be no.
+
+    Every bonus the profile can hand out, added together, plus the floor, plus
+    one. A release carrying a single refused marker then cannot reach the floor
+    however many other boxes it ticks — which is the difference between "we
+    would rather not" and "no".
+    """
+    bonuses = sum(f.score for f in formats if f.score > 0)
+    needed = bonuses + max(0, min_score) + 1
+    return -max(needed, -UNWANTED)
 
 
 def _tidy(value: float) -> str:
@@ -399,6 +619,8 @@ def check(blueprint: Blueprint) -> list[tuple[str, dict]]:
 
     if not blueprint.resolutions:
         problems.append(("profiles.problem.no_quality", {}))
+    if not wish.sources:
+        problems.append(("profiles.problem.no_source", {}))
 
     # A target above the floor is the loop. Stated as a check rather than left
     # to the builder so that it stays true if the builder ever changes.
@@ -419,6 +641,15 @@ def check(blueprint: Blueprint) -> list[tuple[str, dict]]:
 
     if wish.language_required and not wish.languages:
         problems.append(("profiles.problem.language_without_one", {}))
+
+    # The refusals have to beat every bonus put together. Otherwise a camera
+    # recording with the right language, the right sound and a well-regarded
+    # group on it scores its way over the floor and is grabbed on merit.
+    bonuses = sum(f.score for f in blueprint.formats if f.score > 0)
+    worst = min((f.score for f in blueprint.formats if f.score < 0), default=0)
+    if worst and bonuses + worst >= blueprint.min_score:
+        problems.append(("profiles.problem.refusal_too_weak", {
+            "refusal": worst, "bonuses": bonuses}))
 
     for pattern in _every_pattern(blueprint):
         try:
@@ -484,18 +715,30 @@ def custom_format_body(schemas: list[dict], entry: Format) -> dict:
 
 
 def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
-                  allow_remux: bool) -> tuple[list[dict], int | None]:
+                  allow_remux: bool,
+                  sources: tuple[str, ...] = ()) -> tuple[list[dict], int | None]:
     """The ladder, and the rung to stop at.
 
     Built from the ladder the service itself hands out, with everything the
     person did not ask for switched off. The numbers behind the names are not
     the same in Radarr and Sonarr and have moved between versions, so nothing
     here is hard coded except the names.
+
+    Two things narrow it: the resolutions, and where the picture came from. A
+    disc rip and a broadcast capture at 1080p are both "1080p" and are not the
+    same thing, so asking for one without the other has to be possible.
     """
+    allowed_sources: set[str] = set()
+    if sources:
+        for source in sources:
+            allowed_sources |= {n.lower() for n in SOURCE_NAMES.get(source, ())}
+
     names: set[str] = set()
     for rung in wanted:
         for name in QUALITY_NAMES.get(rung, ()):
             if not allow_remux and name in REMUX_NAMES:
+                continue
+            if allowed_sources and name.lower() not in allowed_sources:
                 continue
             names.add(name.lower())
 
@@ -606,7 +849,8 @@ def apply_to(arr, blueprint: Blueprint) -> dict:
     schema = arr.quality_profile_schema()
     items, best = quality_items(schema.get("items") or [],
                                 blueprint.resolutions,
-                                blueprint.wish.allow_remux)
+                                blueprint.wish.allow_remux,
+                                blueprint.wish.sources)
     if best is None:
         raise ValueError("profiles.problem.no_quality")
 

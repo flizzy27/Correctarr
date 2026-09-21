@@ -167,6 +167,11 @@ FIELDS: tuple[Field, ...] = (
           minimum=1, maximum=100, unit="unit.episodes"),
     Field("blocklist_stale_days", "number", "detection", 60,
           minimum=0, maximum=3650, unit="unit.days"),
+    # After this many fruitless searches for the same title, the conclusion is
+    # drawn that there is nothing better out there. Zero switches the whole
+    # judgement off and searches for ever.
+    Field("search_attempts", "number", "detection", 3,
+          minimum=0, maximum=50, unit="unit.attempts"),
     # Empty on purpose: there is no sensible default for which audio languages
     # matter. The rule stays quiet until somebody says.
     Field("audio_languages", "text", "detection", ""),

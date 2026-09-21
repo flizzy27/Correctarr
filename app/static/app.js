@@ -443,9 +443,63 @@ function renderFindings() {
     (e) => (!rule || e.rule === rule) &&
            (!severity || e.severity === severity) &&
            (!search || (e.title + e.description).toLowerCase().includes(search)));
+  renderFixAll(rows);
   $("#findings-list").innerHTML = rows.length
     ? rows.map(entryHtml).join("")
     : `<p class="empty">${esc(t("findings_page.empty"))}</p>`;
+}
+
+/* Everything in the list at once.
+ *
+ * "In the list" is the whole design. It acts on what is in front of you, after
+ * the filters, not on everything in the store — so narrowing to one rule and
+ * pressing it means that rule, and nothing else can be swept up by accident.
+ *
+ * Anything that deletes is left out. A single button that removes forty
+ * folders because it was pressed once is not a convenience, and there is a
+ * separate button on each of those findings for whoever means it. */
+function actionable(rows) {
+  return rows.filter((e) => e.id && (e.can_do || []).length
+                            && !(e.destructive || []).length);
+}
+
+function renderFixAll(rows) {
+  const can = actionable(rows);
+  const bar = $("#findings-bulk");
+  if (!can.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = `
+    <button class="btn small primary" id="fix-all">${
+      esc(t("findings_page.fix_all", { count: can.length }))}</button>
+    <span class="muted">${esc(t("findings_page.fix_all_help"))}</span>`;
+  $("#fix-all").addEventListener("click", () => fixAll(can));
+}
+
+async function fixAll(rows) {
+  const what = [...new Set(rows.map((e) => e.suggested || e.can_do[0]))]
+    .map((a) => t("policy.action." + a)).join(", ");
+  if (!confirm(t("findings_page.confirm_all",
+                 { count: rows.length, what }))) return;
+
+  const button = $("#fix-all");
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = t("findings_page.working");
+  try {
+    const answer = await post("api/findings/act",
+                              { ids: rows.map((e) => e.id) });
+    toast(t("findings_page.all_done",
+            { done: answer.done, failed: answer.failed }),
+          answer.failed ? "warn" : "good");
+    // Each row now says something different, so the whole list is refetched
+    // rather than patched in forty places.
+    await loadFindings();
+  } catch (error) {
+    failed(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
 }
 
 /* ================================================================= queue */
@@ -755,9 +809,14 @@ let profileOptions = null;
 let profileWish = null;
 
 const DEFAULT_WISH = {
-  name: "Correctarr 1080p", resolutions: ["1080p"], allow_remux: false,
-  audio: "gut", codec: "any", languages: ["de"], language_required: false,
-  allow_3d: false, prefer_hdr: false, block_rubbish: true,
+  name: "Correctarr 1080p", resolutions: ["1080p"],
+  sources: ["webdl", "bluray"],
+  audio: "gut", surround: true, codec: "any",
+  languages: ["de"], language_required: false,
+  colour: "sdr", edition: "none", streamers: [],
+  good_groups: true, prefer_repack: true,
+  allow_3d: false, block_rubbish: true,
+  block_hardcoded_subs: true, block_retagged: true,
   min_gb: 0, max_gb: 0, upgrade: true, services: [],
 };
 
@@ -791,6 +850,13 @@ function renderProfileForm() {
         <div class="help">${esc(t("profiles_page.resolutions_help"))}</div>
       </div>
       <div class="field">
+        <label>${esc(t("profiles_page.sources"))}</label>
+        <div class="chips">${o.sources.map((src) => chip(
+          `src-${src}`, t("profiles_page.source_" + src),
+          w.sources.includes(src), `data-p-source="${esc(src)}"`)).join("")}</div>
+        <div class="help">${esc(t("profiles_page.sources_help"))}</div>
+      </div>
+      <div class="field">
         <label>${esc(t("profiles_page.codec"))}</label>
         <select data-p="codec">${o.codecs.map((c) =>
           `<option value="${esc(c)}"${w.codec === c ? " selected" : ""}>${
@@ -798,15 +864,34 @@ function renderProfileForm() {
         <div class="help">${esc(t("profiles_page.codec_help"))}</div>
       </div>
       <div class="field">
+        <label>${esc(t("profiles_page.colour"))}</label>
+        <select data-p="colour">${o.ranges.map((r) =>
+          `<option value="${esc(r)}"${w.colour === r ? " selected" : ""}>${
+            esc(t("profiles_page.colour_" + r))}</option>`).join("")}</select>
+        <div class="help">${esc(t("profiles_page.colour_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.edition"))}</label>
+        <select data-p="edition">${o.editions.map((e) =>
+          `<option value="${esc(e)}"${w.edition === e ? " selected" : ""}>${
+            esc(t("profiles_page.edition_" + e))}</option>`).join("")}</select>
+        <div class="help">${esc(t("profiles_page.edition_help"))}</div>
+      </div>
+      <div class="field">
         <label>${esc(t("profiles_page.extras"))}</label>
-        ${switchField(t("profiles_page.allow_remux"), 'data-p="allow_remux"',
-                      w.allow_remux, "p-remux")}
-        ${switchField(t("profiles_page.prefer_hdr"), 'data-p="prefer_hdr"',
-                      w.prefer_hdr, "p-hdr")}
+        ${switchField(t("profiles_page.good_groups"), 'data-p="good_groups"',
+                      w.good_groups, "p-groups")}
+        ${switchField(t("profiles_page.prefer_repack"), 'data-p="prefer_repack"',
+                      w.prefer_repack, "p-repack")}
         ${switchField(t("profiles_page.allow_3d"), 'data-p="allow_3d"',
                       w.allow_3d, "p-3d")}
         ${switchField(t("profiles_page.block_rubbish"), 'data-p="block_rubbish"',
                       w.block_rubbish, "p-rubbish")}
+        ${switchField(t("profiles_page.block_hardcoded"),
+                      'data-p="block_hardcoded_subs"', w.block_hardcoded_subs,
+                      "p-hc")}
+        ${switchField(t("profiles_page.block_retagged"),
+                      'data-p="block_retagged"', w.block_retagged, "p-retag")}
       </div>
     </div>
 
@@ -819,6 +904,12 @@ function renderProfileForm() {
           `aud-${a}`, t("profiles_page.audio_" + a), w.audio === a,
           `data-p-audio="${esc(a)}"`, true)).join("")}</div>
         <div class="help">${esc(t("profiles_page.audio_help"))}</div>
+      </div>
+      <div class="field">
+        <label>${esc(t("profiles_page.channels"))}</label>
+        ${switchField(t("profiles_page.surround"), 'data-p="surround"',
+                      w.surround, "p-surround")}
+        <div class="help">${esc(t("profiles_page.surround_help"))}</div>
       </div>
     </div>
 
@@ -837,6 +928,18 @@ function renderProfileForm() {
         ${switchField(t("profiles_page.language_required_label"),
                       'data-p="language_required"', w.language_required, "p-lang-req")}
         <div class="help">${esc(t("profiles_page.language_required_help"))}</div>
+      </div>
+    </div>
+
+    <h3 class="rule-group-head" style="margin-top:20px">${
+      esc(t("profiles_page.streamers"))}</h3>
+    <div class="fields">
+      <div class="field wide">
+        <label>${esc(t("profiles_page.streamers_label"))}</label>
+        <div class="chips">${o.streamers.map((code) => chip(
+          `str-${code}`, code.toUpperCase(), w.streamers.includes(code),
+          `data-p-streamer="${esc(code)}"`)).join("")}</div>
+        <div class="help">${esc(t("profiles_page.streamers_help"))}</div>
       </div>
     </div>
 
@@ -904,6 +1007,10 @@ function onChipClicked(event) {
   const w = profileWish;
   if (chipElement.dataset.pRes !== undefined) {
     w.resolutions = toggleIn(w.resolutions, chipElement.dataset.pRes);
+  } else if (chipElement.dataset.pSource !== undefined) {
+    w.sources = toggleIn(w.sources, chipElement.dataset.pSource);
+  } else if (chipElement.dataset.pStreamer !== undefined) {
+    w.streamers = toggleIn(w.streamers, chipElement.dataset.pStreamer);
   } else if (chipElement.dataset.pLang !== undefined) {
     w.languages = toggleIn(w.languages, chipElement.dataset.pLang);
   } else if (chipElement.dataset.pAudio !== undefined) {

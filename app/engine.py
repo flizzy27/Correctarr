@@ -38,6 +38,7 @@ from .indexers import build_views, rate
 from .matching import build_candidates
 from .prowlarr import Prowlarr, ProwlarrError
 from .rules import ALL, Finding
+from .rules import searching_for as rules_searching_for
 from .sab import Sab, SabError
 from .storage import Store
 
@@ -454,11 +455,30 @@ class Engine:
         # Searching a whole series to fill one gap makes Sonarr query every
         # indexer for every episode it already has. Where the finding knows
         # which episodes are missing, ask for those.
+        self._note_search(arr, finding)
         if by_episode:
             arr.search_episodes(episodes)
             return done("action.result.search_episodes", count=len(episodes))
         arr.search([item_id])
         return done("action.result.search_started")
+
+    def _note_search(self, arr: Arr, finding: Finding) -> None:
+        """Count one search for this title.
+
+        Whether it helped is not recorded, because it does not have to be: the
+        next full pass answers that for free. A title searched for last time
+        that is still on the list is a title the search did not help, and after
+        a few of those there is a conclusion to draw.
+        """
+        item_id = finding.data.get("item_id")
+        if not item_id:
+            return
+        key = rules_searching_for(arr, finding.rule, item_id,
+                                  finding.data.get("season"))
+        try:
+            self.store.note_attempt(key)
+        except Exception:                                       # noqa: BLE001
+            log.exception("Could not count the search for %s", key)
 
     def _act_refresh(self, arr: Arr, finding: Finding, cfg: dict,
                      is_dry: bool) -> policy.Outcome | None:
@@ -772,6 +792,50 @@ class Engine:
     #: failure, because it usually is.
     SEARCH_PATIENCE = 25.0
 
+    def act_many(self, rows: list[dict], action: str | None,
+                 language: str = "en") -> dict:
+        """Do the same to a list of findings, opening the services once.
+
+        The point is the "once". Acting on forty findings one call at a time
+        meant contacting every service forty times over just to find out it was
+        still there — on an unreachable one that is forty timeouts in a row,
+        and the page waits through all of them.
+
+        A search is not waited on here either. One search is worth twenty
+        seconds of somebody's attention; forty of them is not, and the answer
+        arrives in the findings list on the next pass regardless.
+        """
+        services = self._reachable_services()
+        results, done_count = [], 0
+        try:
+            for row in rows:
+                try:
+                    answer = self._act_one(row, action, services, language,
+                                           verify=False)
+                    done_count += 1 if answer["state"] == "done" else 0
+                except ValueError as e:
+                    answer = {"state": "failed", "result": str(e),
+                              "action": action or ""}
+                except ArrError as e:
+                    answer = {"state": "failed", "result": str(e)[:200],
+                              "action": action or ""}
+                results.append({"id": row.get("id"), **answer})
+        finally:
+            for arr in services:
+                arr.close()
+        return {"ok": True, "done": done_count,
+                "failed": len(results) - done_count, "results": results}
+
+    def _reachable_services(self) -> list[Arr]:
+        services = []
+        for arr in self.arr_services():
+            ok, _info = arr.reachable()
+            if ok:
+                services.append(arr)
+            else:
+                arr.close()
+        return services
+
     def act_now(self, row: dict, action: str | None,
                 language: str = "en") -> dict:
         """Carry out one action on one recorded finding, because somebody asked.
@@ -783,6 +847,16 @@ class Engine:
         what the rule is *allowed* to do: an action outside that list is
         refused here exactly as it is refused when it is configured.
         """
+        services = self._reachable_services()
+        try:
+            return self._act_one(row, action, services, language, verify=True)
+        finally:
+            for arr in services:
+                arr.close()
+
+    def _act_one(self, row: dict, action: str | None, services: list[Arr],
+                 language: str, *, verify: bool) -> dict:
+        """One finding, against connections somebody else opened and closes."""
         finding = _from_row(row)
         rule = next((r for r in ALL if r.name == finding.rule), None)
         if rule is None:
@@ -794,47 +868,36 @@ class Engine:
             raise ValueError("error.nothing_to_do")
 
         cfg = {**self.config(), "dry_run": False}
-        services: list[Arr] = []
+        target = self._target_for(finding, services, self._lead_service(services))
+        if target is None:
+            raise ValueError("error.no_services")
+
+        started = time.time()
         try:
-            for arr in self.arr_services():
-                ok, _info = arr.reachable()
-                if ok:
-                    services.append(arr)
-                else:
-                    arr.close()
-            target = self._target_for(finding, services, self._lead_service(services))
-            if target is None:
-                raise ValueError("error.no_services")
+            outcome = self._perform(chosen, target, finding, cfg)
+        except ArrError as e:
+            outcome = failed("action.result.service_refused", error=str(e)[:200])
+        except Exception as e:                              # noqa: BLE001
+            log.exception("Acting on %s by hand failed", finding.rule)
+            outcome = failed("action.result.service_refused", error=str(e)[:200])
 
-            started = time.time()
-            try:
-                outcome = self._perform(chosen, target, finding, cfg)
-            except ArrError as e:
-                outcome = failed("action.result.service_refused", error=str(e)[:200])
-            except Exception as e:                              # noqa: BLE001
-                log.exception("Acting on %s by hand failed", finding.rule)
-                outcome = failed("action.result.service_refused", error=str(e)[:200])
+        if outcome is None:
+            raise ValueError("error.nothing_to_do")
 
-            if outcome is None:
-                raise ValueError("error.nothing_to_do")
+        answer = {"ok": outcome.state != "failed", "action": chosen,
+                  "state": outcome.state,
+                  "result": outcome.text(language),
+                  "outcome": outcome.as_dict()}
+        if verify and outcome.state == "done" and chosen in (
+                "search", "blocklist_and_search", "unblocklist"):
+            answer["found"] = self._what_the_search_found(
+                target, finding, started, language)
 
-            answer = {"ok": outcome.state != "failed", "action": chosen,
-                      "state": outcome.state,
-                      "result": outcome.text(language),
-                      "outcome": outcome.as_dict()}
-            if chosen in ("search", "blocklist_and_search", "unblocklist") \
-                    and outcome.state == "done":
-                answer["found"] = self._what_the_search_found(
-                    target, finding, started, language)
-
-            data = {**finding.data, "_action": outcome.as_dict(), "_by_hand": True}
-            data.pop("_held", None)
-            data.pop("_held_params", None)
-            self.store.note_action(int(row["id"]), outcome.text("en"), data)
-            return answer
-        finally:
-            for arr in services:
-                arr.close()
+        data = {**finding.data, "_action": outcome.as_dict(), "_by_hand": True}
+        data.pop("_held", None)
+        data.pop("_held_params", None)
+        self.store.note_action(int(row["id"]), outcome.text("en"), data)
+        return answer
 
     @staticmethod
     def suggested_action(rule, finding: Finding) -> str:
@@ -1078,6 +1141,9 @@ class Engine:
         try:
             self.store.prune_seen(30)
             self.store.prune_sessions()
+            # "There is nothing better out there" is true about the world on
+            # the day it was decided, and the world gets new releases.
+            self.store.prune_attempts(180)
             self.store.trim_findings(keep=int(cfg.get("log_keep", 20000)),
                                      days=int(cfg.get("log_days", 90)))
         except Exception:                                       # noqa: BLE001

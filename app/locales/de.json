@@ -28,7 +28,7 @@
     "services": "Radarr, Sonarr, SABnzbd, Prowlarr",
     "settings": "Takt, Pfade, Schwellen, Darstellung",
     "notifications": "Wohin die Funde gehen",
-    "profiles": "Sechs Antworten, den Rest erledigt Correctarr"
+    "profiles": "Sagen, worauf es ankommt — den Rest erledigt Correctarr"
   },
   "action": {
     "check_fast": "Schnell prüfen",
@@ -160,7 +160,8 @@
     "percent": "%",
     "gb": "GB",
     "mb": "MB",
-    "episodes": "Folgen"
+    "episodes": "Folgen",
+    "attempts": "Suchen"
   },
   "severity": {
     "error": "Fehler",
@@ -236,7 +237,11 @@
     "severity_filter": "Jede Dringlichkeit",
     "or_else": "oder …",
     "working": "Wird gemacht …",
-    "confirm_destructive": "{action} — das lässt sich nicht rückgängig machen. Trotzdem?"
+    "confirm_destructive": "{action} — das lässt sich nicht rückgängig machen. Trotzdem?",
+    "fix_all": "Alle {count} erledigen",
+    "fix_all_help": "Alles, was gerade in der Liste steht — gefiltert wie sie ist. Löschendes bleibt außen vor, dafür gibt es den Knopf am Fund selbst.",
+    "confirm_all": "{count} Fund(e): {what}. Loslegen?",
+    "all_done": "{done} erledigt, {failed} fehlgeschlagen."
   },
   "queue_page": {
     "title": "Warteschlange",
@@ -423,7 +428,8 @@
     "out_of_range": "„{field}“ muss zwischen {range} liegen.",
     "condition_not_allowed": "Diese Regel hat keine Bedingung „{field}“.",
     "no_such_finding": "Dieser Fund steht nicht mehr im Protokoll.",
-    "nothing_to_do": "Diese Regel kann daran nichts ändern."
+    "nothing_to_do": "Diese Regel kann daran nichts ändern.",
+    "nothing_selected": "Es wurde nichts ausgewählt."
   },
   "reason": {
     "marked_failed": "als fehlgeschlagen gekennzeichnet",
@@ -473,7 +479,10 @@
     "series_incomplete": "Die Serie ist abgeschlossen, und {missing} von {total} Folgen fehlen weiterhin. Das erledigt sich nicht von selbst.",
     "stale_blocklist": "Vor {days} Tagen gesperrt: {release}. Der Titel fehlt immer noch — möglicherweise genau deshalb.",
     "missing_episodes": "{count} Folge(n) der Staffel {season} fehlen ({episodes}). Überwacht und ausgestrahlt, aber ohne Datei — von allein sucht niemand danach.",
-    "cutoff_unmet_season": "{count} Folge(n) der Staffel {season} ({episodes}) liegen als {quality} vor. Das Profil „{profile}“ bessert bis {cutoff} nach. Von allein sucht niemand eine bessere Kopie."
+    "cutoff_unmet_season": "{count} Folge(n) der Staffel {season} ({episodes}) liegen als {quality} vor. Das Profil „{profile}“ bessert bis {cutoff} nach. Von allein sucht niemand eine bessere Kopie.",
+    "missing_nothing_out_there": "Seit {since} {tries}-mal gesucht, ohne Ergebnis. Es sieht so aus, als gäbe es das bei Ihren Indexern schlicht nicht. Von allein wird nicht weiter gesucht.",
+    "missing_episodes_nothing_out_there": "{count} Folge(n) der Staffel {season} ({episodes}) fehlen auch nach {tries} Suchen seit {since}. Es sieht so aus, als gäbe es sie nicht. Von allein wird nicht weiter gesucht.",
+    "cutoff_nothing_better": "Liegt als {quality} vor. Das Profil „{profile}“ hätte gern {cutoff}, aber {tries} Suchen seit {since} haben nichts Besseres gebracht — das ist vermutlich die beste Kopie, die es gibt. Von allein wird nicht weiter gesucht."
   },
   "rules": {
     "wrong_year": {
@@ -753,6 +762,10 @@
     "blocklist_stale_days": {
       "label": "Alter, ab dem eine Sperre hinterfragt wird",
       "help": "Gemeldet werden nur Einträge zu Titeln, die weiterhin fehlen. Null schaltet die Prüfung ab."
+    },
+    "search_attempts": {
+      "label": "Suchen, bis ein Titel aufgegeben wird",
+      "help": "Nach so vielen erfolglosen Suchen nach derselben Sache wird geschlossen, dass es keine bessere Kopie gibt, und von allein wird nicht mehr gesucht. Gemeldet wird es weiter, und der Knopf geht auch noch. Null sucht ewig."
     }
   },
   "notifications_page": {
@@ -1025,7 +1038,8 @@
     "too_large": "{size} GB liegt über der Grenze von {limit} GB",
     "size_unknown": "zu diesem Fund ist keine Größe bekannt",
     "not_confident_enough": "Zuordnung ist zu {confidence} sicher, verlangt sind {needed}",
-    "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt"
+    "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt",
+    "nothing_better": "schon {tries}-mal gesucht, es gibt nichts Besseres"
   },
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",
@@ -1046,7 +1060,7 @@
   },
   "profiles_page": {
     "title": "Ein Qualitätsprofil bauen",
-    "help": "Sechs Fragen beantworten — Correctarr schreibt das Profil und alle Custom Formats dahinter in Radarr und Sonarr. Alles, was dabei entsteht, trägt seinen Namen, deshalb ändert ein zweites Speichern dasselbe Profil und legt kein weiteres an.",
+    "help": "Sagen Sie, worauf es Ihnen ankommt — Correctarr schreibt das Profil und alle Custom Formats dahinter in Radarr und Sonarr. Alles, was dabei entsteht, trägt seinen Namen, deshalb ändert ein zweites Speichern dasselbe Profil und legt kein weiteres an.",
     "preview_title": "Was angelegt wird",
     "preview_help": "Geschrieben wird erst, wenn Sie es sagen. Hier steht jedes Format, das das Profil bekommt, was es wert ist und warum es da ist.",
     "name": "Name des Profils",
@@ -1098,7 +1112,35 @@
     "no_loops": "Dieses Profil kann keine Download-Schleife auslösen: es bessert nie nach Punkten nach, sondern nur die Auflösungsleiter hinauf, und die ist endlich.",
     "format": "Custom Format",
     "score": "Punkte",
-    "nothing_yet": "Noch nichts ausgewählt."
+    "nothing_yet": "Noch nichts ausgewählt.",
+    "sources": "Woher es kommt",
+    "sources_help": "Ein Disc-Rip und ein Fernsehmitschnitt sind beide „1080p“ und trotzdem nicht dasselbe. Weiter hinten in der Liste zählt mehr.",
+    "source_hdtv": "HDTV",
+    "source_webrip": "WEBRip",
+    "source_webdl": "WEB-DL",
+    "source_bluray": "Blu-ray",
+    "source_remux": "Remux (sehr groß)",
+    "colour": "Farbe",
+    "colour_help": "Dolby Vision ohne HDR10 darunter läuft auf einem Fernseher, der es nicht kann, grünstichig — diese Kombination wird deshalb ganz abgelehnt.",
+    "colour_sdr": "Keine Vorliebe",
+    "colour_hdr": "HDR bevorzugen",
+    "colour_dv": "Dolby Vision bevorzugen",
+    "edition": "Fassung",
+    "edition_help": "Eine Vorliebe, wo es mehr als einen Schnitt gibt.",
+    "edition_none": "Keine Vorliebe",
+    "edition_extended": "Extended, Director's Cut, uncut",
+    "edition_theatrical": "Kinofassung",
+    "edition_imax": "IMAX oder Open Matte",
+    "channels": "Kanäle",
+    "surround": "Surround gegenüber Stereo bevorzugen",
+    "surround_help": "5.1 und aufwärts, sofern der Releasename es sagt.",
+    "good_groups": "Gruppen mit Ruf bevorzugen",
+    "prefer_repack": "Repack oder Proper bevorzugen",
+    "block_hardcoded": "Eingebrannte Untertitel ablehnen",
+    "block_retagged": "Verwürfelte und umbenannte Namen ablehnen",
+    "streamers": "Streamingdienst",
+    "streamers_label": "Diese bevorzugen, wo es darauf ankommt",
+    "streamers_help": "Nur eine Vorliebe, und nur zwischen sonst gleichen Releases. Leer lassen, wenn es egal ist."
   },
   "profiles": {
     "why": {
@@ -1109,12 +1151,26 @@
       "no_3d": "lehnt Releases mit zwei Bildern ab",
       "rubbish": "lehnt Cam, Screener, Disc-Abbild und Upscale ab",
       "too_small": "lehnt alles unter {gb} GB ab",
-      "too_large": "lehnt alles über {gb} GB ab"
+      "too_large": "lehnt alles über {gb} GB ab",
+      "source": "bevorzugt {source}",
+      "dv": "bevorzugt Dolby Vision",
+      "dv_only": "lehnt Dolby Vision ohne HDR10 darunter ab — das läuft grünstichig auf jedem Fernseher, der es nicht kann",
+      "surround": "bevorzugt Surround gegenüber Stereo",
+      "groups": "bevorzugt Gruppen, die dafür bekannt sind, es richtig zu machen",
+      "groups_second": "und diese, etwas weniger",
+      "repack": "bevorzugt ein noch einmal herausgegebenes, korrigiertes Release",
+      "edition": "bevorzugt {edition}",
+      "streamer": "bevorzugt {streamer}",
+      "hardcoded": "lehnt ins Bild gebrannte Untertitel ab",
+      "retagged": "lehnt verwürfelte oder entkleidete Namen ab"
     },
     "note": {
       "language_required": "Geholt werden nur Releases, deren Name {language} nennt. Wenn Ihre Indexer überwiegend andere Sprachen führen, kommt wenig an.",
       "size_window": "Die größte Datei ist nicht größer als die kleinste, dazwischen passt also nichts.",
-      "big_files": "2160p ohne Obergrenze bedeutet auch mal Dateien von 60 GB und mehr."
+      "big_files": "2160p ohne Obergrenze bedeutet auch mal Dateien von 60 GB und mehr.",
+      "x265_at_1080p": "Bei 1080p ist die Ersparnis durch x265 gering, und etliche Abspielgeräte müssen es umrechnen — was schlechter aussieht als das x264 davor.",
+      "dv_needs_2160p": "Dolby Vision erscheint fast nur in 2160p.",
+      "remux_only": "Nur Remux heißt Dateien von 30 bis 80 GB, und nichts anderes wird angenommen."
     },
     "problem": {
       "no_quality": "Es ist keine Auflösung ausgewählt, das Profil könnte also nie etwas annehmen.",
@@ -1122,7 +1178,8 @@
       "floor_too_high": "Die Untergrenze ({floor}) liegt über dem Höchsten, das ein Release erreichen kann ({best}) — es würde nie etwas geholt.",
       "impossible_size": "Die kleinste Datei ({min} GB) ist nicht kleiner als die größte ({max} GB).",
       "language_without_one": "Eine Sprache wird verlangt, aber keine ist ausgewählt.",
-      "bad_pattern": "Ein Muster ließ sich nicht übersetzen: {error}"
+      "bad_pattern": "Ein Muster ließ sich nicht übersetzen: {error}",
+      "no_source": "Es ist keine Quelle ausgewählt, das Profil könnte also nie etwas annehmen."
     }
   }
 }

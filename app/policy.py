@@ -285,6 +285,15 @@ def decide(policy: Policy, finding) -> Verdict:
 
     data = finding.data or {}
 
+    # Searched for, repeatedly, and still on the list. Searching again on every
+    # pass from here is asking a question that has been answered, at the cost
+    # of an indexer query each time — and those are rationed. A person can
+    # still press the button; this only stops it happening by itself.
+    if data.get("settled"):
+        return Verdict(act=False, action=policy.action,
+                       reason="policy.nothing_better",
+                       params={"tries": data.get("tries", 0)})
+
     if policy.min_age_hours > 0:
         age = _age_hours(data)
         if age is None:

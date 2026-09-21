@@ -689,3 +689,99 @@ def test_a_grab_from_before_the_button_does_not_count(engine, monkeypatch):
     row = _recorded(engine, rule="missing_items", entry_id=None,
                     data={"item_id": 7})
     assert engine.act_now(row, "search")["found"]["state"] == "nothing"
+
+
+# ---------------------------------------------------------------------------
+# Noticing that there is simply nothing better out there
+# ---------------------------------------------------------------------------
+def test_a_search_is_counted(engine, monkeypatch):
+    """Whether it helped is not recorded, and does not have to be: the next
+    full pass answers that for free."""
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    row = _recorded(engine, rule="missing_items", entry_id=None,
+                    data={"item_id": 7})
+    engine.act_now(row, "search")
+
+    from app.rules import searching_for
+    assert engine.store.attempt(searching_for(service, "missing_items", 7))
+
+
+def test_a_settled_finding_is_not_acted_on_by_itself(engine, monkeypatch):
+    """Searching again on every pass from here asks a question that has been
+    answered, at the cost of an indexer query each time."""
+    from app import policy
+    verdict = policy.decide(
+        policy.Policy(action="search"),
+        a_finding(data={"item_id": 7, "settled": True, "tries": 3}))
+    assert verdict.act is False
+    assert verdict.reason == "policy.nothing_better"
+
+
+def test_a_settled_finding_can_still_be_acted_on_by_hand(engine, monkeypatch):
+    """The judgement stops it happening automatically. It does not take the
+    decision away from the person in front of it."""
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    row = _recorded(engine, rule="missing_items", entry_id=None,
+                    data={"item_id": 7, "settled": True, "tries": 5})
+    assert engine.act_now(row, "search")["state"] == "done"
+    assert service.searched == [[7]]
+
+
+# ---------------------------------------------------------------------------
+# All of them at once
+# ---------------------------------------------------------------------------
+def test_a_batch_opens_the_services_once(engine, monkeypatch):
+    """Forty findings one call at a time meant contacting every service forty
+    times over — and on an unreachable one, forty timeouts in a row."""
+    service = FakeArr()
+    probes = []
+
+    class Counting(FakeArr):
+        def reachable(self):
+            probes.append(1)
+            return (True, "fake")
+
+    counting = Counting()
+    monkeypatch.setattr(engine, "arr_services", lambda: [counting])
+    rows = [_recorded(engine, rule="wrong_year", entry_id=n) for n in (1, 2, 3)]
+
+    answer = engine.act_many(rows, "blocklist")
+    assert answer["done"] == 3
+    assert len(probes) == 1, "the services were opened once, not once per row"
+    assert counting.removed == [(1, True, False), (2, True, False),
+                                (3, True, False)]
+    del service
+
+
+def test_a_batch_carries_on_past_one_that_fails(engine, monkeypatch):
+    class Fussy(FakeArr):
+        def remove_from_queue(self, entry_id, blocklist=True, search_again=True):
+            if entry_id == 2:
+                raise ArrError("no")
+            self.removed.append((entry_id, blocklist, search_again))
+
+    monkeypatch.setattr(engine, "arr_services", lambda: [Fussy()])
+    rows = [_recorded(engine, rule="wrong_year", entry_id=n) for n in (1, 2, 3)]
+    answer = engine.act_many(rows, "blocklist")
+    assert answer["done"] == 2
+    assert answer["failed"] == 1
+    assert [r["state"] for r in answer["results"]] == ["done", "failed", "done"]
+
+
+def test_a_batch_does_not_wait_for_every_search(engine, monkeypatch):
+    """One search is worth twenty seconds of somebody's attention. Forty is
+    not, and the answer arrives in the list on the next pass regardless."""
+    waited = []
+
+    class Watching(FakeArr):
+        def history(self, page_size=200):
+            waited.append(1)
+            return []
+
+    monkeypatch.setattr(engine, "arr_services", lambda: [Watching()])
+    rows = [_recorded(engine, rule="missing_items", entry_id=None,
+                      data={"item_id": n}) for n in (1, 2, 3)]
+    engine.act_many(rows, "search")
+    assert waited == [], "a batch must not wait on the history"
