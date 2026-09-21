@@ -231,7 +231,10 @@
     "empty": "Noch nichts protokolliert.",
     "reported_only": "nur gemeldet",
     "held_back": "Nicht ausgeführt: {reason}",
-    "severity_filter": "Jede Dringlichkeit"
+    "severity_filter": "Jede Dringlichkeit",
+    "or_else": "oder …",
+    "working": "Wird gemacht …",
+    "confirm_destructive": "{action} — das lässt sich nicht rückgängig machen. Trotzdem?"
   },
   "queue_page": {
     "title": "Warteschlange",
@@ -416,7 +419,9 @@
     "channel_field_missing": "„{field}“ wird gebraucht.",
     "action_not_allowed": "Diese Regel kann „{action}“ nicht.",
     "out_of_range": "„{field}“ muss zwischen {range} liegen.",
-    "condition_not_allowed": "Diese Regel hat keine Bedingung „{field}“."
+    "condition_not_allowed": "Diese Regel hat keine Bedingung „{field}“.",
+    "no_such_finding": "Dieser Fund steht nicht mehr im Protokoll.",
+    "nothing_to_do": "Diese Regel kann daran nichts ändern."
   },
   "reason": {
     "marked_failed": "als fehlgeschlagen gekennzeichnet",
@@ -1019,5 +1024,9 @@
     "size_unknown": "zu diesem Fund ist keine Größe bekannt",
     "not_confident_enough": "Zuordnung ist zu {confidence} sicher, verlangt sind {needed}",
     "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt"
+  },
+  "search": {
+    "grabbed": "gefunden und geholt: {release} (insgesamt {count})",
+    "nothing": "in {seconds} Sekunden nichts gefunden — die Suche läuft vielleicht noch, oder es gibt nichts"
   }
 }

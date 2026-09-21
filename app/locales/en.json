@@ -231,7 +231,10 @@
     "empty": "Nothing recorded yet.",
     "reported_only": "reported only",
     "held_back": "Not acted on: {reason}",
-    "severity_filter": "Every severity"
+    "severity_filter": "Every severity",
+    "or_else": "or…",
+    "working": "Doing it…",
+    "confirm_destructive": "{action} — this cannot be undone. Go ahead?"
   },
   "queue_page": {
     "title": "Queue",
@@ -416,7 +419,9 @@
     "channel_field_missing": "“{field}” is required.",
     "action_not_allowed": "This rule cannot do “{action}”.",
     "out_of_range": "“{field}” has to be between {range}.",
-    "condition_not_allowed": "This rule has no “{field}” condition."
+    "condition_not_allowed": "This rule has no “{field}” condition.",
+    "no_such_finding": "That finding is no longer in the log.",
+    "nothing_to_do": "There is nothing this rule can do about it."
   },
   "reason": {
     "marked_failed": "marked as failed",
@@ -1019,5 +1024,9 @@
     "size_unknown": "no size known for this finding",
     "not_confident_enough": "match is {confidence} certain, {needed} required",
     "confidence_unknown": "no confidence known for this finding"
+  },
+  "search": {
+    "grabbed": "found and grabbed: {release} (and {count} in total)",
+    "nothing": "nothing found in {seconds} seconds — the search may still be running, or there is nothing out there"
   }
 }

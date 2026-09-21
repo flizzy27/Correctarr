@@ -432,6 +432,27 @@ class Store:
                        finding.title, finding.description, finding.action,
                        json.dumps(finding.data, ensure_ascii=False, default=str)))
 
+    def finding(self, finding_id: int) -> dict | None:
+        """One finding, by the id the interface was handed."""
+        with _lock, self._conn() as c:
+            row = c.execute("SELECT * FROM findings WHERE id=?",
+                            (finding_id,)).fetchone()
+        return dict(row) if row else None
+
+    def note_action(self, finding_id: int, action: str | None,
+                    data: dict) -> None:
+        """Write down what was just done to a finding that is already recorded.
+
+        The row keeps the moment it was found, not the moment somebody acted
+        on it: the finding is the same finding, and moving it to the top of the
+        list every time a button is pressed would lose the order everything
+        else is read in.
+        """
+        with _lock, self._conn() as c:
+            c.execute("UPDATE findings SET action=?, data=? WHERE id=?",
+                      (action, json.dumps(data, ensure_ascii=False, default=str),
+                       finding_id))
+
     def findings(self, limit: int = 200, rule: str | None = None,
                  fixed_only: bool = False, since: str | None = None) -> list[dict]:
         sql = "SELECT * FROM findings WHERE 1=1"

@@ -487,6 +487,18 @@ select[multiple] option { padding: 4px 2px; }
   margin-top: 7px; font-size: .85em; font-weight: 550; color: var(--good);
 }
 .entry .action.none { color: var(--faint); font-weight: 400; }
+/* The row of things that can be done about a finding. It sits under the
+   result rather than beside the title: the title is what you read to decide,
+   and a button next to it gets pressed before the sentence is finished. */
+.fix {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  margin-top: 9px; padding-top: 9px; border-top: 1px dashed var(--line);
+}
+.fix .picker { max-width: 210px; }
+.fix-note { font-size: .85em; color: var(--muted); overflow-wrap: anywhere; }
+.fix-note.good { color: var(--good); }
+.fix-note.bad { color: var(--bad); }
+
 /* Why a finding was found and then left alone. It was recorded from the
    first day the conditions existed and shown to nobody, so a rule held back
    by its own age limit looked exactly like a rule that had done nothing. */
@@ -738,6 +750,11 @@ select[multiple] option { padding: 4px 2px; }
      width by two things that are three characters wide. */
   .entry .head { gap: 6px 8px; }
   .entry .time { margin-left: 0; flex: 1 1 100%; }
+  /* The button goes full width; a choice nobody is going to make often does
+     not deserve half a phone screen next to it. */
+  .fix { gap: 8px; }
+  .fix .btn { flex: 1 1 100%; justify-content: center; }
+  .fix .picker { max-width: none; flex: 1 1 100%; }
 }
 
 /* The smallest screens still sold. Nothing new here, only less of everything. */

@@ -7,6 +7,8 @@ distinction down.
 """
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 
 from app import rules as rules_module
@@ -73,6 +75,10 @@ class FakeArr:
 
     def history(self, page_size=200):
         return []
+
+    def forget_history(self):
+        """The real connection memoises the history for the length of a run.
+        Nothing to forget here, but the engine asks and has to be answered."""
 
     def import_candidates(self, download_id=None, folder=None):
         return []
@@ -534,3 +540,152 @@ def test_a_series_with_no_season_named_is_searched_whole(engine, monkeypatch):
 
     engine.run()
     assert service.searched == [[7]]
+
+
+# ---------------------------------------------------------------------------
+# Acting on one finding because somebody pressed a button
+# ---------------------------------------------------------------------------
+def _recorded(engine, **over):
+    """Write one finding into the store the way a run would."""
+    from app.engine import _recordable
+    finding = a_finding(**over)
+    engine.store.record(_recordable(finding))
+    return engine.store.findings(limit=1)[0]
+
+
+def test_a_button_does_it_even_though_the_dry_run_is_on(engine, monkeypatch):
+    """The dry run guards changes nobody asked for. A button is the opposite,
+    and one that quietly does nothing because of a setting on another page is
+    worse than no button at all."""
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    engine.store.set("dry_run", True)
+    row = _recorded(engine, rule="wrong_year")
+
+    answer = engine.act_now(row, "blocklist_and_search")
+    assert answer["state"] == "done"
+    assert service.removed == [(42, True, True)]
+
+
+def test_a_queue_finding_can_still_be_acted_on_tomorrow(engine, monkeypatch):
+    """The queue id is not a column, so unless it travels in the data a
+    finding written down today has nothing to act on the next morning."""
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    row = _recorded(engine, rule="wrong_year", entry_id=99)
+    assert '"_entry_id": 99' in row["data"]
+    engine.act_now(row, "remove")
+    assert service.removed == [(99, False, False)]
+
+
+def test_an_action_the_rule_may_not_take_is_refused(engine, monkeypatch):
+    monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
+    row = _recorded(engine, rule="wrong_year")
+    with pytest.raises(ValueError, match="action_not_allowed"):
+        engine.act_now(row, "delete")
+
+
+def test_report_only_is_not_something_to_do(engine, monkeypatch):
+    monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
+    row = _recorded(engine, rule="wrong_year")
+    with pytest.raises(ValueError, match="nothing_to_do"):
+        engine.act_now(row, "report")
+
+
+def test_the_result_is_written_back_onto_the_finding(engine, monkeypatch):
+    monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
+    row = _recorded(engine, rule="wrong_year")
+    engine.act_now(row, "blocklist")
+    again = engine.store.finding(row["id"])
+    assert again["action"] == "blocklisted"
+    assert '"_by_hand": true' in again["data"]
+
+
+def test_a_reason_for_holding_back_is_cleared_once_it_is_done(engine, monkeypatch):
+    """It said "not acted on: too young". It has now been acted on."""
+    monkeypatch.setattr(engine, "arr_services", lambda: [FakeArr()])
+    row = _recorded(engine, rule="wrong_year",
+                    data={"_held": "policy.too_young", "_held_params": {}})
+    engine.act_now(row, "blocklist")
+    assert "_held" not in engine.store.finding(row["id"])["data"]
+
+
+def test_the_suggestion_is_what_the_rule_would_do_on_its_own(engine):
+    from app.rules import BY_NAME
+    suggested = engine.suggested_action(BY_NAME["wrong_year"], a_finding())
+    assert suggested == "blocklist_and_search"
+
+
+def test_a_reporting_rule_still_offers_its_first_real_action(engine):
+    """A rule left on "report only" has something worth offering; it is just
+    not going to do it unasked."""
+    from app.rules import BY_NAME
+    assert engine.suggested_action(BY_NAME["missing_items"], a_finding()) == "search"
+    assert engine.suggested_action(BY_NAME["grab_loop"], a_finding()) == "report"
+
+
+# ---------------------------------------------------------------------------
+# What the search found
+# ---------------------------------------------------------------------------
+def test_a_search_reports_what_it_grabbed(engine, monkeypatch):
+    """"A search was started" is not the answer anybody wants. Whether there
+    is anything out there is, and the service knows within seconds."""
+    import time as clock
+
+    class Searching(FakeArr):
+        def __init__(self):
+            super().__init__()
+
+        def history(self, page_size=200):
+            return [{"eventType": "grabbed", "movieId": 7,
+                     "date": datetime.now(UTC).isoformat(),
+                     "sourceTitle": "The.Film.2019.2160p.BluRay-GRP",
+                     "data": {"indexer": "Somewhere"}}]
+
+    service = Searching()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    monkeypatch.setattr(clock, "sleep", lambda _seconds: None)
+    row = _recorded(engine, rule="missing_items", entry_id=None,
+                    data={"item_id": 7})
+
+    answer = engine.act_now(row, "search")
+    assert answer["found"]["state"] == "grabbed"
+    assert "The.Film" in answer["found"]["releases"][0]["release"]
+    assert answer["found"]["releases"][0]["indexer"] == "Somewhere"
+
+
+def test_a_search_that_finds_nothing_says_so(engine, monkeypatch):
+    import time as clock
+
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    monkeypatch.setattr(clock, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(engine, "SEARCH_PATIENCE", 0.0)
+    row = _recorded(engine, rule="missing_items", entry_id=None,
+                    data={"item_id": 7})
+
+    answer = engine.act_now(row, "search")
+    assert answer["found"]["state"] == "nothing"
+    assert answer["found"]["releases"] == []
+
+
+def test_a_grab_from_before_the_button_does_not_count(engine, monkeypatch):
+    """Otherwise every search reports success on whatever was grabbed last."""
+    import time as clock
+    from datetime import timedelta
+
+    class Stale(FakeArr):
+        def __init__(self):
+            super().__init__()
+
+        def history(self, page_size=200):
+            return [{"eventType": "grabbed", "movieId": 7,
+                     "date": (datetime.now(UTC) - timedelta(hours=3)).isoformat(),
+                     "sourceTitle": "Something.Older", "data": {}}]
+
+    monkeypatch.setattr(engine, "arr_services", lambda: [Stale()])
+    monkeypatch.setattr(clock, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(engine, "SEARCH_PATIENCE", 0.0)
+    row = _recorded(engine, rule="missing_items", entry_id=None,
+                    data={"item_id": 7})
+    assert engine.act_now(row, "search")["found"]["state"] == "nothing"

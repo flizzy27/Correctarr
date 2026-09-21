@@ -299,7 +299,7 @@ function entryHtml(entry) {
   const state = entry.action_state || (action ? "done" : "");
   const kind = state === "failed" ? "failed" : state === "dry" ? "dry"
     : state === "done" ? "" : "none";
-  return `<div class="entry ${esc(entry.severity)}">
+  return `<div class="entry ${esc(entry.severity)}" data-finding="${esc(entry.id)}">
     <div class="head">
       <span class="badge ${esc(SEVERITY_BADGE[entry.severity] || "neutral")}">${
         esc(t("severity." + entry.severity))}</span>
@@ -310,7 +310,107 @@ function entryHtml(entry) {
     <div class="text">${esc(entry.description)}</div>
     <div class="action ${kind}">${esc(action || t("findings_page.reported_only"))}</div>
     ${entry.held_back ? `<div class="held">${esc(entry.held_back)}</div>` : ""}
+    ${fixHtml(entry)}
   </div>`;
+}
+
+/* What can be done about this one finding, right now.
+ *
+ * A finding that only reports is a finding you have to go and act on somewhere
+ * else, in another program, having first worked out which one — and by then
+ * you have lost the thread. The rule already knows what it is allowed to do;
+ * this puts that one step away instead of four. */
+function fixHtml(entry) {
+  const offers = entry.can_do || [];
+  if (!entry.id || !offers.length) return "";
+  const suggested = entry.suggested && offers.includes(entry.suggested)
+    ? entry.suggested : offers[0];
+  const others = offers.filter((a) => a !== suggested);
+  // An action that removes something does not get the inviting colour. The
+  // one button on the page that cannot be undone should not be the one that
+  // looks most like it wants pressing.
+  const removes = (entry.destructive || []).includes(suggested);
+  return `<div class="fix">
+    <button class="btn small ${removes ? "danger" : "primary"}"
+            data-fix="${esc(suggested)}">${
+      esc(t("policy.action." + suggested))}</button>
+    ${others.length ? `<select class="picker" data-fix-more>
+        <option value="">${esc(t("findings_page.or_else"))}</option>
+        ${others.map((a) => `<option value="${esc(a)}">${
+          esc(t("policy.action." + a))}</option>`).join("")}
+      </select>` : ""}
+    <span class="fix-note" data-fix-note></span>
+  </div>`;
+}
+
+/* Running it, and saying what came back.
+ *
+ * A search is the one action worth waiting for: the question is whether
+ * anything is out there at all, and the service answers within seconds. So the
+ * button stays busy until it knows, and then says what was grabbed rather than
+ * that a search was started. */
+async function runFix(card, action) {
+  const id = card.dataset.finding;
+  const button = card.querySelector("[data-fix]");
+  const note = card.querySelector("[data-fix-note]");
+  const original = button.textContent;
+  const destructive = (findingById(id)?.destructive || []).includes(action);
+  if (destructive && !confirm(t("findings_page.confirm_destructive",
+                               { action: t("policy.action." + action) }))) return;
+
+  button.disabled = true;
+  button.textContent = t("findings_page.working");
+  note.className = "fix-note";
+  note.textContent = "";
+  try {
+    const answer = await post(`api/findings/${encodeURIComponent(id)}/act`, { action });
+    const found = answer.found;
+    note.className = "fix-note " + (answer.state === "failed" ? "bad" : "good");
+    note.textContent = [answer.result, found && found.message]
+      .filter(Boolean).join(" — ");
+    toast(answer.result, answer.state === "failed" ? "bad" : "good");
+    // The line above the button is now out of date: it still says what the
+    // scheduled pass did, or that nothing was done.
+    const row = findingById(id);
+    if (row) { row.action = answer.result; row.action_state = answer.state; }
+    const shown = card.querySelector(".action");
+    if (shown) {
+      shown.textContent = answer.result;
+      shown.className = "action " + (answer.state === "failed" ? "failed" : "");
+    }
+    const held = card.querySelector(".held");
+    if (held) held.remove();
+  } catch (error) {
+    note.className = "fix-note bad";
+    note.textContent = error.message;
+    failed(error);
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
+const findingById = (id) =>
+  findingData.find((e) => String(e.id) === String(id))
+  || fixedData.find((e) => String(e.id) === String(id));
+
+/* One listener per list rather than one per row: the lists are redrawn on
+   every filter keystroke, and handlers attached to rows die with them. */
+function wireFixes(container) {
+  container.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-fix]");
+    if (!button) return;
+    const card = button.closest("[data-finding]");
+    if (card) runFix(card, button.dataset.fix);
+  });
+  container.addEventListener("change", (event) => {
+    const picker = event.target.closest("[data-fix-more]");
+    if (!picker || !picker.value) return;
+    const card = picker.closest("[data-finding]");
+    const chosen = picker.value;
+    picker.value = "";
+    if (card) runFix(card, chosen);
+  });
 }
 
 /* ============================================================== findings */
@@ -1712,6 +1812,8 @@ function wire() {
   $("#fixed-search").addEventListener("input", renderFixed);
   $("#fixed-reload").addEventListener("click", () => loadFixed().catch(failed));
   $("#rules-search").addEventListener("input", renderRules);
+  wireFixes($("#findings-list"));
+  wireFixes($("#fixed-list"));
   $("#show-advanced").addEventListener("change", renderSettings);
 
   $("#add-notification").addEventListener("click", () => {

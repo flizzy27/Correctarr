@@ -3,6 +3,34 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.1.2
+
+### Added
+
+* **Every finding can be acted on from the page it is reported on.** A finding
+  that only reports is a finding you have to go and act on somewhere else,
+  having first worked out which program and which screen — and by then you have
+  lost the thread. The rule already knows what it is allowed to do, so that is
+  now one button away: the action it would take by itself, with the rest behind
+  a short list next to it. An action that removes something is marked as such
+  and asks first.
+* **A search says what it found.** "A search was started" is not the answer
+  anybody wants. The button waits for the service to finish asking its
+  indexers — which takes seconds — and then reports what was grabbed and from
+  where, or that there was nothing out there.
+* Pressing a button is not subject to the dry run. That switch guards changes
+  nobody asked for; a button is the opposite, and one that quietly does nothing
+  because of a setting on another page would be worse than no button at all.
+  What it does obey is the rule's own list of permitted actions.
+
+### Fixed
+
+* **A queue finding could not be acted on after the run that produced it.** The
+  queue id was never written down, so the row that survived the run had nothing
+  for an action to remove.
+* The reason a finding was held back is cleared once it has been dealt with. It
+  said "not acted on: too young", and it had by then been acted on.
+
 ## 1.1.1
 
 ### Added

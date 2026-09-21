@@ -183,12 +183,24 @@ def _matches_a_route(path: str, routes: set[str]) -> bool:
                for route in routes)
 
 
+#: A substitution inside a template path. Whatever is in it stands for one
+#: segment, and reading only up to it turns `api/findings/${id}/act` into
+#: `api/findings/` — a path that does not exist and never did, which is
+#: reported as a broken call while the real one goes unchecked.
+_HOLE = re.compile(r"\$\{[^}]*\}")
+
+
 def _called_paths() -> set[str]:
     called = set()
-    for pattern in (r'\bapi\(\s*[`"\']([^`"\'?]+)',
-                    r'\bpost\(\s*[`"\']([^`"\'?]+)'):
+    # The whole literal, to its own closing mark. Stopping at the first
+    # bracket instead cut `${encodeURIComponent(id)}` in half and produced a
+    # path nobody had ever written.
+    for pattern in (r'\b(?:api|post)\(\s*`([^`]+)`',
+                    r'\b(?:api|post)\(\s*"([^"]+)"',
+                    r"\b(?:api|post)\(\s*'([^']+)'"):
         for match in re.finditer(pattern, JS):
-            called.add("/" + match.group(1).rstrip("/"))
+            path = _HOLE.sub("x", match.group(1)).split("?")[0]
+            called.add("/" + path.rstrip("/"))
     for template in ("login.html", "setup.html"):
         html = (APP / "templates" / template).read_text(encoding="utf-8")
         for match in re.finditer(r'fetch\("([^"?]+)"', html):
@@ -196,8 +208,6 @@ def _called_paths() -> set[str]:
     # Paths built with a variable, e.g. api("api/services/" + id)
     for match in re.finditer(r'\bapi\(\s*"([^"?]+/)"\s*\+', JS):
         called.add("/" + match.group(1) + "1")
-    for match in re.finditer(r'\bpost\(\s*`([^`?]+)\$\{', JS):
-        called.add("/" + match.group(1) + "x")
     return called
 
 

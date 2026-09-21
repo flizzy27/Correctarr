@@ -9,4 +9,4 @@ What the build passes in is still kept, under ``BUILD``: it says which image
 this is, which matters when something has to be reproduced. It belongs in the
 tooltip, not in the width of a column.
 """
-__version__ = "1.1.1"
+__version__ = "1.1.2"

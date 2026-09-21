@@ -136,6 +136,13 @@ against what was wanted: "on disk as HDTV-720p, the profile *HD-1080p* keeps
 upgrading until WEBDL-1080p" rather than "below the quality the profile asks
 for".
 
+**And you can act on it there and then.** Every finding carries the action its
+rule would take — *search for a replacement*, *blocklist and search again*,
+*import* — as a button, with the rest behind a short list beside it. A search
+waits for the answer: it reports what was grabbed and from which indexer, or
+that there was nothing out there. Actions that remove something are marked and
+ask first.
+
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
 Every rule shows what it does before you turn it on: whether it only reports,

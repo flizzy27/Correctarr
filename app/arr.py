@@ -174,6 +174,16 @@ class Arr:
         self._history[page_size] = records
         return records
 
+    def forget_history(self) -> None:
+        """Ask again next time.
+
+        The memo above is right for a run, which is a snapshot of one moment.
+        It is wrong the instant somebody is waiting to see whether a search
+        they just started has found anything — there the whole question is
+        what has changed since.
+        """
+        self._history.clear()
+
     #: Sonarr answers both "what is missing" and "what is below the cutoff"
     #: with bare episodes: a season number, an episode number, and ids. The
     #: series it belongs to and the file that is already there are sent **only

@@ -21,16 +21,19 @@ with no sign of it anywhere.
 from __future__ import annotations
 
 import collections
+import json
 import logging
 import os
 import shutil
 import threading
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from . import compat, notifications, policy
 from . import settings as S
 from .arr import Arr, ArrError
+from .i18n import t
 from .indexers import build_views, rate
 from .matching import build_candidates
 from .prowlarr import Prowlarr, ProwlarrError
@@ -761,6 +764,144 @@ class Engine:
                         again.close()
         return None
 
+    # -- acting on one finding, on purpose -------------------------------------
+    #: How long to wait for a search to come back before answering anyway. A
+    #: search is the one action whose result is worth waiting for: the whole
+    #: question is whether anything was found, and the answer arrives in
+    #: seconds. Past this it is reported as still running rather than as a
+    #: failure, because it usually is.
+    SEARCH_PATIENCE = 25.0
+
+    def act_now(self, row: dict, action: str | None,
+                language: str = "en") -> dict:
+        """Carry out one action on one recorded finding, because somebody asked.
+
+        This is not the scheduled pass and it does not obey the dry run. The
+        dry run is a guard against changes nobody asked for; a button is the
+        opposite of that, and a button that quietly does nothing because of a
+        setting on another page is worse than no button. What it does obey is
+        what the rule is *allowed* to do: an action outside that list is
+        refused here exactly as it is refused when it is configured.
+        """
+        finding = _from_row(row)
+        rule = next((r for r in ALL if r.name == finding.rule), None)
+        if rule is None:
+            raise ValueError("error.no_such_rule")
+        chosen = action or self.suggested_action(rule, finding)
+        if chosen not in rule.actions:
+            raise ValueError("error.action_not_allowed")
+        if chosen == policy.REPORT:
+            raise ValueError("error.nothing_to_do")
+
+        cfg = {**self.config(), "dry_run": False}
+        services: list[Arr] = []
+        try:
+            for arr in self.arr_services():
+                ok, _info = arr.reachable()
+                if ok:
+                    services.append(arr)
+                else:
+                    arr.close()
+            target = self._target_for(finding, services, self._lead_service(services))
+            if target is None:
+                raise ValueError("error.no_services")
+
+            started = time.time()
+            try:
+                outcome = self._perform(chosen, target, finding, cfg)
+            except ArrError as e:
+                outcome = failed("action.result.service_refused", error=str(e)[:200])
+            except Exception as e:                              # noqa: BLE001
+                log.exception("Acting on %s by hand failed", finding.rule)
+                outcome = failed("action.result.service_refused", error=str(e)[:200])
+
+            if outcome is None:
+                raise ValueError("error.nothing_to_do")
+
+            answer = {"ok": outcome.state != "failed", "action": chosen,
+                      "state": outcome.state,
+                      "result": outcome.text(language),
+                      "outcome": outcome.as_dict()}
+            if chosen in ("search", "blocklist_and_search", "unblocklist") \
+                    and outcome.state == "done":
+                answer["found"] = self._what_the_search_found(
+                    target, finding, started, language)
+
+            data = {**finding.data, "_action": outcome.as_dict(), "_by_hand": True}
+            data.pop("_held", None)
+            data.pop("_held_params", None)
+            self.store.note_action(int(row["id"]), outcome.text("en"), data)
+            return answer
+        finally:
+            for arr in services:
+                arr.close()
+
+    @staticmethod
+    def suggested_action(rule, finding: Finding) -> str:
+        """What to offer when nobody has said which action they want.
+
+        The rule's own setting first — that is what it would do on its own, so
+        doing it now is no surprise. A rule left on "report only" still has
+        something worth offering, and it is the first thing it can do.
+        """
+        stored = rule.default_action
+        if stored != policy.REPORT and stored in rule.actions:
+            return stored
+        return next((a for a in rule.actions if a != policy.REPORT), policy.REPORT)
+
+    def _what_the_search_found(self, arr: Arr, finding: Finding, started: float,
+                               language: str) -> dict:
+        """Wait for the search to finish and read what it grabbed.
+
+        The point of pressing the button is the answer to "is there anything
+        out there", and that answer exists within seconds — the service asks
+        every indexer, decides, and writes what it grabbed into its history.
+        Reading that back is the difference between "a search was started" and
+        "it found this".
+        """
+        deadline = started + self.SEARCH_PATIENCE
+        # The history is memoised per connection for the length of a run. This
+        # is not a run, and the whole point is to see what has just happened.
+        arr.forget_history()
+        while time.time() < deadline:
+            time.sleep(2.0)
+            arr.forget_history()
+            grabbed = self._grabs_since(arr, finding, started)
+            if grabbed:
+                return {"state": "grabbed", "releases": grabbed,
+                        "message": t("search.grabbed", language,
+                                     count=len(grabbed),
+                                     release=grabbed[0]["release"])}
+        return {"state": "nothing", "releases": [],
+                "message": t("search.nothing", language,
+                             seconds=int(self.SEARCH_PATIENCE))}
+
+    def _grabs_since(self, arr: Arr, finding: Finding, started: float) -> list[dict]:
+        """Anything grabbed for this title since the search was started."""
+        item_id = finding.data.get("item_id")
+        episodes = {int(e) for e in (finding.data.get("episode_ids") or [])}
+        out = []
+        try:
+            entries = arr.history(100)
+        except ArrError as e:
+            log.warning("Could not read the history back: %s", e)
+            return []
+        for entry in entries:
+            if not compat.event_is(entry, compat.GRABBED):
+                continue
+            when = _moment(entry.get("date"))
+            if when is None or when < started - 5:
+                continue
+            belongs = (item_id and (entry.get("movieId") == item_id
+                                    or entry.get("seriesId") == item_id))
+            if episodes and entry.get("episodeId") in episodes:
+                belongs = True
+            if not belongs:
+                continue
+            out.append({"release": str(entry.get("sourceTitle") or "")[:120],
+                        "indexer": str((entry.get("data") or {}).get("indexer") or "")})
+        return out
+
     # -- the run ---------------------------------------------------------------
     def run(self, deep: bool | None = None, trigger: str = "schedule") -> dict:
         # Checking and setting have to happen together, otherwise two triggers
@@ -943,6 +1084,43 @@ class Engine:
             log.exception("Housekeeping failed")
 
 
+def _moment(timestamp) -> float | None:
+    """A history timestamp as seconds since the epoch."""
+    if not timestamp:
+        return None
+    try:
+        when = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return when.timestamp()
+
+
+def _from_row(row: dict) -> Finding:
+    """Rebuild a finding from the row it was written down as.
+
+    Everything an action reads lives in ``data``; the queue id is kept there
+    too, under a name of its own, because the column it came from is not part
+    of the table.
+    """
+    data = row.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except (ValueError, TypeError):
+            data = {}
+    data = data or {}
+    entry_id = data.get("_entry_id")
+    return Finding(
+        rule=str(row.get("rule") or ""), severity=str(row.get("severity") or "info"),
+        title=str(row.get("title") or ""), message=str(data.get("_msg") or ""),
+        params=dict(data.get("_params") or {}),
+        service=str(row.get("service") or "radarr"),
+        entry_id=int(entry_id) if isinstance(entry_id, int) else None,
+        action=row.get("action"), data=data)
+
+
 def _episode_ids(candidate: dict) -> list[int]:
     """The episode ids on an import candidate, under either spelling."""
     out = []
@@ -988,8 +1166,12 @@ class _Recordable:
         self.description = finding.describe("en")
         self.service = finding.service
         self.action = finding.action
+        # The queue id travels with the row. Without it a finding written down
+        # today can never be acted on tomorrow: the action would have nothing
+        # to remove, and the button offering it would be a button that does
+        # nothing.
         self.data = {**finding.data, "_msg": finding.message,
-                     "_params": finding.params}
+                     "_params": finding.params, "_entry_id": finding.entry_id}
 
 
 def _recordable(finding: Finding) -> _Recordable:

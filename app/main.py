@@ -949,6 +949,17 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
             row["action"] = rendered
         row["action_state"] = _action_state(data, row.get("action"))
 
+        # What this one finding can be told to do, and what would be done if
+        # nobody says. Sent with the row because the interface draws a button
+        # from it, and a button has to know before it is pressed.
+        rule = BY_NAME.get(row.get("rule"))
+        if rule is not None:
+            offers = [a for a in rule.actions if a != policy.REPORT]
+            row["can_do"] = offers
+            row["suggested"] = engine.suggested_action(
+                rule, _shallow_finding(row, data)) if offers else policy.REPORT
+            row["destructive"] = sorted(set(offers) & policy.DESTRUCTIVE)
+
         held = data.get("_held")
         if held:
             row["held_back"] = i18n.t(
@@ -956,6 +967,20 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
                 reason=i18n.t(held, language, **(data.get("_held_params") or {})))
         out.append(row)
     return out
+
+
+class _ShallowFinding:
+    """Just enough of a finding for the suggestion, without rebuilding one."""
+
+    __slots__ = ("rule", "data")
+
+    def __init__(self, rule: str, data: dict):
+        self.rule = rule
+        self.data = data
+
+
+def _shallow_finding(row: dict, data: dict) -> Any:
+    return _ShallowFinding(str(row.get("rule") or ""), data)
 
 
 def _action_state(data: dict, action: str | None) -> str:
@@ -993,6 +1018,36 @@ def fixed(request: Request, limit: int = 100, _: dict = Depends(require_user)):
     rows = store.findings(limit=max(1, min(limit, 1000)), fixed_only=True)
     rows = [r for r in rows if policy.really_happened(r.get("action"))]
     return _localise(rows, language_for(request))
+
+
+class ActNow(BaseModel):
+    """Which action to carry out. Left out, the rule decides."""
+    action: str | None = None
+
+
+@app.post("/api/findings/{finding_id}/act")
+def act_on_finding(finding_id: int, body: ActNow, request: Request,
+                   _: dict = Depends(require_user)):
+    """Do something about one finding, now, because somebody pressed a button.
+
+    Deliberately not subject to the dry run. That switch exists to stop changes
+    nobody asked for; this is the opposite, and a button that quietly does
+    nothing because of a setting on another page would be worse than no button
+    at all. What it is subject to is the rule's own list of permitted actions.
+
+    For a search it waits for the answer rather than reporting that a search
+    was started. The whole question is whether anything is out there, and the
+    service knows within seconds.
+    """
+    row = store.finding(finding_id)
+    if row is None:
+        raise _fail(request, 404, "error.no_such_finding")
+    try:
+        return engine.act_now(row, body.action, language_for(request))
+    except ValueError as e:
+        raise _fail_from_value_error(request, e) from e
+    except ArrError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @app.get("/api/runs")
