@@ -712,7 +712,70 @@ def test_missing_episodes_carry_the_series_id_not_the_episode_id():
     found = check_missing_items(FakeArr("sonarr"), ctx, config())
     assert found[0].data["item_id"] == 12
     assert found[0].data["episode_ids"] == [5001]
-    assert found[0].title == "The Series S02E07"
+    assert found[0].title == "The Series — Season 2"
+
+
+def test_nine_missing_episodes_of_one_season_are_one_finding():
+    """Nine identical lines saying the same thing bury everything else."""
+    ctx = {"missing": [{"id": 5000 + n, "seriesId": 12, "seasonNumber": 2,
+                        "episodeNumber": n,
+                        "series": {"id": 12, "title": "The Series"}}
+                       for n in range(2, 11)]}
+    found = check_missing_items(FakeArr("sonarr"), ctx, config())
+    assert len(found) == 1
+    assert found[0].data["count"] == 9
+    assert "E02–E10" in found[0].describe("en")
+
+
+def test_two_seasons_are_two_findings():
+    ctx = {"missing": [{"id": 1, "seriesId": 12, "seasonNumber": 1,
+                        "episodeNumber": 1, "series": {"id": 12, "title": "X"}},
+                       {"id": 2, "seriesId": 12, "seasonNumber": 2,
+                        "episodeNumber": 1, "series": {"id": 12, "title": "X"}}]}
+    assert len(check_missing_items(FakeArr("sonarr"), ctx, config())) == 2
+
+
+# ---------------------------------------------------------------------------
+# Saying which quality, rather than "?"
+# ---------------------------------------------------------------------------
+PROFILE = {"id": 1, "name": "HD-1080p", "cutoff": 9,
+           "items": [{"quality": {"id": 4, "name": "HDTV-720p"}},
+                     {"id": 1000, "name": "WEB 1080p", "items": [
+                         {"quality": {"id": 9, "name": "WEBDL-1080p"}}]}]}
+
+
+def test_the_cutoff_is_named_by_the_quality_it_stops_at():
+    from app.rules import cutoff_of
+    assert cutoff_of(PROFILE) == "WEBDL-1080p"
+    assert cutoff_of({"id": 1, "cutoff": 1000, "items": PROFILE["items"]}) == "WEB 1080p"
+    assert cutoff_of({"name": "x"}) == ""
+
+
+def test_a_movie_below_its_cutoff_names_both_qualities():
+    """"Below the quality the profile asks for" names neither of them, which
+    leaves a page of identical sentences and nothing to decide from."""
+    ctx = {"profiles": [PROFILE],
+           "below_cutoff": [{"id": 4, "title": "The Film", "year": 2019,
+                             "qualityProfileId": 1,
+                             "movieFile": {"quality": {"quality": {"name": "SDTV"}}}}]}
+    found = check_cutoff_unmet(FakeArr(), ctx, config())
+    said = found[0].describe("en")
+    assert "SDTV" in said and "WEBDL-1080p" in said and "HD-1080p" in said
+    assert "?" not in said
+
+
+def test_a_season_below_its_cutoff_is_one_line_not_twenty():
+    rows = [{"id": 5000 + n, "seriesId": 12, "seasonNumber": 2, "episodeNumber": n,
+             "series": {"id": 12, "title": "The Series", "qualityProfileId": 1},
+             "episodeFile": {"quality": {"quality": {"name": "HDTV-720p"}}}}
+            for n in range(2, 8)]
+    found = check_cutoff_unmet(FakeArr("sonarr"), {"profiles": [PROFILE],
+                                                  "below_cutoff": rows}, config())
+    assert len(found) == 1
+    said = found[0].describe("en")
+    assert "HDTV-720p" in said and "WEBDL-1080p" in said
+    assert found[0].data["episode_ids"] == [5000 + n for n in range(2, 8)]
+    assert found[0].title == "The Series — Season 2"
 
 
 def test_stalled_prunes_only_its_own_service():

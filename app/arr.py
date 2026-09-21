@@ -174,16 +174,27 @@ class Arr:
         self._history[page_size] = records
         return records
 
+    #: Sonarr answers both "what is missing" and "what is below the cutoff"
+    #: with bare episodes: a season number, an episode number, and ids. The
+    #: series it belongs to and the file that is already there are sent **only
+    #: when asked for**, and without them there is nothing to say beyond
+    #: "S02E02" and a question mark where the quality should be. Radarr sends
+    #: whole movies and ignores both parameters.
+    _WANTED_EXTRAS = {"includeSeries": "true", "includeEpisodeFile": "true"}
+
     def missing(self, page: int = 1, page_size: int = 200) -> list[dict]:
         """Monitored titles without a file."""
         return (self._call("GET", "wanted/missing", params={
             "page": page, "pageSize": page_size, "monitored": "true",
             "sortKey": "movies.sortTitle" if self.kind == "radarr" else "series.sortTitle",
+            **self._WANTED_EXTRAS,
         }) or {}).get("records", [])
 
     def below_cutoff(self, page: int = 1, page_size: int = 200) -> list[dict]:
         return (self._call("GET", "wanted/cutoff", params={
-            "page": page, "pageSize": page_size, "monitored": "true"}) or {}).get("records", [])
+            "page": page, "pageSize": page_size, "monitored": "true",
+            **self._WANTED_EXTRAS,
+        }) or {}).get("records", [])
 
     def blocklist(self, page_size: int = 500) -> list[dict]:
         return (self._call("GET", "blocklist", params={

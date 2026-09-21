@@ -31,11 +31,11 @@ from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, i18n, logging_setup, notifications, policy
+from . import __version__, auth, i18n, logging_setup, notifications, policy
 from . import settings as S
 from .arr import Arr, ArrError
 from .engine import Engine
@@ -49,7 +49,12 @@ log = logging.getLogger("correctarr")
 
 HERE = Path(__file__).parent
 CONFIG_DIR = Path(os.getenv("CONFIG_DIR", "/config"))
-VERSION = os.getenv("VERSION", "dev")
+#: What this program calls itself. One number, from one place.
+VERSION = __version__
+#: What the build called the image — a tag, or a branch and a commit. Useful
+#: for reproducing a report, useless as a label, and long enough to break a
+#: layout if it is treated as one.
+BUILD = os.getenv("VERSION", "source")
 BUILT_AT = os.getenv("BUILT_AT", "unknown")
 COMMIT = os.getenv("COMMIT", "unknown")
 BASE = "/" + (os.getenv("BASE_URL", "").strip().strip("/"))
@@ -310,8 +315,29 @@ def _set_cookie(response: Response, token: str, request: Request) -> None:
 # ---------------------------------------------------------------------------
 # Pages
 # ---------------------------------------------------------------------------
-def _page(name: str) -> FileResponse:
-    return FileResponse(HERE / "templates" / name,
+#: The pages are read once and kept. They are three small files and they do
+#: not change while the process is running.
+_PAGES: dict[str, str] = {}
+
+
+def _page(name: str) -> HTMLResponse:
+    """One of the three pages, with the version written into its asset links.
+
+    The page itself is never cached; the script and the stylesheet beside it
+    are, and that is the whole problem this solves. Without a version in the
+    link, a browser that has been here before keeps the interface it already
+    has — so an update lands, the container restarts, the API changes, and the
+    person in front of it is still running last month's script against it.
+    Nothing says so; things simply stop working in ways that make no sense.
+
+    A query that changes with the version makes it a different URL, so the
+    browser fetches it exactly once per release and caches it happily in
+    between.
+    """
+    if name not in _PAGES:
+        text = (HERE / "templates" / name).read_text(encoding="utf-8")
+        _PAGES[name] = text.replace("__V__", VERSION)
+    return HTMLResponse(_PAGES[name],
                         headers={"Cache-Control": "no-store"})
 
 
@@ -650,7 +676,12 @@ def status(_: dict = Depends(require_user)):
             for j in scheduler.get_jobs()}
     cfg = engine.config()
     return {
-        "version": VERSION, "built_at": BUILT_AT, "commit": COMMIT,
+        "version": VERSION, "build": BUILD,
+        "built_at": BUILT_AT, "commit": COMMIT,
+        # Whether the guided setup has been run through. The button that opens
+        # it sits in the top bar of every page, and once it has been done it is
+        # a permanent offer to redo something nobody wants to redo.
+        "setup_done": bool(store.get("setup_done", False)),
         "base": BASE, "auth": auth.mode(),
         "services": services, "running": engine.running,
         "last_trigger": engine.last_trigger,

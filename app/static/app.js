@@ -105,6 +105,34 @@ async function api(path, options = {}) {
 const post = (path, body, method = "POST") =>
   api(path, { method, body: JSON.stringify(body) });
 
+/* ---------------------------------------------------------------- switches */
+/* Every switch on the page goes through here, and the reason is one line of
+   CSS: the checkbox itself is `width: 0; height: 0`, because what you see is
+   drawn by the element next to it. That element is not a control. Unless it is
+   a <label> pointing at the checkbox, clicking the switch lands on nothing —
+   which is exactly what happened: the switch on every rule could not be
+   turned off at all, and the ones in the settings only answered when you hit
+   the few words of text above them.
+
+   So the track is a label, always, and it always names an id. A switch
+   without one would be decoration. */
+let switchSerial = 0;
+
+function switchHtml(attributes = "", checked = false, id = "") {
+  const target = id || `sw-${++switchSerial}`;
+  return `<span class="toggle"><input type="checkbox" id="${esc(target)}" ${attributes}${
+    checked ? " checked" : ""}><label class="track" for="${esc(target)}"></label></span>`;
+}
+
+/* A switch with its wording beside it. Both halves point at the same id, so
+   either one works — and neither is nested inside the other, which is not
+   allowed and stops the click from arriving. */
+function switchField(text, attributes = "", checked = false, id = "") {
+  const target = id || `sw-${++switchSerial}`;
+  return `<span class="toggle-field">${switchHtml(attributes, checked, target)}
+    <label for="${esc(target)}">${esc(text)}</label></span>`;
+}
+
 /* ----------------------------------------------------------------- toasts */
 const TOAST_LIMIT = 4;
 
@@ -149,7 +177,14 @@ async function loadChrome() {
   applyAppearance(status.theme, status.density);
 
   $("#version").textContent = status.version;
-  $("#version").title = `${status.version}\n${status.built_at}\n${status.commit}`;
+  // The build identity goes in the tooltip. It is what you quote in a bug
+  // report and the last thing that should be allowed to decide a column width.
+  $("#version").title =
+    [status.version, status.build, status.built_at, status.commit]
+      .filter(Boolean).join("\n");
+  // Nothing to set up any more: the offer moves to the settings page, where
+  // you go looking for it on the rare occasion you want it.
+  $("#open-wizard").hidden = Boolean(status.setup_done);
   $("#dry-run-badge").hidden = !status.dry_run;
   $("#count-findings").textContent = status.summary.total ? num(status.summary.total) : "";
   $("#count-fixed").textContent = status.summary.fixed ? num(status.summary.fixed) : "";
@@ -437,11 +472,9 @@ function ruleHtml(rule) {
       ${conditionsHtml(rule)}
     </div>
     <div class="toggles">
-      <div class="toggle-field">
-        <span class="toggle"><input type="checkbox" data-rule="${esc(rule.name)}"
-          data-field="enabled" ${rule.enabled ? "checked" : ""}><span class="track"></span></span>
-        ${esc(t("label.check"))}
-      </div>
+      ${switchField(t("label.check"),
+                    `data-rule="${esc(rule.name)}" data-field="enabled"`,
+                    rule.enabled, `check-${esc(rule.name)}`)}
       <label class="action-field">
         <span class="action-label">${esc(t("policy.heading"))}</span>
         <select data-rule="${esc(rule.name)}" data-field="action"
@@ -647,17 +680,11 @@ function renderServices() {
             <div class="help">${esc(t("services_page.key_hint"))}</div></div>
         </div>
         <div class="row" style="margin-top:12px">
-          <label class="toggle-field">
-            <span class="toggle"><input type="checkbox" data-f="enabled"
-              ${s.enabled ? "checked" : ""}><span class="track"></span></span>
-            ${esc(t("label.enabled"))}
-          </label>
-          ${["radarr", "sonarr"].includes(s.kind) ? `
-          <label class="toggle-field">
-            <span class="toggle"><input type="checkbox" data-f="webhook"
-              ${s.webhook ? "checked" : ""}><span class="track"></span></span>
-            ${esc(t("label.webhook"))}
-          </label>` : ""}
+          ${switchField(t("label.enabled"), 'data-f="enabled"', s.enabled,
+                        `svc-${index}-enabled`)}
+          ${["radarr", "sonarr"].includes(s.kind)
+            ? switchField(t("label.webhook"), 'data-f="webhook"', s.webhook,
+                          `svc-${index}-webhook`) : ""}
           <span style="flex:1"></span>
           <button class="btn small" data-do="test">${esc(t("action.test"))}</button>
           <button class="btn small primary" data-do="save">${esc(t("action.save"))}</button>
@@ -798,16 +825,10 @@ function notificationHtml(connection, index) {
       </div>
     </div>
     <div class="row" style="margin-top:12px">
-      <label class="toggle-field">
-        <span class="toggle"><input type="checkbox" data-f="enabled"
-          ${connection.enabled ? "checked" : ""}><span class="track"></span></span>
-        ${esc(t("label.enabled"))}
-      </label>
-      <label class="toggle-field">
-        <span class="toggle"><input type="checkbox" data-f="fixed_only"
-          ${connection.fixed_only ? "checked" : ""}><span class="track"></span></span>
-        ${esc(t("notifications_page.fixed_only"))}
-      </label>
+      ${switchField(t("label.enabled"), 'data-f="enabled"', connection.enabled,
+                    `chan-${index}-enabled`)}
+      ${switchField(t("notifications_page.fixed_only"), 'data-f="fixed_only"',
+                    connection.fixed_only, `chan-${index}-fixed`)}
       <span style="flex:1"></span>
       <button class="btn small" data-do="test">${esc(t("action.send_test"))}</button>
       <button class="btn small primary" data-do="save">${esc(t("action.save"))}</button>
@@ -823,9 +844,8 @@ function channelFieldHtml(kind, field, value) {
   let control;
 
   if (field.kind === "switch") {
-    control = `<span class="toggle"><input type="checkbox" id="${id}"
-      data-c="${esc(field.key)}" data-kind="switch"
-      ${current ? "checked" : ""}><span class="track"></span></span>`;
+    control = switchHtml(`data-c="${esc(field.key)}" data-kind="switch"`,
+                         Boolean(current), id);
   } else if (field.kind === "choice") {
     control = `<select id="${id}" data-c="${esc(field.key)}" data-kind="choice">${
       field.choices.map((choice) =>
@@ -996,9 +1016,8 @@ function fieldHtml(field) {
   let control;
 
   if (field.kind === "switch") {
-    control = `<span class="toggle"><input type="checkbox" id="${id}"
-      data-key="${esc(field.key)}" data-kind="switch"
-      ${value ? "checked" : ""}><span class="track"></span></span>`;
+    control = switchHtml(`data-key="${esc(field.key)}" data-kind="switch"`,
+                         Boolean(value), id);
   } else if (field.kind === "choice") {
     control = `<select id="${id}" data-key="${esc(field.key)}" data-kind="choice">
       ${field.choices.map((choice) => {
@@ -1117,7 +1136,12 @@ function renderMaintenance() {
     <div class="row" style="margin-top:13px">
       <button class="btn" id="compact">${esc(t("action.compact"))}</button>
       <span class="muted">${esc(t("settings_page.compact_help"))}</span>
+    </div>
+    <div class="row" style="margin-top:13px">
+      <button class="btn" id="rerun-setup">${esc(t("wizard.open"))}</button>
+      <span class="muted">${esc(t("settings_page.rerun_setup_help"))}</span>
     </div>`;
+  $("#rerun-setup").addEventListener("click", () => wizard.start(true));
   $("#compact").addEventListener("click", async (event) => {
     event.target.disabled = true;
     event.target.textContent = t("action.compacting");
@@ -1509,11 +1533,7 @@ const wizard = {
     $("#wizard-body").innerHTML = `
       <p>${esc(t("wizard.dry_run.body"))}</p>
       <div class="field" style="margin:16px 0">
-        <label class="toggle-field">
-          <span class="toggle"><input type="checkbox" id="w-dry"
-            ${settingsValues.dry_run ? "checked" : ""}><span class="track"></span></span>
-          ${esc(t("settings.dry_run.label"))}
-        </label>
+        ${switchField(t("settings.dry_run.label"), "", settingsValues.dry_run, "w-dry")}
         <div class="help">${esc(t("settings.dry_run.help"))}</div>
       </div>
       <div class="row">

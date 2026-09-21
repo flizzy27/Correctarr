@@ -303,7 +303,8 @@
     "store_line": "{mb} MB · {findings} findings · schema version {schema}",
     "compact_help": "Applies the limits from the Maintenance group immediately.",
     "account_disabled": "Authentication is disabled through <code>AUTH=off</code>. There is no account to manage — and the interface is reachable by anyone who can reach the port.",
-    "sessions_note": "All other sessions will be ended."
+    "sessions_note": "All other sessions will be ended.",
+    "rerun_setup_help": "Walks through services, paths, the callback address and notifications again. Nothing is reset."
   },
   "login": {
     "prompt": "Please sign in to continue.",
@@ -447,7 +448,7 @@
     "missing_audio_language": "The existing file has none of the wanted audio languages (found: {found}, wanted: {wanted}).",
     "unreadable_file": "No media information could be read from this file. That points at a damaged or incomplete file.",
     "below_profile": "Under today's rules of \"{profile}\" the existing file would be blocked: {reason}.",
-    "missing_items": "Monitored and released, but no file present.",
+    "missing_items": "Monitored, released in {year}, and there is no file. Nothing will look for one until a search is started.",
     "downloader_stale_entry": "The file is already in the library as \"{title}\" ({gb} GB). The entry in {client} can go, along with its source folder.",
     "downloader_paused": "The download client is paused while {waiting} entries are waiting. Nothing is arriving although grabbing continues.",
     "disk_low": "Only {free} GB free.",
@@ -460,10 +461,12 @@
     "passthrough": "{text}",
     "api_changes": "{path} is marked as replaced (service version {version})",
     "premature_grab": "Not out until {date}, which is {days} days away. There is no honest copy of this yet.",
-    "cutoff_unmet": "Present as {quality}, which is below the quality the profile asks for. Nothing will look for a better copy unless it is told to.",
+    "cutoff_unmet": "On disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}, so this is not what was asked for — but nothing goes looking for a better copy on its own.",
     "season_gaps": "{missing} of {total} episodes of season {season} are missing, and the rest are there. A season pack that imported partly, or episodes that failed and were never noticed.",
     "series_incomplete": "The series has finished airing and {missing} of {total} episodes are still missing. This will not fix itself.",
-    "stale_blocklist": "Blocklisted {days} days ago: {release}. The title is still missing, so this refusal may be the reason."
+    "stale_blocklist": "Blocklisted {days} days ago: {release}. The title is still missing, so this refusal may be the reason.",
+    "missing_episodes": "{count} episode(s) of season {season} are missing ({episodes}). Monitored and aired, with no file — nothing will look for them until a search is started.",
+    "cutoff_unmet_season": "{count} episode(s) of season {season} ({episodes}) are on disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}. Nothing goes looking for a better copy on its own."
   },
   "rules": {
     "wrong_year": {

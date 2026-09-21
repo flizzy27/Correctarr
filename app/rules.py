@@ -231,6 +231,77 @@ def _file_label(info: dict) -> str:
     return f"Season {season}" if season is not None else "?"
 
 
+def quality_of(row: dict) -> str:
+    """What is on disk, as the service names it."""
+    info = row.get("movieFile") or row.get("episodeFile") or {}
+    return ((info.get("quality") or {}).get("quality") or {}).get("name") or ""
+
+
+def cutoff_of(profile: dict) -> str:
+    """The quality a profile stops upgrading at, by name.
+
+    ``cutoff`` is an id, and it can name either a single quality or a group of
+    them. Both shapes live in ``items``, so both are looked for — a message
+    that says "below the quality the profile asks for" without saying which
+    quality tells nobody anything they did not already suspect.
+    """
+    wanted = profile.get("cutoff")
+    if wanted is None:
+        return ""
+    for entry in (profile.get("items") or []):
+        if entry.get("id") == wanted and entry.get("name"):
+            return str(entry["name"])
+        quality = entry.get("quality") or {}
+        if quality.get("id") == wanted:
+            return str(quality.get("name") or "")
+        for nested in (entry.get("items") or []):
+            inner = nested.get("quality") or nested
+            if inner.get("id") == wanted:
+                return str(inner.get("name") or "")
+    return ""
+
+
+def _season_groups(rows: list[dict]) -> dict[tuple, dict]:
+    """Collect episodes into the season they belong to.
+
+    Twenty episodes of one season below the cutoff are one thing that went
+    wrong, not twenty. Reported one by one they fill the page with identical
+    sentences and bury everything else — which is exactly what they did.
+    """
+    groups: dict[tuple, dict] = {}
+    for row in rows:
+        series = row.get("series") or {}
+        series_id = row.get("seriesId") or series.get("id")
+        if not series_id:
+            continue
+        season = row.get("seasonNumber")
+        group = groups.setdefault((series_id, season), {
+            "series": series, "series_id": series_id, "season": season,
+            "episode_ids": [], "numbers": [], "qualities": []})
+        if not group["series"] and series:
+            group["series"] = series
+        if row.get("id"):
+            group["episode_ids"].append(row["id"])
+        if row.get("episodeNumber") is not None:
+            group["numbers"].append(row["episodeNumber"])
+        found = quality_of(row)
+        if found and found not in group["qualities"]:
+            group["qualities"].append(found)
+    return groups
+
+
+def _episode_span(numbers: list[int]) -> str:
+    """"E02–E07" for a run, "E02, E05, E09" for a handful, a count beyond that."""
+    if not numbers:
+        return ""
+    ordered = sorted(numbers)
+    if len(ordered) > 1 and ordered[-1] - ordered[0] == len(ordered) - 1:
+        return f"E{ordered[0]:02d}–E{ordered[-1]:02d}"
+    if len(ordered) <= 4:
+        return ", ".join(f"E{n:02d}" for n in ordered)
+    return f"E{ordered[0]:02d}–E{ordered[-1]:02d}"
+
+
 def _wanted_entry(arr: Arr, item: dict) -> tuple[int | None, str, dict]:
     """Read one row of "missing" or "below the cutoff".
 
@@ -1098,7 +1169,16 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     different series was searched for, without it the service refused the
     command outright. The episode ids travel with the finding instead, so the
     search can ask for exactly the episodes that are missing.
+
+    Episodes are reported per season rather than one at a time. Nine missing
+    episodes of one season are one gap, and nine identical lines saying so
+    bury everything else on the page.
     """
+    if arr.kind == "sonarr":
+        return _season_findings(
+            arr, ctx.get("missing", []), rule="missing_items",
+            message="finding.missing_episodes", severity="info")
+
     findings = []
     for item in ctx.get("missing", []):
         item_id, title, extra = _wanted_entry(arr, item)
@@ -1107,7 +1187,35 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         findings.append(Finding(
             rule="missing_items", severity="info", service=arr.kind, title=title,
             message="finding.missing_items",
+            params={"year": item.get("year") or "?"},
             data={"item_id": item_id, **extra},
+        ))
+    return findings
+
+
+def _season_findings(arr: Arr, rows: list[dict], *, rule: str, message: str,
+                     severity: str, extra_params=None) -> list[Finding]:
+    """One finding per season, carrying every episode in it."""
+    findings = []
+    for group in _season_groups(rows).values():
+        series = group["series"] or {}
+        season = group["season"]
+        label = f"Season {season}" if season is not None else "?"
+        span = _episode_span(group["numbers"])
+        params = {"count": len(group["episode_ids"]) or len(group["numbers"]),
+                  "season": season if season is not None else "?",
+                  "episodes": span or "—"}
+        if extra_params:
+            params.update(extra_params(group))
+        findings.append(Finding(
+            rule=rule, severity=severity, service=arr.kind,
+            title=f"{series.get('title') or '?'} — {label}",
+            message=message, params=params,
+            data={"item_id": group["series_id"], "season": season,
+                  "episode_ids": group["episode_ids"],
+                  "count": len(group["episode_ids"]),
+                  "quality": ", ".join(group["qualities"]) or None,
+                  "year": series.get("year")},
         ))
     return findings
 
@@ -1123,19 +1231,48 @@ def check_cutoff_unmet(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     Reporting by default. The action is a search, and a search for every title
     below its cutoff at once is a lot of queries — that should be somebody's
     decision, not a default.
+
+    What it says matters as much as that it says it. "Below the quality the
+    profile asks for" names neither quality, which leaves a reader with a page
+    of identical sentences and nothing to decide from. Both ends are named
+    here: what is on disk, and what the profile stops at.
     """
+    profiles = {p["id"]: p for p in ctx.get("profiles", [])}
+    cutoffs = {pid: cutoff_of(profile) for pid, profile in profiles.items()}
+
+    def wanted_for(row: dict) -> tuple[str, str]:
+        source = row.get("series") or row
+        profile = profiles.get(source.get("qualityProfileId"))
+        if not profile:
+            return "", ""
+        return (str(profile.get("name") or ""),
+                cutoffs.get(source.get("qualityProfileId")) or "")
+
+    if arr.kind == "sonarr":
+        rows = ctx.get("below_cutoff", [])
+
+        def season_extras(group: dict) -> dict:
+            profile, cutoff = wanted_for({"series": group["series"]})
+            return {"quality": ", ".join(group["qualities"]) or "?",
+                    "profile": profile or "?", "cutoff": cutoff or "?"}
+
+        return _season_findings(arr, rows, rule="cutoff_unmet",
+                                message="finding.cutoff_unmet_season",
+                                severity="info", extra_params=season_extras)
+
     findings = []
     for item in ctx.get("below_cutoff", []):
         item_id, title, extra = _wanted_entry(arr, item)
         if not item_id:
             continue
-        current = ((item.get("movieFile") or item.get("episodeFile") or {})
-                   .get("quality") or {}).get("quality") or {}
+        profile, cutoff = wanted_for(item)
         findings.append(Finding(
             rule="cutoff_unmet", severity="info", service=arr.kind, title=title,
             message="finding.cutoff_unmet",
-            params={"quality": current.get("name") or "?"},
-            data={"item_id": item_id, "quality": current.get("name"), **extra},
+            params={"quality": quality_of(item) or "?",
+                    "profile": profile or "?", "cutoff": cutoff or "?"},
+            data={"item_id": item_id, "quality": quality_of(item),
+                  "profile": profile, "cutoff": cutoff, **extra},
         ))
     return findings
 

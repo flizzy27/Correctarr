@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Correctarr</title>
 <link rel="icon" href="static/icon.png" type="image/png">
-<link rel="stylesheet" href="static/style.css">
+<link rel="stylesheet" href="static/style.css?v=__V__">
 <script>
   /* Apply the palette before the first paint, otherwise the default flashes. */
   try {
@@ -162,10 +162,10 @@
             <select id="findings-severity" class="picker"></select>
             <input type="search" id="findings-search" class="grow"
                    data-t-placeholder="label.filter">
-            <label class="toggle-field">
-              <span class="toggle"><input type="checkbox" id="findings-fixed-only"><span class="track"></span></span>
-              <span data-t="label.only_fixed"></span>
-            </label>
+            <span class="toggle-field">
+              <span class="toggle"><input type="checkbox" id="findings-fixed-only"><label class="track" for="findings-fixed-only"></label></span>
+              <label for="findings-fixed-only" data-t="label.only_fixed"></label>
+            </span>
           </div>
           <div id="findings-list" class="entries"></div>
         </div>
@@ -180,10 +180,10 @@
           <div class="toolbar">
             <input type="search" id="queue-search" class="grow"
                    data-t-placeholder="label.filter_by_title">
-            <label class="toggle-field">
-              <span class="toggle"><input type="checkbox" id="queue-problems"><span class="track"></span></span>
-              <span data-t="label.only_problems"></span>
-            </label>
+            <span class="toggle-field">
+              <span class="toggle"><input type="checkbox" id="queue-problems"><label class="track" for="queue-problems"></label></span>
+              <label for="queue-problems" data-t="label.only_problems"></label>
+            </span>
           </div>
           <div class="table-wrap">
             <table class="table" id="queue-table">
@@ -256,10 +256,10 @@
       <!-- ============================================ settings -->
       <section id="page-settings" class="page">
         <div class="toolbar">
-          <label class="toggle-field">
-            <span class="toggle"><input type="checkbox" id="show-advanced"><span class="track"></span></span>
-            <span data-t="action.show_advanced"></span>
-          </label>
+          <span class="toggle-field">
+            <span class="toggle"><input type="checkbox" id="show-advanced"><label class="track" for="show-advanced"></label></span>
+            <label for="show-advanced" data-t="action.show_advanced"></label>
+          </span>
         </div>
         <div id="settings-groups"></div>
         <div class="card">
@@ -296,6 +296,6 @@
 </div>
 
 <div id="toasts" aria-live="polite"></div>
-<script src="static/app.js"></script>
+<script src="static/app.js?v=__V__"></script>
 </body>
 </html>

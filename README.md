@@ -131,7 +131,10 @@ nothing is touched, until you have seen the findings and turned it off.
 
 A finding that was found and then *not* acted on says why — "not acted on: only
 1.4 h old, waiting for 6 h" — so a rule held back by its own condition never
-looks the same as a rule that did nothing.
+looks the same as a rule that did nothing. And a finding names what it found
+against what was wanted: "on disk as HDTV-720p, the profile *HD-1080p* keeps
+upgrading until WEBDL-1080p" rather than "below the quality the profile asks
+for".
 
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 

@@ -3,10 +3,14 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
-## Unreleased
+## 1.1.1
 
 ### Added
 
+* **The setup assistant stops asking.** Its button sat in the top bar of every
+  page, for good, offering to redo something nobody redoes. Once the setup has
+  been run through it moves to the bottom of the settings page, where you go
+  looking for it on the rare occasion you want it.
 * **A finding that was held back now says why.** A rule can be told to wait for
   an age, to leave anything over a size alone, or to act only above a
   confidence. When one of those stops it, the reason has been recorded since
@@ -68,6 +72,36 @@ that break an existing installation.
 
 ### Fixed
 
+* **No switch on the settings or rules page could be switched.** What you see
+  is drawn by the element beside the checkbox, because the checkbox itself is
+  zero pixels wide — and that element was not a control, so clicking it landed
+  on nothing. On the rules page the switch could not be moved at all; in the
+  settings it answered only if you happened to hit the few words of text above
+  it. That is why the dry run could not be turned off anywhere except in the
+  setup assistant. Every switch is now a label pointing at its own control, on
+  both halves.
+* **The version ran out of the sidebar and across the page behind it.** A
+  container built from a branch rather than a tag reports itself as `main-`
+  followed by a forty character commit hash. The number now comes from the
+  source, in one place; the build identity moved to the tooltip, where its
+  length costs nothing.
+* **An update did not reach the browser.** The script and the stylesheet were
+  linked without a version, so a browser that had been here before kept the
+  interface it already had — the container restarts, the API changes, and the
+  page in front of you is still last month's, running against it. The links
+  now carry the version, so each release is fetched exactly once.
+* **Sonarr said "?" where the title and the quality belong.** Both "what is
+  missing" and "what is below the cutoff" are answered with bare episodes: a
+  season number, an episode number and ids. The series and the file that is
+  already there are sent only when asked for, and nothing asked.
+* **Twenty episodes of one season were twenty findings.** One gap is one
+  thing that went wrong. Reported one by one they filled the page with
+  identical sentences and buried everything else; they are now one line per
+  season, naming the episodes in it.
+* **"Below the quality the profile asks for" named neither quality.** Both
+  ends are named now: what is on disk, and the quality the profile stops
+  upgrading at — with the profile's own name, so there is something to decide
+  from.
 * **Several messages at once showed as one.** The strip they appear in had no
   styling of its own, so every message was positioned at the same fixed corner
   and landed exactly on top of the one before it. A run reporting three errors

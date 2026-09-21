@@ -303,7 +303,8 @@
     "store_line": "{mb} MB · {findings} Funde · Schema-Fassung {schema}",
     "compact_help": "Wendet die Grenzen aus der Gruppe „Pflege“ sofort an.",
     "account_disabled": "Die Anmeldung ist über <code>AUTH=off</code> abgeschaltet. Es gibt kein Konto zu verwalten — und die Oberfläche ist für jeden erreichbar, der den Port erreicht.",
-    "sessions_note": "Alle anderen Sitzungen werden dabei beendet."
+    "sessions_note": "Alle anderen Sitzungen werden dabei beendet.",
+    "rerun_setup_help": "Geht Dienste, Pfade, Rückrufadresse und Benachrichtigungen noch einmal durch. Zurückgesetzt wird nichts."
   },
   "login": {
     "prompt": "Bitte anmelden, um fortzufahren.",
@@ -447,7 +448,7 @@
     "missing_audio_language": "Die vorhandene Datei hat keine der gewünschten Tonspuren (erkannt: {found}, gewünscht: {wanted}).",
     "unreadable_file": "Aus dieser Datei ließen sich keine Medieninformationen lesen. Das deutet auf eine beschädigte oder unvollständige Datei hin.",
     "below_profile": "Die vorhandene Datei wäre nach den heutigen Regeln von „{profile}“ gesperrt: {reason}.",
-    "missing_items": "Überwacht und erschienen, aber keine Datei vorhanden.",
+    "missing_items": "Überwacht, {year} erschienen, und es gibt keine Datei. Von allein sucht niemand danach — erst eine Suche ändert das.",
     "downloader_stale_entry": "Die Datei liegt bereits als „{title}“ in der Bibliothek ({gb} GB). Der Eintrag in {client} kann samt Quellordner weg.",
     "downloader_paused": "Das Download-Programm ist pausiert, während {waiting} Einträge warten. Es kommt nichts an, obwohl weiter gegriffen wird.",
     "disk_low": "Nur noch {free} GB frei.",
@@ -460,10 +461,12 @@
     "passthrough": "{text}",
     "api_changes": "{path} ist als abgelöst gekennzeichnet (Dienstversion {version})",
     "premature_grab": "Erscheint erst am {date}, also in {days} Tagen. Eine ehrliche Kopie davon gibt es noch nicht.",
-    "cutoff_unmet": "Vorhanden als {quality} und damit unter der Qualität, die das Profil verlangt. Von allein sucht niemand nach einer besseren Kopie.",
+    "cutoff_unmet": "Liegt als {quality} auf der Platte. Das Profil „{profile}“ bessert bis {cutoff} nach, das hier ist also nicht das Gewünschte — nur sucht von allein niemand eine bessere Kopie.",
     "season_gaps": "{missing} von {total} Folgen der Staffel {season} fehlen, der Rest ist da. Ein Staffelpaket, das nur teilweise importiert wurde, oder Folgen, die gescheitert und nie aufgefallen sind.",
     "series_incomplete": "Die Serie ist abgeschlossen, und {missing} von {total} Folgen fehlen weiterhin. Das erledigt sich nicht von selbst.",
-    "stale_blocklist": "Vor {days} Tagen gesperrt: {release}. Der Titel fehlt immer noch — möglicherweise genau deshalb."
+    "stale_blocklist": "Vor {days} Tagen gesperrt: {release}. Der Titel fehlt immer noch — möglicherweise genau deshalb.",
+    "missing_episodes": "{count} Folge(n) der Staffel {season} fehlen ({episodes}). Überwacht und ausgestrahlt, aber ohne Datei — von allein sucht niemand danach.",
+    "cutoff_unmet_season": "{count} Folge(n) der Staffel {season} ({episodes}) liegen als {quality} vor. Das Profil „{profile}“ bessert bis {cutoff} nach. Von allein sucht niemand eine bessere Kopie."
   },
   "rules": {
     "wrong_year": {

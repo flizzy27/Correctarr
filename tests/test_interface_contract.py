@@ -318,7 +318,7 @@ def test_every_id_the_script_uses_exists_in_the_page():
     # Ids the script creates itself rather than finding. Everything the setup
     # wizard renders is prefixed "w-", so it is covered by the prefix rule
     # below rather than by an ever-growing list.
-    created = {"loading", "change-password", "compact",
+    created = {"loading", "change-password", "compact", "rerun-setup",
                "password-form", "pw-current", "pw-new", "pw-repeat"}
     used = set(re.findall(r'\$\("#([a-zA-Z0-9_-]+)"\)', JS))
     missing = sorted(i for i in used - present - created
@@ -499,3 +499,31 @@ def test_messages_queue_rather_than_stack_on_top_of_each_other():
     block = CSS.split("#toasts {", 1)[1].split("}", 1)[0]
     assert "flex-direction: column" in block
     assert "position: fixed" in block
+
+
+def test_the_version_matches_the_newest_entry_in_the_changelog():
+    """Two places state the version and people read both.
+
+    The one in the sidebar is what somebody quotes in a report; the one in the
+    changelog is what they read to find out whether their problem is already
+    fixed. A release that says different things in the two is worse than one
+    that says nothing.
+    """
+    from app import __version__
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    newest = re.search(r"^## (\d+\.\d+\.\d+)$", changelog, re.M)
+    assert newest, "the changelog has no released version at all"
+    assert newest.group(1) == __version__, (
+        f"the code says {__version__}, the changelog's newest entry says "
+        f"{newest.group(1)}")
+
+
+def test_the_assets_are_linked_with_a_version():
+    """Without it a browser that has been here before keeps the interface it
+    already has, and runs it against an API that has moved on."""
+    for name in ("index.html", "login.html", "setup.html"):
+        page = (APP / "templates" / name).read_text(encoding="utf-8")
+        for link in re.findall(r'(?:href|src)="(static/[^"]*)"', page):
+            if not link.split("?")[0].endswith((".js", ".css")):
+                continue
+            assert "?v=" in link, f"{name} links {link} without a version"

@@ -134,11 +134,18 @@ code, .mono {
   position: sticky; top: 0; height: 100vh; height: 100dvh;
 }
 
+/* min-width:0 on the text column. Without it a flex child refuses to be
+   narrower than its content, so one long word does not wrap, does not clip
+   and does not scroll — it simply sticks out past the edge and lies across
+   whatever is behind it. */
 .brand { display: flex; align-items: center; gap: 11px; padding: 20px 18px 16px; }
+.brand > div { min-width: 0; }
 .brand-mark { width: 30px; height: 30px; flex: none; }
 .brand .name { font-size: 1.05rem; font-weight: 650; letter-spacing: -.02em; }
+.brand .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand .version {
   font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* min-height:0 and the scroller together. A flex child refuses to shrink
@@ -383,6 +390,10 @@ select[multiple] option { padding: 4px 2px; }
 .toggle input:focus-visible + .track { box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .toggle-field { display: flex; align-items: center; gap: 7px; font-size: .86em; color: var(--muted); }
+/* Both halves of a switch are labels pointing at the same control, so the
+   pointer has to say so over both of them. */
+.toggle-field label { cursor: pointer; }
+.toggle-field label:hover { color: var(--ink); }
 
 /* ------------------------------------------------------------------ rules */
 .rule-group { margin-bottom: 22px; }
