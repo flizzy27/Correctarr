@@ -136,21 +136,71 @@ function switchField(text, attributes = "", checked = false, id = "") {
 /* ----------------------------------------------------------------- toasts */
 const TOAST_LIMIT = 4;
 
-function toast(text, kind = "") {
+/* `undo` is an optional { label, run } — a button inside the message, for the
+   one kind of action that is better taken back than asked about first: hiding
+   something. The message stays up longer when it carries one. */
+function toast(text, kind = "", undo = null) {
   const stack = $("#toasts");
   const element = document.createElement("div");
   element.className = "toast " + kind;
   element.setAttribute("role", kind === "bad" ? "alert" : "status");
-  element.textContent = text;
+  const words = document.createElement("span");
+  words.className = "toast-text";
+  words.textContent = text;
+  element.appendChild(words);
+  if (undo) {
+    const button = document.createElement("button");
+    button.className = "toast-undo";
+    button.type = "button";
+    button.textContent = undo.label;
+    button.addEventListener("click", () => { element.remove(); undo.run(); });
+    element.appendChild(button);
+  }
   stack.appendChild(element);
   // A run that reports three errors used to show one: they were all at the
   // same fixed corner, stacked exactly on top of each other. They queue now,
   // and the oldest gives way once there are more than a handful.
   while (stack.children.length > TOAST_LIMIT) stack.firstElementChild.remove();
-  setTimeout(() => element.remove(), kind === "bad" ? 8000 : 4500);
+  setTimeout(() => element.remove(), kind === "bad" || undo ? 8000 : 4500);
 }
 
 const failed = (error) => toast(error.message || String(error), "bad");
+
+/* ------------------------------------------------------------ busy buttons */
+/* A button that has been pressed says so until the answer is back: it spins,
+   it cannot be pressed a second time, and it returns to exactly what it was
+   afterwards. Every button that talks to the server goes through here, so a
+   slow service never looks like a click that did not register. */
+async function whileBusy(button, work, text = "") {
+  if (!button) return work();
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.classList.add("busy");
+  button.setAttribute("aria-busy", "true");
+  if (text) button.textContent = text;
+  try {
+    return await work();
+  } finally {
+    button.disabled = false;
+    button.classList.remove("busy");
+    button.removeAttribute("aria-busy");
+    button.innerHTML = original;
+  }
+}
+
+/* ----------------------------------------------------------- empty states */
+/* What a list says when there is nothing in it — and, where there is one, the
+   obvious next step, so an empty page is never a dead end. */
+function emptyState(text, link = null, kind = "") {
+  return `<div class="empty-state ${esc(kind)}">
+    <p>${esc(text)}</p>
+    ${link ? `<a class="btn small" href="${esc(link.href)}">${esc(link.label)}</a>` : ""}
+  </div>`;
+}
+
+const loadingState = () =>
+  `<div class="empty-state loading-state" aria-busy="true"><span class="spinner"></span><p>${
+    esc(t("label.loading"))}</p></div>`;
 
 /* ------------------------------------------------------------------ state */
 let status = null;
@@ -160,7 +210,12 @@ let ruleData = [];
 let ruleCategories = [];
 let ruleLimits = {};
 let findingData = [];
+let openData = [];
+let decisionSummary = null;
 let fixedData = [];
+/* The query part of the address, e.g. #findings?view=decide&rule=wrong_year.
+   It is how the overview links straight into a filtered list. */
+let routeParams = new URLSearchParams();
 let queueData = [];
 let serviceData = [];
 let channelKinds = null;
@@ -186,7 +241,14 @@ async function loadChrome() {
   // you go looking for it on the rare occasion you want it.
   $("#open-wizard").hidden = Boolean(status.setup_done);
   $("#dry-run-badge").hidden = !status.dry_run;
-  $("#count-findings").textContent = status.summary.total ? num(status.summary.total) : "";
+  // What is waiting for a decision beats the size of the log: that number
+  // means something needs doing, the other only that things were found.
+  const waiting = Number(status.decisions || 0);
+  const findingsCount = $("#count-findings");
+  findingsCount.textContent = waiting ? num(waiting)
+    : status.summary.total ? num(status.summary.total) : "";
+  findingsCount.classList.toggle("attention", waiting > 0);
+  findingsCount.title = waiting ? t("findings_page.nav_waiting", { count: waiting }) : "";
   $("#count-fixed").textContent = status.summary.fixed ? num(status.summary.fixed) : "";
   $("#count-services").textContent = status.services.length || "";
 
@@ -209,7 +271,11 @@ async function loadOverview() {
     `${t("label.store")} ${num(status.store.mb, 1)} MB`,
   ].join(" · ");
 
+  const waiting = Number(status.decisions || 0);
   $("#tiles").innerHTML = [
+    [waiting ? "warn" : "good", num(waiting), t("tile.waiting"),
+     waiting ? t("tile.waiting_open") : t("tile.waiting_none"),
+     waiting ? "#findings?view=decide" : ""],
     ["accent", num(summary.last_24h), t("tile.found_24h"),
      t("tile.total", { count: num(summary.total) })],
     ["good", num(summary.last_24h_fixed), t("tile.fixed_24h"),
@@ -219,12 +285,14 @@ async function loadOverview() {
     [status.services.length === 0 ? "warn" : up === status.services.length ? "good" : "bad",
      `${up}/${status.services.length}`, t("tile.services_up"),
      status.running ? t("tile.busy") : t("tile.ready")],
-  ].map(([kind, value, label, detail]) => `
-    <div class="tile ${kind}">
-      <div class="value">${esc(value)}</div>
+  ].map(([kind, value, label, detail, href]) => {
+    const inner = `<div class="value">${esc(value)}</div>
       <div class="label">${esc(label)}</div>
-      <div class="detail">${esc(detail)}</div>
-    </div>`).join("");
+      <div class="detail">${esc(detail)}</div>`;
+    return href
+      ? `<a class="tile link ${kind}" href="${esc(href)}">${inner}</a>`
+      : `<div class="tile ${kind}">${inner}</div>`;
+  }).join("");
 
   $("#services-list").innerHTML = status.services.length
     ? status.services.map((s) => `
@@ -234,9 +302,11 @@ async function loadOverview() {
           <span class="path">${esc(s.url)}</span>
           <span class="note">${esc(s.info)}</span>
         </div>`).join("")
-    : `<p class="empty">${esc(t("overview.no_services"))}</p>`;
+    : emptyState(t("overview.no_services"), { href: "#services", label: t("nav.services") });
 
-  const [runs, paths] = await Promise.all([api("api/runs?limit=15"), api("api/paths")]);
+  const [runs, paths, decisions] = await Promise.all([
+    api("api/runs?limit=15"), api("api/paths"), api("api/decisions")]);
+  renderDecisionSummary(decisions);
 
   $("#paths-list").innerHTML = paths.paths.map((p) => {
     // "no_write" is a real problem, not a detail: something is set to delete
@@ -254,36 +324,121 @@ async function loadOverview() {
          <code>${paths.cleanup.map(esc).join("</code>, <code>")}</code></p>`
     : `<p class="hint" style="margin:12px 0 0">${esc(t("overview.cleanup_none"))}</p>`);
 
+  const L = (key) => esc(t(key));
   $("#runs-table tbody").innerHTML = runs.length
     ? runs.map((r) => `
         <tr>
-          <td title="${esc(exactly(r.at))}">${esc(when(r.at))}</td>
-          <td class="muted">${esc(t("run.trigger_" + (r.trigger === "manual" ? "manual" : "schedule")))}</td>
-          <td><span class="badge neutral">${esc(t(r.deep ? "run.deep" : "run.fast"))}</span></td>
-          <td class="num">${esc(took(r.duration_ms))}</td>
-          <td class="num">${num(r.found)}</td>
-          <td class="num">${r.fixed ? `<strong>${num(r.fixed)}</strong>` : "0"}</td>
-          <td>${r.error
-                ? `<span class="blocked" title="${esc(r.error)}">${esc(r.error.slice(0, 60))}</span>`
+          <td data-label="${L("label.time")}" title="${esc(exactly(r.at))}">${esc(when(r.at))}</td>
+          <td data-label="${L("label.trigger")}" class="muted">${esc(t("run.trigger_" + (r.trigger === "manual" ? "manual" : "schedule")))}</td>
+          <td data-label="${L("label.extent")}"><span class="badge neutral">${esc(t(r.deep ? "run.deep" : "run.fast"))}</span></td>
+          <td data-label="${L("label.duration")}" class="num">${esc(took(r.duration_ms))}</td>
+          <td data-label="${L("label.found")}" class="num">${num(r.found)}</td>
+          <td data-label="${L("label.fixed")}" class="num">${r.fixed ? `<strong>${num(r.fixed)}</strong>` : "0"}</td>
+          <td data-label="${L("label.error")}" class="clip">${r.error
+                ? `<span class="blocked" title="${esc(r.error)}">${esc(r.error)}</span>`
                 : '<span class="faint">—</span>'}</td>
         </tr>`).join("")
-    : `<tr><td colspan="7" class="empty">${esc(t("overview.no_runs"))}</td></tr>`;
+    : `<tr class="empty-row"><td colspan="7" class="empty">${esc(t("overview.no_runs"))}</td></tr>`;
+}
+
+/* ====================================================== waiting for you */
+/* The findings nobody has decided about, one line per rule. Each line says
+   what would be done, links into the list narrowed to that rule, and — where
+   nothing in it deletes — does the recommended thing for all of them at once.
+   Whatever would delete is counted and left to its own buttons. */
+function recommendedSummary(actions) {
+  return Object.entries(actions || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([action, count]) => {
+      const label = t("policy.action." + action);
+      return count > 1 && Object.keys(actions).length > 1 ? `${label} × ${count}` : label;
+    }).join(", ");
+}
+
+function renderDecisionSummary(data) {
+  decisionSummary = data;
+  const total = data.total || 0;
+  $("#decisions-total").textContent = total ? num(total) : "";
+  $("#decisions-total").hidden = !total;
+  $("#decisions-card").classList.toggle("calm", !total);
+  if (!total) {
+    $("#decisions-list").innerHTML = emptyState(
+      t("overview.decisions_empty")
+        + (data.dismissed ? " " + t("findings_page.dismissed_count", { count: data.dismissed }) : ""),
+      null, "good");
+    return;
+  }
+  $("#decisions-list").innerHTML = data.rules.map((group) => {
+    const href = `#findings?view=decide&rule=${encodeURIComponent(group.rule)}`;
+    const deletes = group.ids.length - group.safe_ids.length;
+    return `<div class="decision-row ${esc(group.severity)}">
+      <span class="count" aria-hidden="true">${num(group.count)}</span>
+      <div class="what">
+        <a href="${esc(href)}" class="name">${esc(t("rules." + group.rule + ".title"))}</a>
+        <div class="muted">${esc(t("overview.decisions_recommended",
+                                  { actions: recommendedSummary(group.actions) }))}</div>
+        ${deletes ? `<div class="warn-note">${esc(t("overview.decisions_deletes",
+                                                     { count: deletes }))}</div>` : ""}
+      </div>
+      <div class="row-actions">
+        <a class="btn small" href="${esc(href)}">${esc(t("overview.decisions_review"))}</a>
+        ${group.safe_ids.length ? `<button class="btn small primary" data-apply-rule="${
+          esc(group.rule)}">${esc(t("overview.decisions_apply",
+                                     { count: group.safe_ids.length }))}</button>` : ""}
+      </div>
+    </div>`;
+  }).join("") + (data.dismissed
+    ? `<p class="hint subtle">${esc(t("findings_page.dismissed_count",
+                                      { count: data.dismissed }))}</p>` : "");
+}
+
+async function applyRecommendedForRule(button) {
+  const group = (decisionSummary?.rules || []).find((g) => g.rule === button.dataset.applyRule);
+  if (!group || !group.safe_ids.length) return;
+  const safe = Object.fromEntries(Object.entries(group.actions)
+    .filter(([action]) => !(decisionSummary.destructive || []).includes(action)));
+  if (!confirm(t("findings_page.confirm_all", {
+    count: group.safe_ids.length, what: recommendedSummary(safe) }))) return;
+  await whileBusy(button, async () => {
+    try {
+      const answer = await post("api/findings/act", { ids: group.safe_ids });
+      toast(t("findings_page.all_done", { done: answer.done, failed: answer.failed }),
+            answer.failed ? "warn" : "good");
+      (answer.results || []).filter((r) => r.state === "failed").slice(0, 2)
+        .forEach((r) => toast(r.result, "bad"));
+    } catch (error) { failed(error); }
+  });
+  await loadOverview().catch(failed);
 }
 
 /* ================================================================= fixed */
 async function loadFixed() {
+  if (!fixedData.length) $("#fixed-list").innerHTML = loadingState();
   fixedData = await api("api/fixed?limit=300");
   renderFixed();
 }
 
 function renderFixed() {
   const search = ($("#fixed-search").value || "").toLowerCase();
-  const rows = fixedData.filter(
-    (e) => !search || (e.title + e.rule + e.description).toLowerCase().includes(search));
+  const rows = fixedData.filter((e) => !search || haystack(e).includes(search));
   $("#fixed-list").innerHTML = rows.length
     ? rows.map(entryHtml).join("")
-    : `<p class="empty">${esc(t(fixedData.length ? "fixed_page.no_match" : "fixed_page.empty"))}</p>`;
+    : emptyState(t(fixedData.length ? "fixed_page.no_match" : "fixed_page.empty"), null,
+                 fixedData.length ? "" : "good");
 }
+
+/* Everything a filter should find a finding by: what it is about, what it
+   says, which rule found it and the release or path it names. */
+const haystack = (e) =>
+  [e.title, e.description, e.rule, subjectOf(e)].join(" ").toLowerCase();
+
+/* The release, file or path a finding is about. Often the one thing that tells
+   two findings about the same film apart, and it was not shown anywhere. */
+const subjectOf = (entry) => {
+  const data = entry.data || {};
+  const value = data.release || data.file || data.path || "";
+  return value && value !== entry.title ? String(value) : "";
+};
 
 /* The severity was a three pixel stripe down the left edge and nothing else:
    the only difference between "worth knowing" and "something is broken" was a
@@ -291,7 +446,23 @@ function renderFixed() {
    written out now as well. */
 const SEVERITY_BADGE = { error: "error", warning: "warning", info: "info" };
 
+function headHtml(entry) {
+  return `<div class="head">
+      <span class="badge ${esc(SEVERITY_BADGE[entry.severity] || "neutral")}">${
+        esc(t("severity." + entry.severity))}</span>
+      <span class="rule-name" title="${esc(entry.rule)}">${
+        esc(t("rules." + entry.rule + ".title"))}</span>
+      ${entry.dismissed ? `<span class="badge neutral">${esc(t("findings_page.dismissed"))}</span>` : ""}
+      <span class="time" title="${esc(exactly(entry.at))}">${esc(when(entry.at))}</span>
+    </div>
+    <div class="title">${esc(entry.title)}</div>
+    ${subjectOf(entry) ? `<div class="subject" title="${esc(subjectOf(entry))}">${
+      esc(subjectOf(entry))}</div>` : ""}
+    <div class="text">${esc(entry.description)}</div>`;
+}
+
 function entryHtml(entry) {
+  if (entry.open) return decisionHtml(entry);
   const action = String(entry.action || "");
   // The server says which of the three happened. It used to be worked out here
   // by reading the first word of an English sentence, which stopped being true
@@ -299,19 +470,16 @@ function entryHtml(entry) {
   const state = entry.action_state || (action ? "done" : "");
   const kind = state === "failed" ? "failed" : state === "dry" ? "dry"
     : state === "done" ? "" : "none";
-  return `<div class="entry ${esc(entry.severity)}" data-finding="${esc(entry.id)}">
-    <div class="head">
-      <span class="badge ${esc(SEVERITY_BADGE[entry.severity] || "neutral")}">${
-        esc(t("severity." + entry.severity))}</span>
-      <span class="tag">${esc(entry.rule)}</span>
-      <span class="title">${esc(entry.title)}</span>
-      <span class="time" title="${esc(exactly(entry.at))}">${esc(when(entry.at))}</span>
-    </div>
-    <div class="text">${esc(entry.description)}</div>
+  return `<article class="entry ${esc(entry.severity)}${entry.dismissed ? " is-dismissed" : ""}"
+                   data-finding="${esc(entry.id)}">
+    ${headHtml(entry)}
     <div class="action ${kind}">${esc(action || t("findings_page.reported_only"))}</div>
     ${entry.held_back ? `<div class="held">${esc(entry.held_back)}</div>` : ""}
-    ${fixHtml(entry)}
-  </div>`;
+    ${entry.dismissed
+      ? `<div class="fix"><button class="btn small" data-undismiss>${
+          esc(t("findings_page.undismiss"))}</button></div>`
+      : fixHtml(entry)}
+  </article>`;
 }
 
 /* What can be done about this one finding, right now.
@@ -331,7 +499,7 @@ function fixHtml(entry) {
   // looks most like it wants pressing.
   const removes = (entry.destructive || []).includes(suggested);
   return `<div class="fix">
-    <button class="btn small ${removes ? "danger" : "primary"}"
+    <button class="btn small ${removes ? "danger" : ""}"
             data-fix="${esc(suggested)}">${
       esc(t("policy.action." + suggested))}</button>
     ${others.length ? `<select class="picker" data-fix-more>
@@ -343,65 +511,163 @@ function fixHtml(entry) {
   </div>`;
 }
 
+/* One finding that is waiting for somebody.
+ *
+ * Four questions, answered in the order they are asked: what was found, why
+ * nothing happened by itself, what is recommended — and then the choice, with
+ * the recommendation as the first and largest button so that the common case
+ * is a single press. Everything else the rule can do sits beside it; whatever
+ * cannot be undone is marked as such and asks first. Leaving it alone is a
+ * choice too, and it has a button of its own. */
+const TRASH = `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path
+  d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>`;
+
+function actionButton(entry, action, primary) {
+  const removes = (entry.destructive || []).includes(action);
+  const classes = ["btn", primary ? "" : "small",
+                   removes ? "danger" : primary ? "primary" : "ghost"].join(" ");
+  return `<button class="${classes}" data-fix="${esc(action)}"${
+      removes ? ` title="${esc(t("findings_page.cannot_undo"))}"` : ""}>${
+      removes ? TRASH : ""}${esc(t("policy.action." + action))}</button>`;
+}
+
+function decisionHtml(entry) {
+  const offers = entry.can_do || [];
+  const suggested = offers.includes(entry.suggested) ? entry.suggested : offers[0];
+  const others = offers.filter((a) => a !== suggested);
+  const because = entry.suggested_reason || t("policy.explain." + suggested);
+  const outcome = entry.action_state === "dry" || entry.action_state === "failed"
+    ? `<div class="action ${esc(entry.action_state)}">${esc(entry.action || "")}</div>` : "";
+  // "Dry run: would blocklist it" already says why nothing happened; saying
+  // "not acted on: the dry run is on" underneath it only says it twice.
+  const obvious = outcome && ["policy.dry_run_on", "policy.last_try_failed"]
+    .includes(entry.why?.key);
+  return `<article class="entry decision ${esc(entry.severity)}" data-finding="${esc(entry.id)}">
+    ${headHtml(entry)}
+    ${outcome}
+    ${entry.why && !obvious ? `<div class="held">${esc(entry.why.text)}</div>` : ""}
+    <div class="recommend">
+      <div class="recommend-head">
+        <span class="recommend-label">${esc(t("findings_page.recommended"))}</span>
+        <span class="recommend-why">${esc(because)}</span>
+      </div>
+      <div class="choices">
+        ${actionButton(entry, suggested, true)}
+        ${others.map((a) => actionButton(entry, a, false)).join("")}
+        <span class="spacer"></span>
+        <button class="btn small ghost" data-dismiss title="${
+          esc(t("findings_page.dismiss_help"))}">${esc(t("findings_page.dismiss"))}</button>
+      </div>
+      <div class="fix-note" data-fix-note role="status"></div>
+    </div>
+  </article>`;
+}
+
 /* Running it, and saying what came back.
  *
  * A search is the one action worth waiting for: the question is whether
  * anything is out there at all, and the service answers within seconds. So the
  * button stays busy until it knows, and then says what was grabbed rather than
  * that a search was started. */
-async function runFix(card, action) {
+async function runFix(card, action, button) {
   const id = card.dataset.finding;
-  const button = card.querySelector("[data-fix]");
   const note = card.querySelector("[data-fix-note]");
-  const original = button.textContent;
-  const destructive = (findingById(id)?.destructive || []).includes(action);
+  const row = findingById(id);
+  const destructive = (row?.destructive || []).includes(action);
   if (destructive && !confirm(t("findings_page.confirm_destructive",
                                { action: t("policy.action." + action) }))) return;
 
-  button.disabled = true;
-  button.textContent = t("findings_page.working");
-  note.className = "fix-note";
-  note.textContent = "";
+  const others = $$("button, select", card).filter((b) => b !== button && !b.disabled);
+  others.forEach((b) => (b.disabled = true));
+  if (note) { note.className = "fix-note"; note.textContent = ""; }
+  let answer = null;
   try {
-    const answer = await post(`api/findings/${encodeURIComponent(id)}/act`, { action });
-    const found = answer.found;
-    note.className = "fix-note " + (answer.state === "failed" ? "bad" : "good");
-    note.textContent = [answer.result, found && found.message]
-      .filter(Boolean).join(" — ");
-    toast(answer.result, answer.state === "failed" ? "bad" : "good");
-    // The line above the button is now out of date: it still says what the
-    // scheduled pass did, or that nothing was done.
-    const row = findingById(id);
-    if (row) { row.action = answer.result; row.action_state = answer.state; }
-    const shown = card.querySelector(".action");
-    if (shown) {
-      shown.textContent = answer.result;
-      shown.className = "action " + (answer.state === "failed" ? "failed" : "");
-    }
-    const held = card.querySelector(".held");
-    if (held) held.remove();
+    answer = await whileBusy(button, () =>
+      post(`api/findings/${encodeURIComponent(id)}/act`, { action }));
   } catch (error) {
-    note.className = "fix-note bad";
-    note.textContent = error.message;
+    if (note) { note.className = "fix-note bad"; note.textContent = error.message; }
     failed(error);
   } finally {
-    button.disabled = false;
-    button.textContent = original;
+    others.forEach((b) => (b.disabled = false));
   }
+  if (!answer) return;
+
+  const bad = answer.state === "failed";
+  const found = answer.found;
+  const message = [answer.result, found && found.message].filter(Boolean).join(" — ");
+  toast(message, bad ? "bad" : "good");
+  if (row) { row.action = answer.result; row.action_state = answer.state; }
+  if (bad) {
+    if (note) { note.className = "fix-note bad"; note.textContent = message; }
+    return;
+  }
+  // Done. The card stops asking: the buttons give way to what came of it, and
+  // the next reload drops it from what is waiting.
+  if (row) row.open = false;
+  openData = openData.filter((e) => String(e.id) !== String(id));
+  card.classList.add("settled");
+  const shown = card.querySelector(".action");
+  if (shown) { shown.textContent = answer.result; shown.className = "action"; }
+  card.querySelector(".held")?.remove();
+  const place = card.querySelector(".recommend") || card.querySelector(".fix");
+  if (place) {
+    place.outerHTML = `<div class="outcome good" role="status">${esc(message)}</div>`;
+  }
+  updateDecisionCounts();
+  renderFixAll(filteredFindings());
+  loadChrome().catch(() => {});
+}
+
+/* Leave it alone. Hidden until the finding says something different, and
+   taken back with one press on the message that confirms it — which is kinder
+   than asking "are you sure" about something this easy to undo. */
+async function dismissFinding(card, button) {
+  const id = card.dataset.finding;
+  try {
+    await whileBusy(button, () =>
+      post(`api/findings/${encodeURIComponent(id)}/dismiss`, {}));
+  } catch (error) { failed(error); return; }
+  const row = findingById(id);
+  if (row) { row.dismissed = true; row.open = false; }
+  openData = openData.filter((e) => String(e.id) !== String(id));
+  if (decisionSummary) decisionSummary.dismissed = (decisionSummary.dismissed || 0) + 1;
+  card.classList.add("leaving");
+  setTimeout(() => { renderFindings(); updateDecisionCounts(); }, 180);
+  loadChrome().catch(() => {});
+  toast(t("findings_page.dismissed_toast"), "", {
+    label: t("findings_page.undo"),
+    run: () => undismissFinding(id),
+  });
+}
+
+async function undismissFinding(id, button = null) {
+  try {
+    await whileBusy(button, () =>
+      api(`api/findings/${encodeURIComponent(id)}/dismiss`, { method: "DELETE" }));
+    toast(t("findings_page.undismissed_toast"), "good");
+    await loadFindings();
+    loadChrome().catch(() => {});
+  } catch (error) { failed(error); }
 }
 
 const findingById = (id) =>
   findingData.find((e) => String(e.id) === String(id))
+  || openData.find((e) => String(e.id) === String(id))
   || fixedData.find((e) => String(e.id) === String(id));
 
 /* One listener per list rather than one per row: the lists are redrawn on
    every filter keystroke, and handlers attached to rows die with them. */
 function wireFixes(container) {
   container.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-fix]");
-    if (!button) return;
-    const card = button.closest("[data-finding]");
-    if (card) runFix(card, button.dataset.fix);
+    const card = event.target.closest("[data-finding]");
+    if (!card) return;
+    const fix = event.target.closest("[data-fix]");
+    if (fix) { runFix(card, fix.dataset.fix, fix); return; }
+    const dismiss = event.target.closest("[data-dismiss]");
+    if (dismiss) { dismissFinding(card, dismiss); return; }
+    const back = event.target.closest("[data-undismiss]");
+    if (back) undismissFinding(card.dataset.finding, back);
   });
   container.addEventListener("change", (event) => {
     const picker = event.target.closest("[data-fix-more]");
@@ -409,18 +675,69 @@ function wireFixes(container) {
     const card = picker.closest("[data-finding]");
     const chosen = picker.value;
     picker.value = "";
-    if (card) runFix(card, chosen);
+    if (card) runFix(card, chosen, card.querySelector("[data-fix]"));
   });
 }
 
 /* ============================================================== findings */
+/* Two views of the same thing. "Waiting for you" is what somebody has to
+   decide — one card per finding that is still there and was not dealt with.
+   "Everything" is the log, as it always was. The choice is remembered, and
+   the address can carry it along with a rule, which is how the overview
+   links straight into one rule's findings. */
+let findingsView = "decide";
+try { findingsView = localStorage.getItem("correctarr.findings_view") || "decide"; }
+catch (e) { /* private window: keep the default */ }
+
+function setFindingsView(view, remember = true) {
+  findingsView = view === "all" ? "all" : "decide";
+  if (remember) {
+    try { localStorage.setItem("correctarr.findings_view", findingsView); }
+    catch (e) { /* private window */ }
+  }
+  $$("#findings-views [data-view]").forEach((button) => {
+    const on = button.dataset.view === findingsView;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  $("#findings-fixed-field").hidden = findingsView !== "all";
+  $("#findings-help").textContent =
+    t(findingsView === "all" ? "findings_page.help" : "findings_page.decide_help");
+}
+
 async function loadFindings() {
+  // The address wins over what was remembered: a link that says "this rule,
+  // waiting for you" has to open exactly that.
+  const wanted = routeParams.get("view");
+  if (wanted) setFindingsView(wanted, false);
+  else setFindingsView(findingsView, false);
+  // A link that names a view but no rule means every rule, whatever the
+  // picker was left on. Without anything in the address the picker is kept.
+  const wantedRule = [...routeParams.keys()].length ? routeParams.get("rule") || "" : null;
+  routeParams = new URLSearchParams();
+
+  const list = $("#findings-list");
+  if (!(findingsView === "all" ? findingData : openData).length) {
+    list.innerHTML = loadingState();
+    $("#findings-bulk").hidden = true;
+  }
   const fixedOnly = $("#findings-fixed-only").checked;
-  findingData = await api(`api/findings?limit=400${fixedOnly ? "&fixed_only=true" : ""}`);
+  const [log, open, summary] = await Promise.all([
+    findingsView === "all"
+      ? api(`api/findings?limit=400${fixedOnly ? "&fixed_only=true" : ""}`)
+      : Promise.resolve(findingData),
+    api("api/findings?open_only=true&limit=1000"),
+    api("api/decisions"),
+  ]);
+  findingData = log;
+  openData = open;
+  decisionSummary = summary;
   fillSeverityPicker();
-  const rules = [...new Set(findingData.map((e) => e.rule))].sort();
+  const source = findingsView === "all" ? findingData : openData;
+  const rules = [...new Set(source.map((e) => e.rule))].sort();
   const select = $("#findings-rule");
-  const previous = select.value;
+  const previous = wantedRule !== null ? wantedRule : select.value;
+  if (wantedRule && !rules.includes(wantedRule)) rules.push(wantedRule);
   select.innerHTML = `<option value="">${esc(t("label.all_rules"))}</option>` +
     rules.map((r) => `<option value="${esc(r)}"${r === previous ? " selected" : ""}>${
       esc(t("rules." + r + ".title"))}</option>`).join("");
@@ -435,18 +752,50 @@ function fillSeverityPicker() {
       `<option value="${s}">${esc(t("severity." + s))}</option>`).join("");
 }
 
-function renderFindings() {
+function updateDecisionCounts() {
+  const count = openData.length;
+  const badge = $("#decide-count");
+  badge.textContent = count ? num(count) : "";
+  badge.hidden = !count;
+}
+
+/* What the list shows: the view, narrowed by the three filters. */
+function filteredFindings() {
   const rule = $("#findings-rule").value;
   const severity = $("#findings-severity").value;
   const search = ($("#findings-search").value || "").toLowerCase();
-  const rows = findingData.filter(
+  const source = findingsView === "all" ? findingData : openData;
+  return source.filter(
     (e) => (!rule || e.rule === rule) &&
            (!severity || e.severity === severity) &&
-           (!search || (e.title + e.description).toLowerCase().includes(search)));
+           (!search || haystack(e).includes(search)));
+}
+
+function renderFindings() {
+  updateDecisionCounts();
+  const source = findingsView === "all" ? findingData : openData;
+  const rows = filteredFindings();
   renderFixAll(rows);
-  $("#findings-list").innerHTML = rows.length
-    ? rows.map(entryHtml).join("")
-    : `<p class="empty">${esc(t("findings_page.empty"))}</p>`;
+  const list = $("#findings-list");
+  if (rows.length) {
+    list.innerHTML = rows.map(entryHtml).join("") + dismissedNote();
+    return;
+  }
+  if (source.length) {
+    list.innerHTML = emptyState(t("findings_page.no_match"));
+  } else if (findingsView === "decide") {
+    list.innerHTML = emptyState(t("findings_page.decide_empty"),
+      { href: "#findings?view=all", label: t("findings_page.show_everything") }, "good")
+      + dismissedNote();
+  } else {
+    list.innerHTML = emptyState(t("findings_page.empty"));
+  }
+}
+
+function dismissedNote() {
+  const count = findingsView === "decide" ? decisionSummary?.dismissed || 0 : 0;
+  return count ? `<p class="hint subtle list-foot">${esc(t("findings_page.dismissed_count",
+    { count }))} <a href="#findings?view=all">${esc(t("findings_page.show_everything"))}</a></p>` : "";
 }
 
 /* Everything in the list at once.
@@ -454,62 +803,66 @@ function renderFindings() {
  * "In the list" is the whole design. It acts on what is in front of you, after
  * the filters, not on everything in the store — so narrowing to one rule and
  * pressing it means that rule, and nothing else can be swept up by accident.
+ * Each finding gets its own recommendation, which is not always the same for
+ * two findings of one rule.
  *
- * Anything that deletes is left out. A single button that removes forty
- * folders because it was pressed once is not a convenience, and there is a
- * separate button on each of those findings for whoever means it. */
+ * Only what is still waiting counts: an entry that was dealt with, or whose
+ * problem has gone, has nothing left to do. And anything whose recommendation
+ * deletes is left out. A single button that removes forty folders because it
+ * was pressed once is not a convenience, and there is a separate button on
+ * each of those findings for whoever means it. */
 function actionable(rows) {
-  return rows.filter((e) => e.id && (e.can_do || []).length
-                            && !(e.destructive || []).length);
+  return rows.filter((e) => e.id && e.open && (e.can_do || []).length
+                            && !(e.destructive || []).includes(e.suggested));
 }
 
 function renderFixAll(rows) {
   const can = actionable(rows);
+  const deletes = rows.filter((e) => e.open && (e.destructive || []).includes(e.suggested));
   const bar = $("#findings-bulk");
-  if (!can.length) { bar.hidden = true; return; }
+  // One finding already has its own button, right underneath.
+  if (can.length < 2) { bar.hidden = true; return; }
   bar.hidden = false;
   bar.innerHTML = `
-    <button class="btn small primary" id="fix-all">${
-      esc(t("findings_page.fix_all", { count: can.length }))}</button>
-    <span class="muted">${esc(t("findings_page.fix_all_help"))}</span>`;
-  $("#fix-all").addEventListener("click", () => fixAll(can));
+    <button class="btn primary" id="fix-all">${
+      esc(t("findings_page.fix_all_recommended", { count: can.length }))}</button>
+    <span class="muted">${esc(t("findings_page.fix_all_recommended_help"))}${
+      deletes.length ? " " + esc(t("findings_page.left_for_you", { count: deletes.length })) : ""}</span>`;
+  $("#fix-all").addEventListener("click", (event) => fixAll(can, event.currentTarget));
 }
 
-async function fixAll(rows) {
-  const what = [...new Set(rows.map((e) => e.suggested || e.can_do[0]))]
-    .map((a) => t("policy.action." + a)).join(", ");
+async function fixAll(rows, button) {
+  const counts = {};
+  rows.forEach((e) => { counts[e.suggested] = (counts[e.suggested] || 0) + 1; });
   if (!confirm(t("findings_page.confirm_all",
-                 { count: rows.length, what }))) return;
-
-  const button = $("#fix-all");
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = t("findings_page.working");
-  try {
-    const answer = await post("api/findings/act",
-                              { ids: rows.map((e) => e.id) });
-    toast(t("findings_page.all_done",
-            { done: answer.done, failed: answer.failed }),
-          answer.failed ? "warn" : "good");
-    // Each row now says something different, so the whole list is refetched
-    // rather than patched in forty places.
-    await loadFindings();
-  } catch (error) {
-    failed(error);
-  } finally {
-    button.disabled = false;
-    button.textContent = original;
-  }
+                 { count: rows.length, what: recommendedSummary(counts) }))) return;
+  await whileBusy(button, async () => {
+    try {
+      const answer = await post("api/findings/act", { ids: rows.map((e) => e.id) });
+      toast(t("findings_page.all_done",
+              { done: answer.done, failed: answer.failed }),
+            answer.failed ? "warn" : "good");
+      (answer.results || []).filter((r) => r.state === "failed").slice(0, 2)
+        .forEach((r) => toast(r.result, "bad"));
+    } catch (error) {
+      failed(error);
+    }
+  }, t("findings_page.working"));
+  // Each row now says something different, so the whole list is refetched
+  // rather than patched in forty places.
+  await loadFindings().catch(failed);
+  loadChrome().catch(() => {});
 }
 
 /* ================================================================= queue */
 async function loadQueue() {
   const body = $("#queue-table tbody");
-  body.innerHTML = `<tr><td colspan="7" class="empty">…</td></tr>`;
+  body.innerHTML = `<tr class="empty-row"><td colspan="7">${loadingState()}</td></tr>`;
   try {
     queueData = await api("api/queue");
   } catch (error) {
-    body.innerHTML = `<tr><td colspan="7" class="empty">${esc(error.message)}</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="7" class="empty bad">${
+      esc(error.message)}</td></tr>`;
     return;
   }
   renderQueue();
@@ -518,6 +871,7 @@ async function loadQueue() {
 function renderQueue() {
   const search = ($("#queue-search").value || "").toLowerCase();
   const problemsOnly = $("#queue-problems").checked;
+  const L = (key) => esc(t(key));
   const rows = queueData.filter((r) => {
     if (search && !((r.item || "") + (r.release || "")).toLowerCase().includes(search))
       return false;
@@ -534,22 +888,27 @@ function renderQueue() {
         const blocked = now !== null && now <= -900000;
         const drifted = now !== null && r.score_then !== null
                         && Math.abs(now - r.score_then) > 1000;
+        // The release name is shown whole but kept to one line with an
+        // ellipsis on a wide screen; the full name is in the tooltip, and on a
+        // phone, where the table becomes a list, it wraps instead.
         return `<tr>
-          <td><strong>${esc(r.item || "?")}</strong>${
+          <td data-label="${L("label.title")}"><strong>${esc(r.item || "?")}</strong>${
               r.year ? ` <span class="muted">(${esc(r.year)})</span>` : ""}
             <div class="muted">${esc(r.service)}${r.profile ? " · " + esc(r.profile) : ""}</div></td>
-          <td class="mono">${esc((r.release || "").slice(0, 62))}
-            ${r.messages.length ? `<div class="muted">${esc(r.messages[0].slice(0, 80))}</div>` : ""}</td>
-          <td class="num">${num(r.gb, 2)}</td>
-          <td class="num">${r.percent === null ? "—" : num(r.percent, 0)}</td>
-          <td>${esc(r.state || r.status || "—")}</td>
-          <td class="num muted">${r.score_then ?? "—"}</td>
-          <td class="num ${blocked ? "blocked" : drifted ? "deviation" : ""}"
+          <td data-label="${L("label.release")}" class="mono clip wide-clip">
+            <span title="${esc(r.release || "")}">${esc(r.release || "")}</span>
+            ${r.messages.length ? `<div class="muted" title="${esc(r.messages[0])}">${
+              esc(r.messages[0])}</div>` : ""}</td>
+          <td data-label="GB" class="num">${num(r.gb, 2)}</td>
+          <td data-label="%" class="num">${r.percent === null ? "—" : num(r.percent, 0)}</td>
+          <td data-label="${L("label.state")}">${esc(r.state || r.status || "—")}</td>
+          <td data-label="${L("label.then")}" class="num muted">${r.score_then ?? "—"}</td>
+          <td data-label="${L("label.now")}" class="num ${blocked ? "blocked" : drifted ? "deviation" : ""}"
               title="${esc((r.hits || []).join(", "))}">
             ${now === null ? "—" : blocked ? esc(t("queue_page.blocked")) : num(now)}</td>
         </tr>`;
       }).join("")
-    : `<tr><td colspan="7" class="empty">${esc(t("queue_page.empty"))}</td></tr>`;
+    : `<tr class="empty-row"><td colspan="7" class="empty">${esc(t("queue_page.empty"))}</td></tr>`;
 }
 
 /* ================================================================= rules */
@@ -747,22 +1106,25 @@ function applyRuleAnswer(name, answer) {
 /* ============================================================== indexers */
 async function loadIndexers() {
   const target = $("#indexers-content");
-  target.innerHTML = `<p class="empty">${esc(t("indexers_page.calculating"))}</p>`;
+  target.innerHTML = `<div class="empty-state loading-state" aria-busy="true"><span
+    class="spinner"></span><p>${esc(t("indexers_page.calculating"))}</p></div>`;
   let data;
   try {
     data = await api("api/indexers");
   } catch (error) {
-    target.innerHTML = `<p class="empty">${esc(error.message)}</p>`;
+    target.innerHTML = emptyState(error.message, null, "bad");
     return;
   }
   if (!data.length) {
-    target.innerHTML = `<p class="empty">${esc(t("indexers_page.none"))}</p>`;
+    target.innerHTML = emptyState(t("indexers_page.none"),
+                                  { href: "#services", label: t("nav.services") });
     return;
   }
+  const L = (key) => esc(t(key));
   target.innerHTML = data.map((group) => `
     <p class="hint">${esc(t("indexers_page.weights"))} ${Object.entries(group.weights)
       .map(([k, v]) => `${esc(k)} ${Math.round(v * 100)} %`).join(" · ")}</p>
-    <div class="table-wrap"><table class="table">
+    <div class="table-wrap"><table class="table stack">
       <thead><tr>
         <th>${esc(t("label.indexer"))}</th>
         <th class="num">${esc(t("label.priority"))}</th>
@@ -776,7 +1138,7 @@ async function loadIndexers() {
       </tr></thead>
       <tbody>${group.indexers.map((i) => `
         <tr>
-          <td><strong>${esc(i.name)}</strong>${
+          <td class="cell-head"><strong>${esc(i.name)}</strong>${
             i.enabled ? "" : ` <span class="badge error">${esc(t("indexers_page.disabled"))}</span>`}
             ${i.notes.length ? `<div class="muted">${esc(i.notes.join(" · "))}</div>` : ""}
             ${i.deviation
@@ -784,14 +1146,14 @@ async function loadIndexers() {
                    actual: i.deviation.actual_rank, target: i.deviation.target_rank,
                    priority: i.deviation.actual_priority,
                    suggested: i.deviation.suggested_priority }))}</div>` : ""}</td>
-          <td class="num">${i.priority ?? "—"}</td>
-          <td class="num">${num(i.queries)}</td>
-          <td class="num">${num(i.grabs)}</td>
-          <td class="num">${i.yield === null ? "—" : num(i.yield, 2) + " %"}</td>
-          <td class="num">${i.mean_score ? num(i.mean_score) : "—"}</td>
-          <td class="num">${num(i.samples)}</td>
-          <td class="num">${i.response_ms || "—"}</td>
-          <td class="num"><strong>${i.rating ?? "—"}</strong>
+          <td data-label="${L("label.priority")}" class="num">${i.priority ?? "—"}</td>
+          <td data-label="${L("label.queries")}" class="num">${num(i.queries)}</td>
+          <td data-label="${L("label.grabs")}" class="num">${num(i.grabs)}</td>
+          <td data-label="${L("label.yield")}" class="num">${i.yield === null ? "—" : num(i.yield, 2) + " %"}</td>
+          <td data-label="${L("label.mean_score")}" class="num">${i.mean_score ? num(i.mean_score) : "—"}</td>
+          <td data-label="${L("label.samples")}" class="num">${num(i.samples)}</td>
+          <td data-label="ms" class="num">${i.response_ms || "—"}</td>
+          <td data-label="${L("label.rating")}" class="num"><strong>${i.rating ?? "—"}</strong>
             ${i.parts && Object.keys(i.parts).length
               ? `<div class="muted">${Object.entries(i.parts)
                    .map(([k, v]) => `${esc(k.slice(0, 4))} ${v}`).join(" ")}</div>` : ""}</td>
@@ -1090,25 +1452,20 @@ function renderPreview(plan) {
 }
 
 async function applyProfile(event) {
-  const button = event.currentTarget;
   const note = $("#p-note");
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = t("action.saving");
   note.textContent = "";
-  try {
-    const answer = await post("api/profiles/apply", profileWish);
-    const where = answer.written.map((w) => w.service).join(", ");
-    note.textContent = t("profiles_page.written", {
-      name: profileWish.name, services: where });
-    toast(note.textContent, "good");
-    (answer.failed || []).forEach((f) => toast(`${f.service}: ${f.error}`, "bad"));
-  } catch (error) {
-    failed(error);
-  } finally {
-    button.disabled = false;
-    button.textContent = original;
-  }
+  await whileBusy(event.currentTarget, async () => {
+    try {
+      const answer = await post("api/profiles/apply", profileWish);
+      const where = answer.written.map((w) => w.service).join(", ");
+      note.textContent = t("profiles_page.written", {
+        name: profileWish.name, services: where });
+      toast(note.textContent, "good");
+      (answer.failed || []).forEach((f) => toast(`${f.service}: ${f.error}`, "bad"));
+    } catch (error) {
+      failed(error);
+    }
+  }, t("action.saving"));
 }
 
 /* ============================================================== services */
@@ -1173,14 +1530,10 @@ function wireService(card) {
     return body;
   };
 
-  const guarded = (busyKey, work) => async (event) => {
-    const button = event.currentTarget;
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = t(busyKey);
-    try { await work(); } catch (error) { failed(error); }
-    finally { button.disabled = false; button.textContent = original; }
-  };
+  const guarded = (busyKey, work) => (event) =>
+    whileBusy(event.currentTarget, async () => {
+      try { await work(); } catch (error) { failed(error); }
+    }, t(busyKey));
 
   card.querySelector('[data-do="test"]').addEventListener("click",
     guarded("action.testing", async () => {
@@ -1361,14 +1714,10 @@ function wireNotification(card) {
   const index = Number(card.dataset.index);
   const read = () => readConnection(card, index);
 
-  const guarded = (busyKey, work) => async (event) => {
-    const button = event.currentTarget;
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = t(busyKey);
-    try { await work(); } catch (error) { failed(error); }
-    finally { button.disabled = false; button.textContent = original; }
-  };
+  const guarded = (busyKey, work) => (event) =>
+    whileBusy(event.currentTarget, async () => {
+      try { await work(); } catch (error) { failed(error); }
+    }, t(busyKey));
 
   card.querySelector('[data-do="test"]').addEventListener("click",
     guarded("action.testing", async () => {
@@ -2065,8 +2414,20 @@ const LOADERS = {
   notifications: loadNotifications, settings: loadSettings,
 };
 
-async function go(target, remember = true) {
+/* "#findings?view=decide&rule=wrong_year" → the view, and what it is asked to
+   show. Anything after the question mark belongs to the page, not the router. */
+function readAddress() {
+  const raw = (location.hash || "#overview").slice(1);
+  const cut = raw.indexOf("?");
+  return {
+    view: (cut < 0 ? raw : raw.slice(0, cut)) || "overview",
+    params: new URLSearchParams(cut < 0 ? "" : raw.slice(cut + 1)),
+  };
+}
+
+async function go(target, remember = true, params = null) {
   if (!LOADERS[target]) target = "overview";
+  routeParams = params || new URLSearchParams();
   $$(".nav-item").forEach((b) => {
     const active = b.dataset.target === target;
     b.classList.toggle("active", active);
@@ -2081,7 +2442,7 @@ async function go(target, remember = true) {
   // pushState, not replaceState: with replaceState the back button left the
   // page it was on and walked out of the application altogether, which is not
   // what anybody means by it.
-  if (remember && location.hash.slice(1) !== target) {
+  if (remember && readAddress().view !== target) {
     history.pushState({ view: target }, "", "#" + target);
   }
   try { await LOADERS[target](); } catch (error) { failed(error); }
@@ -2089,9 +2450,11 @@ async function go(target, remember = true) {
 
 /* ================================================================= check */
 async function runCheck(button, deep) {
-  const original = button.textContent;
-  button.disabled = true;
-  button.textContent = t(deep ? "action.checking_deep" : "action.checking");
+  return whileBusy(button, () => runCheckNow(deep),
+                   t(deep ? "action.checking_deep" : "action.checking"));
+}
+
+async function runCheckNow(deep) {
   try {
     const result = await api("api/check" + (deep ? "?deep=true" : ""), { method: "POST" });
     if (result.skipped) {
@@ -2106,14 +2469,13 @@ async function runCheck(button, deep) {
             result.errors?.length ? "warn" : result.found ? "" : "good");
       (result.errors || []).slice(0, 3).forEach((error) => toast(error, "bad"));
     }
-    await loadOverview();
-    const open = $(".page.active")?.id?.replace("page-", "");
-    if (open && open !== "overview") await LOADERS[open]();
+    // Only the page in front is reloaded. Reloading the overview behind
+    // another one used to write the overview's subtitle over that page's own.
+    const open = $(".page.active")?.id?.replace("page-", "") || "overview";
+    if (open === "overview") await loadOverview();
+    else await Promise.all([loadChrome(), LOADERS[open]()]);
   } catch (error) {
     failed(error);
-  } finally {
-    button.disabled = false;
-    button.textContent = original;
   }
 }
 
@@ -2154,9 +2516,12 @@ function wire() {
 
   const followTheAddressBar = () => {
     if (wizard.open) { wizard.close(); return; }
-    const wanted = (location.hash || "#overview").slice(1);
-    if ($(".page.active")?.id === "page-" + wanted) return;
-    go(wanted, false).catch(failed);
+    const { view, params } = readAddress();
+    // The same page with nothing new asked of it: nothing to do. The same page
+    // with a filter in the address is a link from the overview, and has to
+    // apply it.
+    if ($(".page.active")?.id === "page-" + view && ![...params.keys()].length) return;
+    go(view, false, params).catch(failed);
   };
   // Both, and they are not the same event. Back and forward fire popstate;
   // a link to another view, or an address pasted into the bar of a page that
@@ -2181,6 +2546,16 @@ function wire() {
   $("#rules-search").addEventListener("input", renderRules);
   wireFixes($("#findings-list"));
   wireFixes($("#fixed-list"));
+  $$("#findings-views [data-view]").forEach((button) =>
+    button.addEventListener("click", () => {
+      if (button.dataset.view === findingsView) return;
+      setFindingsView(button.dataset.view);
+      loadFindings().catch(failed);
+    }));
+  $("#decisions-list").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-apply-rule]");
+    if (button) applyRecommendedForRule(button);
+  });
   $("#show-advanced").addEventListener("change", renderSettings);
 
   $("#add-notification").addEventListener("click", () => {
@@ -2252,12 +2627,12 @@ function wire() {
     $("#sign-out").hidden = state.mode === "off";
   } catch (error) { /* redirected */ }
 
-  const first = (location.hash || "#overview").slice(1);
+  const first = readAddress();
   // Loaded whichever page was asked for, because the version, the counts and
   // the dry run badge belong to the window, not to one page. The overview
   // fetches it as part of its own work, so it is not asked for twice.
-  const chrome = first === "overview" ? Promise.resolve() : loadChrome().catch(() => {});
-  await go(first, false);
+  const chrome = first.view === "overview" ? Promise.resolve() : loadChrome().catch(() => {});
+  await go(first.view, false, first.params);
   await chrome;
 
   // On a fresh installation the wizard opens by itself. Nobody should have to

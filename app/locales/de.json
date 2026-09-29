@@ -150,7 +150,8 @@
     "only_problems": "nur Auffälligkeiten",
     "only_fixed": "nur behobene",
     "optional": "optional",
-    "no_sign_in": "Ohne Anmeldung"
+    "no_sign_in": "Ohne Anmeldung",
+    "loading": "Wird geladen …"
   },
   "unit": {
     "seconds": "Sekunden",
@@ -212,6 +213,9 @@
     "fixed_24h": "davon behoben",
     "last_run": "beim letzten Lauf",
     "services_up": "Dienste erreichbar",
+    "waiting": "warten auf dich",
+    "waiting_none": "nichts zu entscheiden",
+    "waiting_open": "Liste öffnen",
     "total": "{count} insgesamt",
     "ready": "bereit",
     "busy": "prüft gerade …"
@@ -219,6 +223,13 @@
   "overview": {
     "services_title": "Dienste",
     "services_help": "Jeder Zugang wird beim Laden dieser Seite tatsächlich angesprochen. Was hier grün ist, antwortet wirklich.",
+    "decisions_title": "Wartet auf deine Entscheidung",
+    "decisions_help": "Gefunden und bewusst nicht von selbst erledigt — weil eine Regel nur meldet, der Testlauf läuft oder sie sich nicht sicher war. Ein Druck tut das Empfohlene.",
+    "decisions_empty": "Nichts wartet auf dich.",
+    "decisions_review": "Ansehen",
+    "decisions_apply": "Empfohlenes tun ({count})",
+    "decisions_recommended": "Empfohlen: {actions}",
+    "decisions_deletes": "{count} würden löschen — die werden einzeln entschieden.",
     "paths_title": "Pfade",
     "paths_help": "Der häufigste Einrichtungsfehler: Die Pfade in diesem Container stimmen nicht mit denen überein, die Radarr sieht. Dann schweigen die Dateiregeln, obwohl sie etwas finden müssten.",
     "runs_title": "Letzte Durchläufe",
@@ -236,6 +247,24 @@
   "findings_page": {
     "title": "Funde",
     "help": "Alles, was gefunden wurde — behoben oder nicht.",
+    "view_decide": "Wartet auf dich",
+    "view_all": "Alles",
+    "decide_help": "Jeder dieser Funde wurde erkannt und bewusst nicht von selbst erledigt. Der erste Knopf ist die Empfehlung, daneben steht alles andere, was die Regel tun kann.",
+    "decide_empty": "Nichts wartet auf dich. Alles bisher Gefundene ist entweder erledigt oder braucht keine Entscheidung.",
+    "show_everything": "Alles anzeigen",
+    "nav_waiting": "{count} warten auf deine Entscheidung",
+    "recommended": "Empfohlen",
+    "recommended_by_rule": "Das, worauf die Regel eingestellt ist.",
+    "cannot_undo": "lässt sich nicht rückgängig machen",
+    "dismiss": "Ausblenden",
+    "dismiss_help": "In Ruhe lassen und ausblenden, bis sich daran etwas ändert. Im Protokoll bleibt es stehen.",
+    "dismissed": "Ausgeblendet",
+    "dismissed_toast": "Ausgeblendet — bis sich daran etwas ändert.",
+    "dismissed_count": "{count} ausgeblendet, bis sich daran etwas ändert.",
+    "undismiss": "Wieder anzeigen",
+    "undismissed_toast": "Es steht wieder in der Liste.",
+    "undo": "Rückgängig",
+    "no_match": "Nichts passt zu diesen Filtern.",
     "empty": "Noch nichts protokolliert.",
     "reported_only": "nur gemeldet",
     "held_back": "Nicht ausgeführt: {reason}",
@@ -245,6 +274,9 @@
     "confirm_destructive": "{action} — das lässt sich nicht rückgängig machen. Trotzdem?",
     "fix_all": "Alle {count} erledigen",
     "fix_all_help": "Alles, was gerade in der Liste steht — gefiltert wie sie ist. Löschendes bleibt außen vor, dafür gibt es den Knopf am Fund selbst.",
+    "fix_all_recommended": "Für alle {count} das Empfohlene tun",
+    "fix_all_recommended_help": "Jeder Fund bekommt seine eigene Empfehlung — und zwar genau für das, was gerade in der Liste steht.",
+    "left_for_you": "{count}, die etwas löschen würden, bleiben dir überlassen.",
     "confirm_all": "{count} Fund(e): {what}. Loslegen?",
     "all_done": "{done} erledigt, {failed} fehlgeschlagen."
   },
@@ -1109,7 +1141,10 @@
     "needs_a_person": "das ist Geschmackssache, kein Fehler",
     "needs_a_look": "nicht sicher genug, um es ungefragt zu tun — als Knopf angeboten",
     "nothing_safe": "hier würde nichts helfen, also geschieht nichts",
-    "suggests_otherwise": "dieser Fund verlangt etwas anderes als die eingestellte Aktion"
+    "suggests_otherwise": "dieser Fund verlangt etwas anderes als die eingestellte Aktion",
+    "dry_run_on": "der Testlauf ist eingeschaltet",
+    "last_try_failed": "der letzte Versuch ist fehlgeschlagen",
+    "not_yet": "bisher ist noch nichts damit geschehen"
   },
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",

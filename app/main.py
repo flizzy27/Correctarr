@@ -26,6 +26,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,7 @@ from . import __version__, auth, i18n, logging_setup, notifications, policy
 from . import profiles as vprofiles
 from . import settings as S
 from .arr import Arr, ArrError
-from .engine import Engine
+from .engine import Engine, identity
 from .prowlarr import Prowlarr
 from .rules import ALL, BY_NAME, CATEGORIES, size_left
 from .sab import Sab
@@ -689,6 +690,9 @@ def status(_: dict = Depends(require_user)):
         "last_run": recent[0] if recent else None,
         "next_fast": jobs.get("fast"), "next_deep": jobs.get("deep"),
         "summary": store.summary(), "store": store.size(),
+        # How many findings are waiting for somebody to decide. Shown beside
+        # the findings in the navigation on every page, not only the overview.
+        "decisions": len(_open_rows(_Decisions())[0]),
         "dry_run": bool(cfg.get("dry_run")),
         "theme": cfg.get("theme", "midnight"),
         "density": cfg.get("density", "normal"),
@@ -918,7 +922,72 @@ def configure_rules(request: Request, body: dict = Body(...),
 # ---------------------------------------------------------------------------
 # Findings and runs
 # ---------------------------------------------------------------------------
-def _localise(rows: list[dict], language: str) -> list[dict]:
+class _Decisions:
+    """What deciding whether a finding is still open needs, read once.
+
+    Three questions per finding, none of which the row can answer by itself:
+    is it still there (the log keeps it long after the problem went away), has
+    somebody dismissed it, and what is its rule set to do today.
+    """
+
+    def __init__(self) -> None:
+        self.cfg = engine.config()
+        self.current = store.seen_since(_still_current_since(self.cfg))
+        self.dismissed = store.dismissed()
+
+    def configured(self, rule) -> str:
+        return engine.rule_policy(self.cfg, rule.name).action
+
+
+def _still_current_since(cfg: dict) -> str:
+    """How recently a pass must have come across a finding for it to count.
+
+    Two full passes and a margin. A rule that only runs on the full pass
+    touches its findings every ninety minutes by default, and one pass missed
+    to a service that was briefly away must not make everything look solved.
+    """
+    try:
+        deep = int(cfg.get("deep_minutes", 90) or 90)
+    except (TypeError, ValueError):
+        deep = 90
+    minutes = max(180, 2 * deep + 30)
+    return (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+
+
+def _data_of(row: dict) -> dict:
+    data = row.get("data")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except (ValueError, TypeError):
+            data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _why_not(data: dict, state: str, configured: str) -> tuple[str, dict]:
+    """Why nothing was done about a finding by itself, as a key and its fields.
+
+    Empty when something was done. The reason recorded by the pass comes
+    first because it is the most specific; after that the result says it —
+    a dry run, a failure — and what is left is the rule's own setting.
+    """
+    if state == "done":
+        return "", {}
+    held = data.get("_held")
+    if held:
+        params = data.get("_held_params")
+        return str(held), params if isinstance(params, dict) else {}
+    if state == "dry":
+        return "policy.dry_run_on", {}
+    if state == "failed":
+        return "policy.last_try_failed", {}
+    if configured == policy.REPORT:
+        return "policy.report_only", {}
+    return "policy.not_yet", {}
+
+
+def _localise(rows: list[dict], language: str,
+              context: _Decisions | None = None) -> list[dict]:
     """Re-render everything a stored finding says, in the requested language.
 
     The store keeps the English text plus the keys and their parameters, so an
@@ -929,16 +998,17 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
     and stored as a sentence, so the German interface read "blocklisted, new
     search started" in English. And the reason a finding was *not* acted on was
     recorded and then never shown to anybody at all.
+
+    On top of that each row says whether it is still waiting for somebody:
+    ``open`` is a finding that is still there, was not dealt with, has
+    something that can be done about it and has not been dismissed. Only the
+    newest row of a finding can be open — the older ones are history.
     """
+    context = context or _Decisions()
     out = []
+    newest: set[str] = set()
     for row in rows:
-        data = row.get("data")
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except (ValueError, TypeError):
-                data = {}
-        data = data or {}
+        data = _data_of(row)
         row = {**row, "data": data}
 
         key = data.get("_msg")
@@ -948,24 +1018,56 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
         rendered = policy.render(data.get("_action"), language)
         if rendered:
             row["action"] = rendered
-        row["action_state"] = _action_state(data, row.get("action"))
+        state = _action_state(data, row.get("action"))
+        row["action_state"] = state
+
+        seen_key, dismiss_key = identity(row)
+        row["dismissed"] = dismiss_key in context.dismissed
+        row["current"] = seen_key in context.current
+        first = seen_key not in newest
+        newest.add(seen_key)
 
         # What this one finding can be told to do, and what would be done if
         # nobody says. Sent with the row because the interface draws a button
         # from it, and a button has to know before it is pressed.
         rule = BY_NAME.get(row.get("rule"))
+        offers: list[str] = []
+        configured = policy.REPORT
         if rule is not None:
+            configured = context.configured(rule)
             offers = _offers(rule, data)
             row["can_do"] = offers
-            row["suggested"] = engine.suggested_action(
-                rule, _shallow_finding(row, data)) if offers else policy.REPORT
+            suggested = engine.suggested_action(
+                rule, _shallow_finding(row, data), configured) if offers else policy.REPORT
+            row["suggested"] = suggested
             row["destructive"] = sorted(set(offers) & policy.DESTRUCTIVE)
+            # Where the suggestion came from. A rule that looked at this case
+            # and recommends something other than its own setting says why,
+            # and that reason is only shown when its suggestion is the one
+            # being offered.
+            own = (suggested in (data.get("suggested_action"), data.get("suggested"))
+                   and suggested != policy.REPORT)
+            row["suggested_by"] = "finding" if own else "rule"
+            reason = data.get("suggested_reason")
+            if own and isinstance(reason, str) and reason:
+                params = data.get("suggested_reason_params")
+                row["suggested_reason"] = i18n.t(
+                    reason, language, **(params if isinstance(params, dict) else {}))
 
         held = data.get("_held")
         if held:
             row["held_back"] = i18n.t(
                 "findings_page.held_back", language,
                 reason=i18n.t(held, language, **(data.get("_held_params") or {})))
+
+        why, fields = _why_not(data, state, configured)
+        if why:
+            row["why"] = {"key": why, "text": i18n.t(
+                "findings_page.held_back", language,
+                reason=i18n.t(why, language, **fields))}
+
+        row["open"] = bool(offers and first and state != "done"
+                           and row["current"] and not row["dismissed"])
         out.append(row)
     return out
 
@@ -981,6 +1083,41 @@ def _offers(rule, data: dict) -> list[str]:
     if (data or {}).get("suggested") == policy.REPORT:
         return []
     return [a for a in rule.actions if a not in (policy.REPORT, policy.AS_SUGGESTED)]
+
+
+#: The most rows looked through for open findings. A finding that is still
+#: there is usually recent in the log, and a store trimmed to twenty thousand
+#: rows does not need to be read end to end every thirty seconds.
+OPEN_SCAN = 5000
+
+
+def _open_rows(context: _Decisions) -> tuple[list[dict], int]:
+    """The newest row of every finding that is still waiting for somebody.
+
+    Also how many were left out because somebody dismissed them, so the
+    interface can say that they exist.
+    """
+    acting = [r.name for r in ALL if r.modifies]
+    names = set(acting)
+    wanted = {k for k in context.current
+              if len(parts := k.split("|")) > 1 and parts[1] in names}
+    if not wanted:
+        return [], 0
+    out, taken, dismissed = [], set(), 0
+    for row in store.findings(limit=OPEN_SCAN, rules=acting):
+        if len(taken) >= len(wanted):
+            break
+        seen_key, dismiss_key = identity(row)
+        if seen_key not in wanted or seen_key in taken:
+            continue
+        taken.add(seen_key)
+        if _action_state(_data_of(row), row.get("action")) == "done":
+            continue
+        if dismiss_key in context.dismissed:
+            dismissed += 1
+            continue
+        out.append(row)
+    return out, dismissed
 
 
 class _ShallowFinding:
@@ -1020,10 +1157,79 @@ def _action_state(data: dict, action: str | None) -> str:
 
 @app.get("/api/findings")
 def findings(request: Request, limit: int = 200, rule: str | None = None,
-             fixed_only: bool = False, _: dict = Depends(require_user)):
+             fixed_only: bool = False, open_only: bool = False,
+             _: dict = Depends(require_user)):
+    """The log, newest first — or, with ``open_only``, what is waiting for
+    somebody: one row per finding that is still there and was not dealt with."""
+    context = _Decisions()
+    if open_only:
+        rows, _dismissed = _open_rows(context)
+        if rule:
+            rows = [r for r in rows if r.get("rule") == rule]
+        return _localise(rows[:max(1, min(limit, 1000))], language_for(request),
+                         context)
     rows = store.findings(limit=max(1, min(limit, 1000)), rule=rule,
                           fixed_only=fixed_only)
-    return _localise(rows, language_for(request))
+    return _localise(rows, language_for(request), context)
+
+
+_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
+
+
+@app.get("/api/decisions")
+def decisions(request: Request, _: dict = Depends(require_user)):
+    """What is waiting for somebody, rule by rule, for the overview.
+
+    Each rule carries the ids of its open findings and what would be done to
+    each if the recommendation were followed, so one button can do exactly
+    that — and leave out whatever deletes, which keeps its own button.
+    """
+    context = _Decisions()
+    rows, dismissed = _open_rows(context)
+    grouped: dict[str, dict] = {}
+    for row in _localise(rows, language_for(request), context):
+        entry = grouped.setdefault(row["rule"], {
+            "rule": row["rule"], "count": 0, "severity": row.get("severity") or "info",
+            "actions": {}, "ids": [], "safe_ids": []})
+        entry["count"] += 1
+        if (_SEVERITY_ORDER.get(row.get("severity"), 3)
+                < _SEVERITY_ORDER.get(entry["severity"], 3)):
+            entry["severity"] = row["severity"]
+        suggested = row.get("suggested") or policy.REPORT
+        entry["actions"][suggested] = entry["actions"].get(suggested, 0) + 1
+        entry["ids"].append(row["id"])
+        if suggested not in policy.DESTRUCTIVE:
+            entry["safe_ids"].append(row["id"])
+    ordered = sorted(grouped.values(),
+                     key=lambda e: (_SEVERITY_ORDER.get(e["severity"], 3), -e["count"]))
+    return {"total": len(rows), "dismissed": dismissed, "rules": ordered,
+            "destructive": sorted(policy.DESTRUCTIVE)}
+
+
+@app.post("/api/findings/{finding_id}/dismiss")
+def dismiss_finding(finding_id: int, request: Request,
+                    _: dict = Depends(require_user)):
+    """Leave this one alone until it changes.
+
+    Hidden from what is waiting, not deleted: it stays in the log, and the
+    moment the finding says something different it is back.
+    """
+    row = store.finding(finding_id)
+    if row is None:
+        raise _fail(request, 404, "error.no_such_finding")
+    seen_key, dismiss_key = identity(row)
+    store.dismiss(dismiss_key, seen_key, str(row.get("rule") or ""))
+    return {"ok": True, "id": finding_id, "dismissed": True}
+
+
+@app.delete("/api/findings/{finding_id}/dismiss")
+def undismiss_finding(finding_id: int, request: Request,
+                      _: dict = Depends(require_user)):
+    row = store.finding(finding_id)
+    if row is None:
+        raise _fail(request, 404, "error.no_such_finding")
+    store.undismiss(identity(row)[1])
+    return {"ok": True, "id": finding_id, "dismissed": False}
 
 
 @app.get("/api/fixed")
@@ -1031,7 +1237,7 @@ def fixed(request: Request, limit: int = 100, _: dict = Depends(require_user)):
     """Only what was actually changed — the record of work done."""
     rows = store.findings(limit=max(1, min(limit, 1000)), fixed_only=True)
     rows = [r for r in rows if policy.really_happened(r.get("action"))]
-    return _localise(rows, language_for(request))
+    return _localise(rows, language_for(request), _Decisions())
 
 
 class ActNow(BaseModel):
@@ -1059,6 +1265,13 @@ def act_on_finding(finding_id: int, body: ActNow, request: Request,
     try:
         return engine.act_now(row, body.action, language_for(request))
     except ValueError as e:
+        if str(e) == "error.action_not_allowed":
+            # Named, so the refusal says which action it was rather than
+            # showing the placeholder.
+            label = i18n.t(f"policy.action.{body.action}", language_for(request))
+            if label.startswith("policy.action."):
+                label = str(body.action)
+            raise _fail(request, 400, "error.action_not_allowed", action=label) from e
         raise _fail_from_value_error(request, e) from e
     except ArrError as e:
         raise HTTPException(502, str(e)) from e
@@ -1087,6 +1300,7 @@ def act_on_many(body: ActOnMany, request: Request,
         raise _fail(request, 400, "error.nothing_selected")
 
     rows, skipped = [], 0
+    context = _Decisions()
     for finding_id in dict.fromkeys(body.ids):
         row = store.finding(finding_id)
         if row is None:
@@ -1103,7 +1317,12 @@ def act_on_many(body: ActOnMany, request: Request,
         offers = _offers(rule, stored or {})
         if not offers:
             continue
-        if not body.allow_destructive and set(offers) & policy.DESTRUCTIVE:
+        # What would actually be done to this one: the action asked for, or
+        # its own recommendation. That is what decides whether it deletes —
+        # not whether its rule could, somewhere further down its list.
+        chosen = body.action or engine.suggested_action(
+            rule, _shallow_finding(row, _data_of(row)), context.configured(rule))
+        if not body.allow_destructive and chosen in policy.DESTRUCTIVE:
             skipped += 1
             continue
         rows.append(row)

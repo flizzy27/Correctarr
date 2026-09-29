@@ -292,6 +292,172 @@ def test_every_rule_offers_report_and_declares_its_default(signed_in):
 
 
 # ---------------------------------------------------------------------------
+# Findings waiting for a decision
+# ---------------------------------------------------------------------------
+def _found(rule="wrong_year", severity="error", title="Heat (1995)",
+           message="finding.wrong_year", params=None, data=None, action=None,
+           outcome=None, still_there=True):
+    """Write one finding into the store the way a pass would, and — unless
+    told otherwise — mark it as seen by that pass, so it counts as still there."""
+    from app.engine import _dedup_key, _recordable
+    from app.rules import Finding
+
+    finding = Finding(rule=rule, severity=severity, title=title, message=message,
+                      params=params if params is not None else {
+                          "found": "2021", "expected": "1995"},
+                      data={"release": f"{title}.Some.Release-GRP", "gb": 4.0,
+                            **(data or {})})
+    if action:
+        finding.action = action
+        finding.data["_action"] = outcome
+    main_module.store.record(_recordable(finding))
+    if still_there:
+        main_module.store.is_new(_dedup_key(finding))
+    return main_module.store.findings(limit=1)[0]["id"]
+
+
+def _open(client):
+    return {row["id"]: row for row in client.get(
+        "/api/findings?open_only=true", headers={"Accept-Language": "en"}).json()}
+
+
+def test_a_finding_nobody_dealt_with_is_waiting_with_a_reason(signed_in):
+    finding_id = _found(data={"_held": "policy.not_confident_enough",
+                              "_held_params": {"confidence": "93%", "needed": "95%"}})
+    row = _open(signed_in)[finding_id]
+    assert row["open"] is True
+    assert row["suggested"] == "blocklist_and_search"
+    assert row["suggested_by"] == "rule"
+    assert row["why"]["key"] == "policy.not_confident_enough"
+    assert "93%" in row["why"]["text"]
+
+
+def test_a_dry_run_is_given_as_the_reason(signed_in):
+    finding_id = _found(action="DRY RUN: would blocklist it", outcome={
+        "state": "dry", "key": "action.dry.blocklist", "params": {}})
+    assert _open(signed_in)[finding_id]["why"]["key"] == "policy.dry_run_on"
+
+
+def test_a_finding_can_recommend_something_else_and_say_why(signed_in):
+    """A rule that has looked at this one case can know better than its own
+    setting. Its suggestion becomes the first button, with its reason."""
+    finding_id = _found(data={"suggested_action": "blocklist",
+                              "suggested_reason": "policy.needs_a_person",
+                              "suggested_reason_params": {}})
+    row = _open(signed_in)[finding_id]
+    assert row["suggested"] == "blocklist"
+    assert row["suggested_by"] == "finding"
+    assert row["suggested_reason"] == "this is a matter of taste, not a fault"
+
+
+def test_a_suggestion_the_rule_may_not_take_is_ignored(signed_in):
+    """wrong_year cannot delete anything, whatever its finding says."""
+    finding_id = _found(data={"suggested_action": "delete",
+                              "suggested_reason": "policy.needs_a_person"})
+    row = _open(signed_in)[finding_id]
+    assert row["suggested"] == "blocklist_and_search"
+    assert row["suggested_by"] == "rule"
+    assert "suggested_reason" not in row
+    assert "delete" not in row["can_do"]
+
+
+def test_acting_refuses_what_the_rule_does_not_allow(signed_in):
+    finding_id = _found(data={"suggested_action": "delete"})
+    response = signed_in.post(f"/api/findings/{finding_id}/act",
+                              json={"action": "delete"},
+                              headers={"Accept-Language": "en"})
+    assert response.status_code == 400
+    assert "Delete from disk" in response.json()["detail"]
+
+
+def test_the_rule_s_own_setting_is_what_is_recommended(signed_in):
+    signed_in.post("/api/rules/wrong_year", json={"action": "remove"})
+    finding_id = _found()
+    assert _open(signed_in)[finding_id]["suggested"] == "remove"
+
+
+def test_what_was_done_or_has_gone_away_is_not_waiting(signed_in):
+    done = _found(title="Done (2001)", action="blocklisted", outcome={
+        "state": "done", "key": "action.result.blocklisted", "params": {}})
+    gone = _found(title="Gone (2002)", still_there=False)
+    waiting = _open(signed_in)
+    assert done not in waiting
+    assert gone not in waiting
+
+
+def test_only_the_newest_row_of_a_finding_is_waiting(signed_in):
+    first = _found()
+    second = _found()
+    waiting = _open(signed_in)
+    assert second in waiting and first not in waiting
+
+
+def test_a_rule_that_can_only_report_has_nothing_waiting(signed_in):
+    _found(rule="disk_space", severity="error", title="/data",
+           message="finding.disk_space", params={"free": 4, "total": 100})
+    assert _open(signed_in) == {}
+
+
+def test_a_dismissed_finding_stays_away_until_it_changes(signed_in):
+    finding_id = _found()
+    response = signed_in.post(f"/api/findings/{finding_id}/dismiss")
+    assert response.status_code == 200
+    assert finding_id not in _open(signed_in)
+    assert signed_in.get("/api/decisions").json()["dismissed"] == 1
+
+    # The same finding found again, saying the same thing: still dismissed.
+    again = _found()
+    assert again not in _open(signed_in)
+    log = {r["id"]: r for r in signed_in.get("/api/findings").json()}
+    assert log[again]["dismissed"] is True
+
+    # The same release with a different complaint is news.
+    changed = _found(severity="warning")
+    assert changed in _open(signed_in)
+
+
+def test_a_dismissal_can_be_taken_back(signed_in):
+    finding_id = _found()
+    signed_in.post(f"/api/findings/{finding_id}/dismiss")
+    assert signed_in.delete(f"/api/findings/{finding_id}/dismiss").status_code == 200
+    assert finding_id in _open(signed_in)
+
+
+def test_dismissing_something_that_is_not_there(signed_in):
+    assert signed_in.post("/api/findings/999/dismiss").status_code == 404
+    assert signed_in.delete("/api/findings/999/dismiss").status_code == 404
+
+
+def test_the_overview_groups_what_is_waiting_by_rule(signed_in):
+    one = _found(title="One (2001)")
+    two = _found(title="Two (2002)")
+    rubbish = _found(rule="leftover_files", severity="warning", title="Some.Folder",
+                     message="finding.leftover_files",
+                     params={"reason": "a folder", "days": 12, "mb": 800},
+                     data={"path": "/downloads/Some.Folder"})
+    body = signed_in.get("/api/decisions").json()
+    assert body["total"] == 3
+    groups = {g["rule"]: g for g in body["rules"]}
+    assert sorted(groups["wrong_year"]["ids"]) == sorted([one, two])
+    assert groups["wrong_year"]["actions"] == {"blocklist_and_search": 2}
+    # Deleting is never part of the one-press button.
+    assert groups["leftover_files"]["ids"] == [rubbish]
+    assert groups["leftover_files"]["safe_ids"] == []
+    assert signed_in.get("/api/status").json()["decisions"] == 3
+
+
+def test_the_batch_leaves_out_what_its_recommendation_would_delete(signed_in):
+    keep = _found()
+    rubbish = _found(rule="leftover_files", severity="warning", title="Some.Folder",
+                     message="finding.leftover_files",
+                     params={"reason": "a folder", "days": 12, "mb": 800},
+                     data={"path": "/downloads/Some.Folder"})
+    body = signed_in.post("/api/findings/act", json={"ids": [keep, rubbish]}).json()
+    assert body["skipped"] == 1
+    assert [r["id"] for r in body["results"]] == [keep]
+
+
+# ---------------------------------------------------------------------------
 # Services
 # ---------------------------------------------------------------------------
 def test_a_service_needs_a_scheme(signed_in):

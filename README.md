@@ -141,13 +141,22 @@ against what was wanted: "on disk as HDTV-720p, the profile *HD-1080p* keeps
 upgrading until WEBDL-1080p" rather than "below the quality the profile asks
 for".
 
-**And you can act on it there and then.** Every finding carries the action its
-rule would take — *search for a replacement*, *blocklist and search again*,
-*import* — as a button, with the rest behind a short list beside it. A search
-waits for the answer: it reports what was grabbed and from which indexer, or
-that there was nothing out there. Actions that remove something are marked and
-ask first. One button above the list does the lot, for exactly what the filters
-are showing.
+**And you can act on it there and then.** Everything that was found and not
+dealt with by itself — because its rule only reports, the dry run is on, a
+condition held it back, or the last attempt failed — waits for you under
+*Findings → Waiting for you*, one card each. A card says what was found, why
+nothing happened, and what is recommended: the rule's own setting, or, where a
+rule has looked at that particular case and knows better, its own suggestion
+with the reason. The recommendation is the first button; everything else the
+rule can do sits beside it, and *Dismiss* hides the finding until it changes —
+the same release with a new complaint comes straight back. A search waits for
+the answer: it reports what was grabbed and from which indexer, or that there
+was nothing out there. Actions that remove something are marked and ask first.
+
+The overview counts what is waiting, rule by rule, with a link into that rule's
+findings and one button that does what is recommended for all of them. The
+same button sits above the list, for exactly what the filters are showing.
+Whatever would delete is always left out of it and keeps its own button.
 
 **It also works out when there is nothing better to find.** A title below its
 cutoff used to be reported and searched for again on every pass, for ever. It

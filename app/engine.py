@@ -1034,13 +1034,14 @@ class Engine:
         rule = next((r for r in ALL if r.name == finding.rule), None)
         if rule is None:
             raise ValueError("error.no_such_rule")
-        chosen = action or self.suggested_action(rule, finding)
+        current = self.config()
+        chosen = action or self.suggestion_for(rule, finding, current)
         if chosen not in rule.actions:
             raise ValueError("error.action_not_allowed")
         if chosen == policy.REPORT:
             raise ValueError("error.nothing_to_do")
 
-        cfg = {**self.config(), "dry_run": False}
+        cfg = {**current, "dry_run": False}
         target = self._target_for(finding, services, self._lead_service(services))
         if target is None:
             raise ValueError("error.no_services")
@@ -1073,26 +1074,39 @@ class Engine:
         return answer
 
     @staticmethod
-    def suggested_action(rule, finding: Finding) -> str:
+    def suggested_action(rule, finding: Finding, configured: str | None = None) -> str:
         """What to offer when nobody has said which action they want.
 
-        The rule's own setting first — that is what it would do on its own, so
-        doing it now is no surprise. A rule left on "report only" still has
-        something worth offering, and it is the first thing it can do.
+        The finding itself first, when it names one: a rule that has looked at
+        this particular case can know better than its own setting — a pack it
+        is only half sure about is better blocklisted than searched for again.
+        It only counts when the rule is allowed to do it; a suggestion from
+        outside that list is ignored rather than offered.
+
+        Then what the rule is set to do, then what it does out of the box —
+        that is what it would do on its own, so doing it now is no surprise. A
+        rule left on "report only" still has something worth offering, and it
+        is the first thing it can do.
         """
         # A finding that names its own remedy is taken at its word — within
         # what the rule may do. That includes "nothing": a download client that
-        # is not answering gets no button, because no button would help.
-        own = (getattr(finding, "data", None) or {}).get("suggested")
-        if own and own != policy.AS_SUGGESTED and (
-                own == policy.REPORT or own in rule.actions):
-            return own
+        # is not answering gets no button, because no button would help. The
+        # stuck-download rules write ``suggested``; others ``suggested_action``.
+        data = getattr(finding, "data", None) or {}
+        own = data.get("suggested") or data.get("suggested_action")
+        if own == policy.REPORT and data.get("suggested") == policy.REPORT:
+            return policy.REPORT
         concrete = [a for a in rule.actions
                     if a not in (policy.REPORT, policy.AS_SUGGESTED)]
-        stored = rule.default_action
-        if stored in concrete:
-            return stored
+        for candidate in (own, configured, rule.default_action):
+            if candidate and candidate in concrete:
+                return str(candidate)
         return concrete[0] if concrete else policy.REPORT
+
+    def suggestion_for(self, rule, finding: Finding, cfg: dict | None = None) -> str:
+        """The suggestion, taking this installation's own setting into account."""
+        configured = self.rule_policy(cfg or self.config(), rule.name).action
+        return self.suggested_action(rule, finding, configured)
 
     def _what_the_search_found(self, arr: Arr, finding: Finding, started: float,
                                language: str) -> dict:
@@ -1372,6 +1386,7 @@ class Engine:
         self._runs_since_housekeeping = 0
         try:
             self.store.prune_seen(30)
+            self.store.prune_dismissed(30)
             self.store.prune_sessions()
             # "There is nothing better out there" is true about the world on
             # the day it was decided, and the world gets new releases.
@@ -1448,6 +1463,31 @@ def _dedup_key(finding: Finding) -> str:
     if not identifier:
         identifier = finding.describe("en")[:120]
     return "|".join((finding.service, finding.rule, finding.title, str(identifier)))
+
+
+def identity(row: dict) -> tuple[str, str]:
+    """``(seen key, dismissal key)`` for a finding as it was written down.
+
+    The first is the key every pass touches while the finding is still there,
+    so it answers "is this still open". The second adds what the finding says
+    about it — its severity and which message — so a dismissal holds while the
+    finding stays the same and lapses the moment it says something new. The
+    parameters of the message are left out on purpose: "untouched for 12 days"
+    becoming "untouched for 13 days" is not news.
+    """
+    finding = _from_row(row)
+    if finding.message:
+        seen = _dedup_key(finding)
+    else:
+        # Rows from before the message key was stored carry only the English
+        # sentence, which is what the key was built from in the first place.
+        identifier = (finding.data.get("release") or finding.data.get("file")
+                      or finding.data.get("path") or finding.data.get("indexer")
+                      or finding.data.get("nzo_id")
+                      or str(row.get("description") or "")[:120])
+        seen = "|".join((finding.service, finding.rule, finding.title,
+                         str(identifier)))
+    return seen, "|".join((seen, finding.severity, finding.message))
 
 
 class _Recordable:

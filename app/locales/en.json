@@ -150,7 +150,8 @@
     "only_problems": "only problems",
     "only_fixed": "only fixed",
     "optional": "optional",
-    "no_sign_in": "No sign-in"
+    "no_sign_in": "No sign-in",
+    "loading": "Loading…"
   },
   "unit": {
     "seconds": "seconds",
@@ -212,6 +213,9 @@
     "fixed_24h": "of those fixed",
     "last_run": "on the last run",
     "services_up": "services reachable",
+    "waiting": "waiting for you",
+    "waiting_none": "nothing to decide",
+    "waiting_open": "open the list",
     "total": "{count} in total",
     "ready": "ready",
     "busy": "checking…"
@@ -219,6 +223,13 @@
   "overview": {
     "services_title": "Services",
     "services_help": "Every service is actually contacted when this page loads. Anything green here really answers.",
+    "decisions_title": "Waiting for your decision",
+    "decisions_help": "Found, and deliberately not dealt with by itself — because a rule is set to report, the dry run is on, or it was not sure. One press does what is recommended.",
+    "decisions_empty": "Nothing is waiting for you.",
+    "decisions_review": "Review",
+    "decisions_apply": "Do the recommended ({count})",
+    "decisions_recommended": "Recommended: {actions}",
+    "decisions_deletes": "{count} would delete — those are decided one by one.",
     "paths_title": "Paths",
     "paths_help": "The most common setup mistake: the paths inside this container do not match the ones Radarr sees. The file rules then stay quiet although they should be finding something.",
     "runs_title": "Recent runs",
@@ -236,6 +247,24 @@
   "findings_page": {
     "title": "Findings",
     "help": "Everything that was found, fixed or not.",
+    "view_decide": "Waiting for you",
+    "view_all": "Everything",
+    "decide_help": "Each of these was found and deliberately not dealt with by itself. The first button is what is recommended; everything else the rule can do sits beside it.",
+    "decide_empty": "Nothing is waiting for you. Everything found so far was either dealt with or needs no decision.",
+    "show_everything": "Show everything",
+    "nav_waiting": "{count} waiting for your decision",
+    "recommended": "Recommended",
+    "recommended_by_rule": "What the rule is set to do.",
+    "cannot_undo": "cannot be undone",
+    "dismiss": "Dismiss",
+    "dismiss_help": "Leave it alone and hide it until it changes. It stays in the log.",
+    "dismissed": "Dismissed",
+    "dismissed_toast": "Dismissed — hidden until it changes.",
+    "dismissed_count": "{count} dismissed, hidden until they change.",
+    "undismiss": "Show again",
+    "undismissed_toast": "It is back in the list.",
+    "undo": "Undo",
+    "no_match": "Nothing matches these filters.",
     "empty": "Nothing recorded yet.",
     "reported_only": "reported only",
     "held_back": "Not acted on: {reason}",
@@ -245,6 +274,9 @@
     "confirm_destructive": "{action} — this cannot be undone. Go ahead?",
     "fix_all": "Deal with all {count}",
     "fix_all_help": "Everything in the list as it is filtered right now. Anything that deletes is left out — those have their own button.",
+    "fix_all_recommended": "Do what is recommended for all {count}",
+    "fix_all_recommended_help": "Each one gets its own recommendation — for exactly what is in the list right now.",
+    "left_for_you": "{count} that would delete are left for you.",
     "confirm_all": "{count} finding(s): {what}. Go ahead?",
     "all_done": "{done} done, {failed} failed."
   },
@@ -1109,7 +1141,10 @@
     "needs_a_person": "this is a matter of taste, not a fault",
     "needs_a_look": "not certain enough to do unasked — offered as a button",
     "nothing_safe": "nothing here would help, so nothing is done",
-    "suggests_otherwise": "this finding calls for something else than the configured action"
+    "suggests_otherwise": "this finding calls for something else than the configured action",
+    "dry_run_on": "the dry run is on",
+    "last_try_failed": "the last attempt failed",
+    "not_yet": "nothing has been done about it yet"
   },
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",

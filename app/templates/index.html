@@ -114,6 +114,12 @@
       <!-- ============================================ overview -->
       <section id="page-overview" class="page active">
         <div class="tiles" id="tiles"></div>
+        <div class="card decisions-card" id="decisions-card">
+          <h2><span data-t="overview.decisions_title"></span>
+              <span class="badge warning" id="decisions-total" hidden></span></h2>
+          <p class="hint" data-t="overview.decisions_help"></p>
+          <div id="decisions-list"></div>
+        </div>
         <div class="card">
           <h2 data-t="overview.services_title"></h2>
           <p class="hint" data-t="overview.services_help"></p>
@@ -127,7 +133,7 @@
         <div class="card">
           <h2 data-t="overview.runs_title"></h2>
           <div class="table-wrap">
-            <table class="table" id="runs-table">
+            <table class="table stack" id="runs-table">
               <thead><tr>
                 <th data-t="label.time"></th>
                 <th data-t="label.trigger"></th>
@@ -160,14 +166,24 @@
       <!-- ============================================ findings -->
       <section id="page-findings" class="page">
         <div class="card">
-          <h2 data-t="findings_page.title"></h2>
-          <p class="hint" data-t="findings_page.help"></p>
+          <div class="card-head">
+            <h2 data-t="findings_page.title"></h2>
+            <div class="segmented" id="findings-views" role="tablist">
+              <button type="button" role="tab" data-view="decide" class="on" aria-selected="true">
+                <span data-t="findings_page.view_decide"></span>
+                <span class="seg-count" id="decide-count" hidden></span>
+              </button>
+              <button type="button" role="tab" data-view="all" aria-selected="false"
+                      data-t="findings_page.view_all"></button>
+            </div>
+          </div>
+          <p class="hint" id="findings-help" data-t="findings_page.decide_help"></p>
           <div class="toolbar">
             <select id="findings-rule" class="picker wide"></select>
             <select id="findings-severity" class="picker"></select>
             <input type="search" id="findings-search" class="grow"
                    data-t-placeholder="label.filter">
-            <span class="toggle-field">
+            <span class="toggle-field" id="findings-fixed-field" hidden>
               <span class="toggle"><input type="checkbox" id="findings-fixed-only"><label class="track" for="findings-fixed-only"></label></span>
               <label for="findings-fixed-only" data-t="label.only_fixed"></label>
             </span>
@@ -192,7 +208,7 @@
             </span>
           </div>
           <div class="table-wrap">
-            <table class="table" id="queue-table">
+            <table class="table stack" id="queue-table">
               <thead><tr>
                 <th data-t="label.title"></th>
                 <th data-t="label.release"></th>

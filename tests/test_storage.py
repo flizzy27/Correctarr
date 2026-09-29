@@ -277,6 +277,39 @@ def test_pruning_progress_leaves_another_service_alone():
         assert store.check_progress("2:xyz", 400) == 0.0     # and it had a value
 
 
+def test_a_dismissal_is_kept_and_can_be_taken_back(store):
+    store.dismiss("radarr|wrong_year|The Film|x|error|finding.wrong_year",
+                  "radarr|wrong_year|The Film|x", "wrong_year")
+    assert store.dismissed() == {"radarr|wrong_year|The Film|x|error|finding.wrong_year"}
+    store.undismiss("radarr|wrong_year|The Film|x|error|finding.wrong_year")
+    assert store.dismissed() == set()
+
+
+def test_a_dismissal_outlives_its_age_while_the_finding_is_still_there(store):
+    """Forgetting it by age alone would bring a finding back one day for no
+    reason anybody could see. Only one that is no longer found lapses."""
+    store.is_new("still-there")
+    store.dismiss("a", "still-there")
+    store.dismiss("b", "long-gone")
+    with sqlite(store.path) as connection:
+        connection.execute("UPDATE dismissed SET at='2000-01-01T00:00:00+00:00'")
+    store.prune_dismissed(30)
+    assert store.dismissed() == {"a"}
+
+
+def test_what_was_seen_recently(store):
+    store.is_new("now")
+    assert store.seen_since("2000-01-01T00:00:00+00:00") == {"now"}
+    assert store.seen_since("2999-01-01T00:00:00+00:00") == set()
+
+
+def test_findings_can_be_read_for_several_rules_at_once(store):
+    for rule in ("one", "two", "three"):
+        store.record(Finding(rule=rule))
+    assert {r["rule"] for r in store.findings(rules=["one", "three"])} == {"one", "three"}
+    assert store.findings(rules=[]) == []
+
+
 def test_a_failed_action_is_not_counted_as_a_fix(store):
     class Row:
         rule, severity, title, service = "wrong_year", "error", "The Film", "radarr"

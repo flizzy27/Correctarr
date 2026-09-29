@@ -624,6 +624,39 @@ def test_a_reporting_rule_still_offers_its_first_real_action(engine):
     assert engine.suggested_action(BY_NAME["grab_loop"], a_finding()) == "report"
 
 
+def test_a_finding_s_own_suggestion_comes_first(engine):
+    from app.rules import BY_NAME
+    finding = a_finding(data={"suggested_action": "blocklist"})
+    assert engine.suggested_action(BY_NAME["wrong_year"], finding) == "blocklist"
+
+
+def test_a_suggestion_outside_the_rule_s_list_is_ignored(engine):
+    from app.rules import BY_NAME
+    for wrong in ("delete", "report", "explode", None):
+        finding = a_finding(data={"suggested_action": wrong})
+        assert engine.suggested_action(BY_NAME["wrong_year"], finding) \
+            == "blocklist_and_search", wrong
+
+
+def test_the_configured_action_beats_the_default(engine):
+    from app.rules import BY_NAME
+    assert engine.suggested_action(BY_NAME["wrong_year"], a_finding(),
+                                   "remove") == "remove"
+    # Set to report only: there is still something worth offering.
+    assert engine.suggested_action(BY_NAME["wrong_year"], a_finding(),
+                                   "report") == "blocklist_and_search"
+
+
+def test_pressing_the_button_without_naming_an_action_follows_the_finding(
+        engine, monkeypatch):
+    service = FakeArr()
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    row = _recorded(engine, rule="wrong_year",
+                    data={"suggested_action": "blocklist"})
+    assert engine.act_now(row, None)["action"] == "blocklist"
+    assert service.removed == [(42, True, False)]
+
+
 # ---------------------------------------------------------------------------
 # What the search found
 # ---------------------------------------------------------------------------

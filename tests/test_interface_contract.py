@@ -90,7 +90,8 @@ def _expected_runtime_keys() -> set[str]:
                    "size_unknown", "not_confident_enough", "confidence_unknown",
                    "nothing_better", "failed_recently", "already_gone",
                    "managed_elsewhere", "needs_a_person", "needs_a_look",
-                   "nothing_safe", "suggests_otherwise"):
+                   "nothing_safe", "suggests_otherwise",
+                   "dry_run_on", "last_try_failed", "not_yet"):
         keys.add(f"policy.{reason}")
     return keys
 

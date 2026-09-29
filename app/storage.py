@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _now() -> str:
@@ -145,10 +145,24 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 """
 
+# Version 4: findings somebody has looked at and decided to leave alone. The
+# key is what the finding is *about* and what it *says*, so a dismissal holds
+# for exactly as long as the finding stays the same: the same release with the
+# same complaint stays hidden, a new complaint about it comes back.
+_M4 = """
+CREATE TABLE IF NOT EXISTS dismissed (
+    key      TEXT PRIMARY KEY,
+    seen_key TEXT NOT NULL DEFAULT '',
+    rule     TEXT NOT NULL DEFAULT '',
+    at       TEXT NOT NULL
+);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _M1),
     (2, _M2),
     (3, _M3),
+    (4, _M4),
 ]
 
 # Column mapping used when adopting a store written by a pre-release build.
@@ -465,12 +479,18 @@ class Store:
                        finding_id))
 
     def findings(self, limit: int = 200, rule: str | None = None,
-                 fixed_only: bool = False, since: str | None = None) -> list[dict]:
+                 fixed_only: bool = False, since: str | None = None,
+                 rules: list[str] | tuple[str, ...] | None = None) -> list[dict]:
         sql = "SELECT * FROM findings WHERE 1=1"
         params: list[Any] = []
         if rule:
             sql += " AND rule=?"
             params.append(rule)
+        if rules is not None:
+            if not rules:
+                return []
+            sql += f" AND rule IN ({','.join('?' * len(rules))})"
+            params.extend(rules)
         if fixed_only:
             sql += " AND action IS NOT NULL"
         if since:
@@ -725,6 +745,44 @@ class Store:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         with _lock, self._conn() as c:
             c.execute("DELETE FROM seen WHERE last_seen < ?", (cutoff,))
+
+    def seen_since(self, since: str) -> set[str]:
+        """Every finding a pass has come across since ``since``.
+
+        The log keeps a finding long after the problem went away, so the log
+        alone cannot say what is still open. This can: a finding that is still
+        there is touched on every pass that runs its rule.
+        """
+        with _lock, self._conn() as c:
+            return {r["key"] for r in c.execute(
+                "SELECT key FROM seen WHERE last_seen >= ?", (since,)).fetchall()}
+
+    # -- dismissed findings ----------------------------------------------------
+    def dismiss(self, key: str, seen_key: str = "", rule: str = "") -> None:
+        with _lock, self._conn() as c:
+            c.execute("INSERT INTO dismissed(key,seen_key,rule,at) VALUES(?,?,?,?) "
+                      "ON CONFLICT(key) DO UPDATE SET at=excluded.at",
+                      (key, seen_key, rule, _now()))
+
+    def undismiss(self, key: str) -> None:
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM dismissed WHERE key=?", (key,))
+
+    def dismissed(self) -> set[str]:
+        with _lock, self._conn() as c:
+            return {r["key"] for r in c.execute("SELECT key FROM dismissed").fetchall()}
+
+    def prune_dismissed(self, days: int = 30) -> None:
+        """Forget a dismissal once its finding has not been seen for a while.
+
+        Only then: a dismissal of something that is still there every pass has
+        to keep holding, however old it is, or the finding comes back by itself
+        one day for no reason anybody could see.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM dismissed WHERE at < ? AND seen_key NOT IN "
+                      "(SELECT key FROM seen)", (cutoff,))
 
     # -- users -----------------------------------------------------------------
     def user_count(self) -> int:
