@@ -167,6 +167,7 @@
     "gb": "GB",
     "mb": "MB",
     "episodes": "episodes",
+    "actions": "actions",
     "attempts": "searches"
   },
   "severity": {
@@ -331,6 +332,8 @@
   "settings_page": {
     "group_schedule": "Schedule",
     "group_schedule_help": "How often things are checked. The fast pass only walks the queue and takes seconds; the deep pass additionally walks the whole library and the indexers.",
+    "group_safety": "Safety limits",
+    "group_safety_help": "The limits every automatic action has to pass, whichever rule asks for it. They exist so that a rule that is wrong about something cannot be wrong about it over and over. Actions taken with a button are counted but never blocked.",
     "group_paths": "Paths",
     "group_paths_help": "Where the files are, as seen from inside this container rather than from the host. They have to match the mounts Radarr, Sonarr and the download client see.",
     "group_detection": "Detection",
@@ -721,6 +724,22 @@
     "dry_run": {
       "label": "Dry run",
       "help": "On: problems are found and reported, but nothing is changed. The safe way to try out a new setting."
+    },
+    "safety_title_limit": {
+      "label": "Act on the same title at most",
+      "help": "How often one film, episode, profile or folder may be acted on within the window below, across every rule. Past that the finding is still reported, but left for a person: something is going round in a circle."
+    },
+    "safety_title_hours": {
+      "label": "…within",
+      "help": "The window the limit above counts in. A title that was thrown out and then grabbed again is held for this long, too."
+    },
+    "safety_hourly_limit": {
+      "label": "Pause everything after, per hour",
+      "help": "More automatic actions than this within an hour, and all of them stop until you resume them by hand. A notification goes out when it happens, and a restart does not undo it."
+    },
+    "safety_discard_limit": {
+      "label": "Pause everything after, per hour, of those that throw something away",
+      "help": "The same, counted only over removing, blocklisting and deleting. These are the ones that make the service fetch something else, which is how a loop starts."
     },
     "path_downloads": {
       "label": "Finished downloads",
@@ -1136,7 +1155,11 @@
     "confidence_unknown": "no confidence known for this finding",
     "nothing_better": "searched {tries} times already, nothing better exists",
     "failed_recently": "it failed last time — trying again in {hours} h",
+    "acted_too_often": "acted on {count} times in {hours} h — waiting for a person",
+    "regrabbed": "grabbed again after it was thrown out — left alone for {hours} h, waiting for a person",
+    "fuse_paused": "automatic actions are paused",
     "already_gone": "it had already left the queue",
+    "same_download": "the same download was already dealt with in this pass",
     "managed_elsewhere": "another program keeps setting this back",
     "needs_a_person": "this is a matter of taste, not a fault",
     "needs_a_look": "not certain enough to do unasked — offered as a button",
@@ -1145,6 +1168,16 @@
     "dry_run_on": "the dry run is on",
     "last_try_failed": "the last attempt failed",
     "not_yet": "nothing has been done about it yet"
+  },
+  "safety": {
+    "heading": "Safety limits",
+    "notify_title": "Correctarr: automatic actions paused",
+    "too_many": "{count} automatic actions within an hour, the limit is {limit}",
+    "too_many_discards": "{count} downloads or files thrown away within an hour, the limit is {limit}",
+    "banner_title": "Automatic actions are paused.",
+    "banner_help": "Findings are still checked and reported, and buttons still work. Nothing is acted on by itself until you resume.",
+    "resume": "Resume automatic actions",
+    "resumed": "Automatic actions resumed"
   },
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",

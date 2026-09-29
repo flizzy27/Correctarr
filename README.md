@@ -167,6 +167,34 @@ nothing better, this is probably the best copy there is" — and stops being
 searched for by itself. The verdict lapses after six months, because the world
 gets new releases.
 
+### Safety limits
+
+A rule that is wrong about something must not be able to be wrong about it over
+and over. The loop this guards against was real: an episode was blocklisted,
+the service grabbed another copy within seconds, the same rule flagged that one
+too — eight rounds in four minutes. So every automatic action, whichever rule
+asks for it, has to pass three limits first:
+
+| Limit | Setting | Default | What it does |
+|---|---|---|---|
+| Per title | `safety_title_limit`, `safety_title_hours` | 3 in 24 h | The same film, episode, profile or folder is acted on at most this often, across every rule. After that the finding is still reported, but held: *acted on 3 times in 24 h — waiting for a person.* |
+| Grabbed again | — | always on | When a rule has removed or blocklisted something and then flags the replacement for the same title too, the title is left alone for the whole window instead of going round again. |
+| All actions | `safety_hourly_limit` | 60 per hour | More automatic actions than this in an hour **pauses all of them**. |
+| Throwing away | `safety_discard_limit` | 30 per hour | The same, counting only those that throw something away — remove, blocklist, delete. |
+
+When a limit pauses everything, a notification goes out on every connection
+(whatever its filters), a banner says why on every page, and nothing is acted on
+automatically until you press **Resume automatic actions**. A restart does not
+undo it. Findings are still checked and reported throughout, and buttons still
+work: an action you take by hand is never blocked, but it is counted towards the
+per-title limit. The limits live under *Settings → Safety limits*; none of them
+can be switched off.
+
+A burst of webhooks — a search wave sends one per grab, seconds apart — starts
+one pass straight away and folds everything after it into a single further pass
+once the gap under *Minimum gap after an event* is over. Two passes never run at
+the same time.
+
 <img src="docs/screenshot-rules.png" alt="Every rule has its own action and conditions" width="900">
 
 Every rule shows what it does before you turn it on: whether it only reports,

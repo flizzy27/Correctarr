@@ -167,6 +167,7 @@
     "gb": "GB",
     "mb": "MB",
     "episodes": "Folgen",
+    "actions": "Aktionen",
     "attempts": "Suchen"
   },
   "severity": {
@@ -331,6 +332,8 @@
   "settings_page": {
     "group_schedule": "Takt",
     "group_schedule_help": "Wie oft geprüft wird. Der schnelle Durchlauf sieht nur die Warteschlange durch und dauert Sekunden; der vollständige geht zusätzlich die ganze Bibliothek und die Indexer durch.",
+    "group_safety": "Sicherheitsgrenzen",
+    "group_safety_help": "Die Grenzen, die jede automatische Aktion passieren muss, gleich welche Regel sie auslöst. Sie sorgen dafür, dass eine Regel, die sich irrt, sich nicht immer wieder irrt. Aktionen per Knopfdruck werden mitgezählt, aber nie blockiert.",
     "group_paths": "Pfade",
     "group_paths_help": "Wo die Dateien liegen — aus Sicht dieses Containers, nicht des Hosts. Sie müssen mit den Einbindungen übereinstimmen, die auch Radarr, Sonarr und das Download-Programm sehen.",
     "group_detection": "Erkennung",
@@ -721,6 +724,22 @@
     "dry_run": {
       "label": "Testlauf",
       "help": "An: Funde werden gefunden und gemeldet, aber nichts wird verändert. Der sichere Weg, um eine neue Einstellung auszuprobieren."
+    },
+    "safety_title_limit": {
+      "label": "Denselben Titel höchstens behandeln",
+      "help": "Wie oft ein Film, eine Folge, ein Profil oder ein Ordner innerhalb des Zeitraums unten behandelt werden darf, über alle Regeln hinweg. Danach wird der Fund weiter gemeldet, aber einem Menschen überlassen: Da dreht sich etwas im Kreis."
+    },
+    "safety_title_hours": {
+      "label": "…innerhalb von",
+      "help": "Der Zeitraum, in dem die Grenze oben zählt. Ein Titel, der verworfen und dann erneut gegriffen wurde, bleibt ebenso lange unangetastet."
+    },
+    "safety_hourly_limit": {
+      "label": "Alles anhalten nach, pro Stunde",
+      "help": "Mehr automatische Aktionen als diese innerhalb einer Stunde, und alle halten an, bis du sie von Hand fortsetzt. Dabei geht eine Benachrichtigung raus, und ein Neustart hebt das nicht auf."
+    },
+    "safety_discard_limit": {
+      "label": "Alles anhalten nach, pro Stunde, von denen, die etwas verwerfen",
+      "help": "Dasselbe, gezählt nur über Entfernen, Sperren und Löschen. Genau diese bringen den Dienst dazu, etwas anderes zu holen — so fängt eine Schleife an."
     },
     "path_downloads": {
       "label": "Fertige Downloads",
@@ -1136,7 +1155,11 @@
     "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt",
     "nothing_better": "schon {tries}-mal gesucht, es gibt nichts Besseres",
     "failed_recently": "beim letzten Mal gescheitert — nächster Versuch in {hours} h",
+    "acted_too_often": "{count}-mal in {hours} h behandelt — wartet auf einen Menschen",
+    "regrabbed": "nach dem Verwerfen erneut gegriffen — {hours} h in Ruhe gelassen, wartet auf einen Menschen",
+    "fuse_paused": "automatische Aktionen sind angehalten",
     "already_gone": "war schon nicht mehr in der Warteschlange",
+    "same_download": "derselbe Download wurde in diesem Durchlauf schon behandelt",
     "managed_elsewhere": "ein anderes Programm setzt das immer wieder zurück",
     "needs_a_person": "das ist Geschmackssache, kein Fehler",
     "needs_a_look": "nicht sicher genug, um es ungefragt zu tun — als Knopf angeboten",
@@ -1145,6 +1168,16 @@
     "dry_run_on": "der Testlauf ist eingeschaltet",
     "last_try_failed": "der letzte Versuch ist fehlgeschlagen",
     "not_yet": "bisher ist noch nichts damit geschehen"
+  },
+  "safety": {
+    "heading": "Sicherheitsgrenzen",
+    "notify_title": "Correctarr: automatische Aktionen angehalten",
+    "too_many": "{count} automatische Aktionen innerhalb einer Stunde, die Grenze liegt bei {limit}",
+    "too_many_discards": "{count} Downloads oder Dateien innerhalb einer Stunde verworfen, die Grenze liegt bei {limit}",
+    "banner_title": "Automatische Aktionen sind angehalten.",
+    "banner_help": "Funde werden weiter geprüft und gemeldet, Knöpfe funktionieren weiter. Von selbst wird nichts behandelt, bis du fortsetzt.",
+    "resume": "Automatische Aktionen fortsetzen",
+    "resumed": "Automatische Aktionen fortgesetzt"
   },
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",

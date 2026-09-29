@@ -20,7 +20,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Groups — they also define the order in the interface
 # ---------------------------------------------------------------------------
-GROUPS = ("schedule", "paths", "detection", "cleanup", "indexers",
+GROUPS = ("schedule", "safety", "paths", "detection", "cleanup", "indexers",
           "notifications", "appearance", "maintenance")
 
 # Every theme is dark. A light one is deliberately missing: this runs next to
@@ -131,6 +131,19 @@ FIELDS: tuple[Field, ...] = (
     # assistant ends by showing one full pass with nothing touched, and the
     # switch is theirs to turn off once they agree with what they see.
     Field("dry_run", "switch", "schedule", True),
+
+    # -- safety -------------------------------------------------------------
+    # The limits every automatic action has to pass, whichever rule asks for
+    # it. See app/safety.py for the loop that made them necessary. None of
+    # them can be switched off: the smallest value is one, not zero.
+    Field("safety_title_limit", "number", "safety", 3,
+          minimum=1, maximum=50, unit="unit.actions"),
+    Field("safety_title_hours", "number", "safety", 24,
+          minimum=1, maximum=168, unit="unit.hours"),
+    Field("safety_hourly_limit", "number", "safety", 60,
+          minimum=1, maximum=1000, unit="unit.actions"),
+    Field("safety_discard_limit", "number", "safety", 30,
+          minimum=1, maximum=500, unit="unit.actions"),
 
     # -- paths --------------------------------------------------------------
     Field("path_downloads", "path", "paths", "/downloads"),

@@ -30,6 +30,10 @@ SEVERITY_RANK = {name: index for index, name in enumerate(SEVERITIES)}
 # channel can pick the set that survives its own escaping.
 SYMBOLS = {"error": "⚠️", "warning": "❗", "info": "ℹ️"}
 
+#: Groups that are not a rule. The safety fuse reports through the same
+#: channels as everything else, under a heading of its own.
+HEADINGS = {"safety": "safety.heading"}
+
 
 class ChannelError(Exception):
     """The provider refused the message or could not be reached."""
@@ -76,6 +80,8 @@ class Group:
     findings: list = field(default_factory=list)
 
     def title(self, language: str) -> str:
+        if self.rule in HEADINGS:
+            return t(HEADINGS[self.rule], language)
         return t(f"rules.{self.rule}.title", language)
 
 
@@ -91,6 +97,8 @@ class Report:
     #: Set for the button in the interface, so a test does not pretend a run
     #: happened.
     is_test: bool = False
+    #: A headline of its own, for a message that is not the report of a run.
+    headline_key: str = ""
 
     @property
     def severity(self) -> str:
@@ -102,6 +110,8 @@ class Report:
     def headline(self) -> str:
         if self.is_test:
             return t("notify.test_title", self.language)
+        if self.headline_key:
+            return t(self.headline_key, self.language)
         line = t("notify.title", self.language, count=self.total)
         if self.fixed:
             line += t("notify.title_fixed", self.language, count=self.fixed)

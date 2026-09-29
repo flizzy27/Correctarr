@@ -241,6 +241,7 @@ async function loadChrome() {
   // you go looking for it on the rare occasion you want it.
   $("#open-wizard").hidden = Boolean(status.setup_done);
   $("#dry-run-badge").hidden = !status.dry_run;
+  showSafety(status.safety);
   // What is waiting for a decision beats the size of the log: that number
   // means something needs doing, the other only that things were found.
   const waiting = Number(status.decisions || 0);
@@ -257,6 +258,32 @@ async function loadChrome() {
     "dot " + (status.services.length === 0 ? "" : up === status.services.length ? "good" : "warn");
   return status;
 }
+
+/* The safety fuse. While it holds, nothing is acted on automatically, and
+   that has to be impossible to miss on whichever page somebody is looking at:
+   a quiet program and a stopped one look exactly alike otherwise. */
+function showSafety(safety) {
+  const banner = $("#safety-banner");
+  if (!banner) return;
+  const paused = Boolean(safety && safety.paused);
+  banner.hidden = !paused;
+  $("#safety-reason").textContent = paused
+    ? `${safety.reason}${safety.since ? " · " + when(safety.since) : ""}` : "";
+}
+
+$("#safety-resume")?.addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const answer = await post("api/safety/resume", {});
+    showSafety(answer.safety);
+    toast(t("safety.resumed"), "good");
+  } catch (error) {
+    failed(error);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 /* ============================================================== overview */
 async function loadOverview() {

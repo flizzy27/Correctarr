@@ -35,7 +35,7 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _now() -> str:
@@ -158,11 +158,30 @@ CREATE TABLE IF NOT EXISTS dismissed (
 );
 """
 
+# Version 5: every action taken, automatic or by hand, one row each. The safety
+# guards count in here — see app/safety.py. Kept apart from the findings on
+# purpose: findings are trimmed by size and age for reading, and a count that
+# depends on how much history somebody chose to keep is no limit at all.
+_M5 = """
+CREATE TABLE IF NOT EXISTS actions (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    at       TEXT NOT NULL,
+    subject  TEXT NOT NULL,
+    rule     TEXT NOT NULL,
+    action   TEXT NOT NULL,
+    identity TEXT NOT NULL DEFAULT '',
+    by_hand  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_actions_subject ON actions(subject, at);
+CREATE INDEX IF NOT EXISTS idx_actions_at      ON actions(at);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _M1),
     (2, _M2),
     (3, _M3),
     (4, _M4),
+    (5, _M5),
 ]
 
 # Column mapping used when adopting a store written by a pre-release build.
@@ -684,6 +703,50 @@ class Store:
                     if k.startswith(prefix) and k not in active]
             if gone:
                 c.executemany("DELETE FROM progress WHERE key=?", gone)
+
+    # -- actions taken, for the safety guards ----------------------------------
+    def note_act(self, subject: str, rule: str, action: str, identity: str = "",
+                 by_hand: bool = False, at: datetime | None = None) -> None:
+        """Write down one action that was attempted."""
+        moment = (at or datetime.now(UTC)).isoformat()
+        with _lock, self._conn() as c:
+            c.execute("INSERT INTO actions(at,subject,rule,action,identity,by_hand) "
+                      "VALUES(?,?,?,?,?,?)",
+                      (moment, subject, rule, action, identity or "",
+                       1 if by_hand else 0))
+
+    def acts_on(self, subject: str, since: datetime) -> list[dict]:
+        """Everything done to one subject since then, automatic or not."""
+        with _lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM actions WHERE subject=? AND at>=? "
+                             "ORDER BY at", (subject, since.isoformat())).fetchall()
+        return [dict(r) for r in rows]
+
+    def count_acts(self, since: datetime,
+                   actions: frozenset[str] | set[str] | None = None) -> int:
+        """Automatic actions since then. Those done by hand are not counted.
+
+        A person working through forty findings with one button is not a
+        runaway, and must not switch the automatic side off for everybody.
+
+        Rows about the same release and download count once: a season pack
+        thrown out covers every episode in it, and is still one action.
+        """
+        sql = ("SELECT COUNT(DISTINCT CASE WHEN identity='' THEN 'row:' || id "
+               "ELSE identity END) FROM actions WHERE at>=? AND by_hand=0 "
+               "AND action<>'loop'")
+        params: list[Any] = [since.isoformat()]
+        if actions:
+            chosen = sorted(actions)
+            sql += f" AND action IN ({','.join('?' * len(chosen))})"
+            params += chosen
+        with _lock, self._conn() as c:
+            return int(c.execute(sql, params).fetchone()[0])
+
+    def prune_acts(self, days: int = 30) -> None:
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        with _lock, self._conn() as c:
+            c.execute("DELETE FROM actions WHERE at < ?", (cutoff,))
 
     # -- services --------------------------------------------------------------
     def services(self, enabled_only: bool = False) -> list[dict]:

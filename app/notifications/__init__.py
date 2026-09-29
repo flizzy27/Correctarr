@@ -42,7 +42,8 @@ from .channels.webhook import Webhook
 log = logging.getLogger(__name__)
 
 __all__ = ["Channel", "ChannelError", "ConfigField", "Group", "Report",
-           "KINDS", "build", "describe_kinds", "dispatch", "group_findings"]
+           "KINDS", "alert", "build", "describe_kinds", "dispatch",
+           "group_findings"]
 
 #: Every provider that can be configured. Adding one means writing the class
 #: and putting it here; the store, the API, the interface and the translations
@@ -182,6 +183,37 @@ def dispatch(connections: list[dict], findings: list, *, language: str = "en",
             continue
 
         ok, detail = channel.send(report)
+        if ok:
+            note_sent(connection_id)
+        else:
+            log.warning("Notification via %s failed: %s", name, detail)
+        outcomes.append({"id": connection_id, "name": name,
+                         "ok": ok, "detail": detail})
+    return outcomes
+
+
+def alert(connections: list[dict], finding, *, language: str = "en",
+          url: str = "", headline_key: str = "safety.notify_title") -> list[dict]:
+    """Send one urgent message to every enabled connection.
+
+    Not a run report, and not routed like one: no severity threshold, no rule
+    or category filter, no cooldown. It exists for the safety fuse — somebody
+    who only wants errors from the queue rules still has to hear that nothing
+    is being fixed automatically any more.
+    """
+    outcomes: list[dict] = []
+    for connection in connections:
+        if not connection.get("enabled", True):
+            continue
+        name = connection.get("name") or connection.get("kind")
+        connection_id = int(connection.get("id") or 0)
+        report = Report(groups=group_findings([finding]), total=1, fixed=0,
+                        language=language, url=url, headline_key=headline_key)
+        try:
+            channel = build(connection)
+            ok, detail = channel.send(report)
+        except Exception as e:                              # noqa: BLE001
+            ok, detail = False, str(e)
         if ok:
             note_sent(connection_id)
         else:

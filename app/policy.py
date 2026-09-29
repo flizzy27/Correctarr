@@ -115,6 +115,14 @@ REQUIRES: dict[str, tuple[str, ...]] = {
 #: default to something cautious for any rule that offers one.
 DESTRUCTIVE = frozenset({"delete", "remove_entry"})
 
+#: Actions that throw something away, reversibly or not: a download taken out
+#: of the queue is gone as surely as a folder deleted from disk, and the
+#: service goes and fetches something in its place. The safety fuse counts
+#: these separately, and a rule that flags a title again after one of them has
+#: run is the start of a loop (see :mod:`app.safety`).
+DISCARDS = frozenset({"remove", "blocklist", "blocklist_and_search",
+                      "delete", "remove_entry"})
+
 #: Actions that reach out and change something in another service.
 CHANGES_SOMETHING = frozenset(ACTIONS) - {REPORT}
 

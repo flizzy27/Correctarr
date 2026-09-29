@@ -30,7 +30,7 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
-from . import compat, notifications, policy
+from . import compat, notifications, policy, safety
 from . import settings as S
 from .arr import Arr, ArrError, GoneError
 from .i18n import t
@@ -1067,6 +1067,12 @@ class Engine:
             answer["found"] = self._what_the_search_found(
                 target, finding, started, language)
 
+        # Never blocked by the safety guards — a person pressing a button is
+        # the opposite of a runaway — but counted, so that a title somebody
+        # has already dealt with three times today is not taken up again
+        # automatically on top of that.
+        safety.Guard(self.store).note(finding, chosen, by_hand=True)
+
         data = {**finding.data, "_action": outcome.as_dict(), "_by_hand": True}
         data.pop("_held", None)
         data.pop("_held_params", None)
@@ -1173,6 +1179,7 @@ class Engine:
         started = time.monotonic()
         cfg = self.config()
         deep = bool(deep)
+        guard = self.guard(cfg)
 
         findings: list[Finding] = []
         fixed = 0
@@ -1218,6 +1225,7 @@ class Engine:
                         findings += self._apply(rule, lead, shared, cfg, deep, errors)
 
             # 3. act
+            handled: dict[str, tuple[str, bool]] = {}
             for finding in findings:
                 chosen = self.rule_policy(cfg, finding.rule)
                 verdict = policy.decide(chosen, finding)
@@ -1245,8 +1253,41 @@ class Engine:
                     finding.data["_held_params"] = {"hours": waiting}
                     continue
 
+                # One download, one action. Sonarr lists a season pack as one
+                # queue entry per episode, and removing the first removes the
+                # lot — the other twenty-one were each sent again, each
+                # answered with "not found", and each one counted.
+                download = _download_key(finding)
+                if download and download in handled:
+                    action_taken, attempted_then = handled[download]
+                    finding.data["_held"] = "policy.same_download"
+                    finding.data["_held_params"] = {}
+                    if attempted_then:
+                        # Covered by the same action, so it counts for this
+                        # episode as well — a replacement grabbed for it is
+                        # then recognised as a replacement.
+                        guard.note(finding, action_taken)
+                    continue
+
+                # The last word, whichever rule this is: how often this title
+                # has been acted on, whether it came straight back after being
+                # thrown out, and whether automatic actions as a whole are
+                # running away. See app/safety.py.
+                hold = guard.check(finding, verdict.action)
+                if hold is not None:
+                    self._hold(finding, hold, cfg)
+                    if hold.tripped:
+                        self._announce_pause(guard, cfg)
+                    continue
+
+                # Counted as attempted whether or not the service says it
+                # worked: an entry answered with "not found" had been marked
+                # as failed in the service's own history at the same second,
+                # eight times in four minutes.
+                attempted = True
                 try:
                     outcome = self._perform(verdict.action, target, finding, cfg)
+                    attempted = outcome is not None and outcome.state != "dry"
                 except GoneError:
                     # It left the queue between being found and being acted
                     # on — imported, or removed by somebody. Nothing went wrong
@@ -1263,6 +1304,10 @@ class Engine:
                     outcome = failed("action.result.service_refused",
                                      error=str(e)[:200])
                     errors.append(f"{finding.rule}: {e}")
+                if attempted:
+                    guard.note(finding, verdict.action)
+                if download:
+                    handled[download] = (verdict.action, attempted)
                 if outcome is not None and outcome.state == "failed":
                     self._note_failure(finding)
                 if outcome is not None:
@@ -1327,6 +1372,51 @@ class Engine:
         left = wait - (time.time() - last) / 3600
         return round(left, 1) if left > 0 else 0.0
 
+    # -- the safety guards -----------------------------------------------------
+    def guard(self, cfg: dict | None = None) -> safety.Guard:
+        return safety.Guard(self.store,
+                            safety.Limits.from_config(cfg or self.config()))
+
+    def _hold(self, finding: Finding, hold: safety.Hold, cfg: dict) -> None:
+        """Hold a finding back for safety, and make sure somebody hears of it.
+
+        A finding seen on every pass is only recorded when it is new, and a
+        title held because it keeps coming back is exactly the one that is not
+        new any more. So being held counts as news of its own — once per
+        reporting interval, not on every pass.
+        """
+        finding.data["_held"] = hold.reason
+        finding.data["_held_params"] = hold.params
+        try:
+            if self.store.is_new("held:" + _dedup_key(finding),
+                                 int(cfg.get("recheck_hours", 12))):
+                finding.is_new = True
+        except Exception:                                       # noqa: BLE001
+            log.exception("Could not note the hold on %s", finding.rule)
+
+    def _announce_pause(self, guard: safety.Guard, cfg: dict) -> None:
+        """Tell every connection that automatic actions have stopped.
+
+        Past every filter and every cooldown a connection has: somebody who
+        set theirs to "errors from the queue rules only" still wants to know
+        that nothing is being fixed any more.
+        """
+        state = guard.paused() or {}
+        language = cfg.get("language")
+        language = language if language in ("en", "de") else "en"
+        notice = Finding(
+            rule=safety.NOTICE_RULE, severity="error",
+            title=t(str(state.get("reason") or "safety.too_many"), language,
+                    **(state.get("params") or {})),
+            message=str(state.get("reason") or "safety.too_many"),
+            params=dict(state.get("params") or {}), service="correctarr")
+        try:
+            notifications.alert(self.notification_targets(), notice,
+                                language=language,
+                                url=cfg.get("public_url", ""))
+        except Exception:                                       # noqa: BLE001
+            log.exception("Could not announce the pause")
+
     def _note_failure(self, finding: Finding) -> None:
         try:
             self.store.note_attempt("fail:" + _dedup_key(finding))
@@ -1368,12 +1458,22 @@ class Engine:
             log.exception("Rule %s failed", rule.name)
             errors.append(f"{rule.name}: {e}")
             return []
+        queue = {entry.get("id"): entry for entry in (ctx.get("queue") or [])
+                 if isinstance(entry, dict)}
         for finding in found:
             # Which connection produced it, so acting on it later comes back
             # here rather than to whichever service happens to be first.
             # A rule that already knows better — a job found through the
             # download client that belongs to another service — has said so.
             finding.data.setdefault("_instance", getattr(arr, "service_id", None))
+            # What it is about, for the safety guards. Worked out here, where
+            # the queue entry is still at hand: most queue rules do not copy
+            # the title's id into their findings, and a guard that relied on
+            # every rule remembering to would not be a guard.
+            entry = queue.get(finding.entry_id) if finding.entry_id is not None else None
+            finding.data["_subject"] = safety.subject(finding, entry)
+            if entry and entry.get("downloadId") and not finding.data.get("_download"):
+                finding.data["_download"] = entry["downloadId"]
             finding.is_new = self.store.is_new(
                 _dedup_key(finding), int(cfg.get("recheck_hours", 12)))
         return found
@@ -1391,6 +1491,8 @@ class Engine:
             # "There is nothing better out there" is true about the world on
             # the day it was decided, and the world gets new releases.
             self.store.prune_attempts(180)
+            # Far longer than any window the safety guards count in.
+            self.store.prune_acts(30)
             self.store.trim_findings(keep=int(cfg.get("log_keep", 20000)),
                                      days=int(cfg.get("log_days", 90)))
         except Exception:                                       # noqa: BLE001
@@ -1445,6 +1547,14 @@ def _episode_ids(candidate: dict) -> list[int]:
         if isinstance(value, int) and value not in out:
             out.append(value)
     return out
+
+
+def _download_key(finding: Finding) -> str | None:
+    """The download a queue finding belongs to, on the instance it came from."""
+    download = finding.data.get("_download") or finding.data.get("downloadId")
+    if not download or finding.entry_id is None:
+        return None
+    return f"{finding.data.get('_instance')}:{download}"
 
 
 def _dedup_key(finding: Finding) -> str:

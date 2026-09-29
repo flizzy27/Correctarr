@@ -97,6 +97,8 @@ scheduler = BackgroundScheduler(timezone=os.getenv("TZ", "Etc/UTC"))
 
 _event_lock = threading.Lock()
 _last_event = 0.0
+#: A pass already promised to the events that arrived since the last one.
+_event_pending = False
 
 # Paths that have to work without a session.
 OPEN_PATHS = {"/api/alive", "/api/auth", "/api/auth/state", "/api/auth/setup",
@@ -154,19 +156,49 @@ def _schedule() -> None:
 
 
 def _trigger_event(source: str) -> None:
-    """Start a fast run soon, at most every few seconds."""
-    global _last_event
+    """Start a fast pass soon — at most one per gap, however many events come.
+
+    A search wave makes the service send a grab event every two seconds,
+    fifteen in a row. The first one starts a pass straight away. Everything
+    that arrives inside the gap after it is folded into **one** further pass
+    at the end of the gap, rather than dropped: the last grab of a wave is the
+    one most likely to need looking at, and dropping it left it to the next
+    scheduled pass a minute later.
+
+    Never two passes at once, and never a pile of threads waiting for one:
+    there is at most one pass promised at any time, and the run itself refuses
+    to start while another is going.
+    """
+    global _last_event, _event_pending
     cfg = engine.config()
     if not cfg.get("events_enabled", True):
         return
+    gap = float(cfg.get("event_debounce", 8))
     with _event_lock:
-        now = time.monotonic()
-        if now - _last_event < float(cfg.get("event_debounce", 8)):
+        if _event_pending:
+            log.debug("Event from %s folded into the pass already due", source)
             return
-        _last_event = now
-    log.info("Event from %s — checking now", source)
-    threading.Thread(target=lambda: engine.run(deep=False, trigger=source),
-                     daemon=True).start()
+        _event_pending = True
+        wait = max(0.0, _last_event + gap - time.monotonic())
+    if wait:
+        log.info("Event from %s — checking in %.0f s", source, wait)
+    else:
+        log.info("Event from %s — checking now", source)
+    timer = threading.Timer(wait, _event_pass, args=(source,))
+    timer.daemon = True
+    timer.start()
+
+
+def _event_pass(source: str) -> None:
+    global _last_event, _event_pending
+    with _event_lock:
+        _event_pending = False
+        _last_event = time.monotonic()
+    result = engine.run(deep=False, trigger=source)
+    # Another pass was already going and may have read the queue before the
+    # event arrived. One more after the gap — still never more than one due.
+    if isinstance(result, dict) and result.get("skipped"):
+        _trigger_event(source)
 
 
 @asynccontextmanager
@@ -667,7 +699,7 @@ def test_service(body: ServiceBody, request: Request, _: dict = Depends(require_
 # Status
 # ---------------------------------------------------------------------------
 @app.get("/api/status")
-def status(_: dict = Depends(require_user)):
+def status(request: Request, _: dict = Depends(require_user)):
     entries = store.services(enabled_only=True)
     probed = _probe_all(entries)
     services = [{"name": entry["name"], "kind": entry["kind"], "url": entry["url"],
@@ -696,7 +728,30 @@ def status(_: dict = Depends(require_user)):
         "dry_run": bool(cfg.get("dry_run")),
         "theme": cfg.get("theme", "midnight"),
         "density": cfg.get("density", "normal"),
+        "safety": _safety_state(language_for(request)),
     }
+
+
+def _safety_state(language: str) -> dict:
+    """Whether automatic actions are paused, and why, in the reader's words."""
+    paused = engine.guard().paused()
+    if not paused:
+        return {"paused": False}
+    return {"paused": True, "since": paused.get("since"),
+            "reason": i18n.t(str(paused.get("reason")), language,
+                             **(paused.get("params") or {}))}
+
+
+@app.post("/api/safety/resume")
+def resume_actions(request: Request, _: dict = Depends(require_user)):
+    """Let automatic actions run again after the fuse has tripped.
+
+    Only by a person, and only through here. Nothing resumes by itself: the
+    fuse trips because something was going round in a circle, and whatever
+    that was is still there until somebody has looked at it.
+    """
+    engine.guard().resume()
+    return {"ok": True, "safety": _safety_state(language_for(request))}
 
 
 @app.get("/api/paths")

@@ -110,6 +110,16 @@
       </div>
     </header>
 
+    <!-- Shown on every page while the safety fuse holds automatic actions. -->
+    <div class="safety-banner" id="safety-banner" role="alert" hidden>
+      <div class="safety-text">
+        <strong data-t="safety.banner_title"></strong>
+        <span id="safety-reason"></span>
+        <span class="hint" data-t="safety.banner_help"></span>
+      </div>
+      <button class="btn primary" id="safety-resume" data-t="safety.resume"></button>
+    </div>
+
     <main>
       <!-- ============================================ overview -->
       <section id="page-overview" class="page active">
