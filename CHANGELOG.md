@@ -3,6 +3,86 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.6.0
+
+Three things: nothing that acts by itself can run away, no download sits stuck
+without somebody hearing about it, and whatever is not certain enough to be done
+unasked is one press away.
+
+### Added
+
+* **Safety limits: no automatic action can run away.** Measured live: an
+  episode was blocklisted and searched for, the service grabbed another copy
+  within seconds, the same rule flagged that one too — eight rounds in four
+  minutes, each recorded as a failure although it had happened. Every automatic
+  action, whichever rule asks for it, now has to pass three limits: the same
+  title at most 3 times in 24 hours across all rules; a title that a rule flags
+  again right after throwing it out is left for a person; and more than 60
+  automatic actions an hour, or 30 that throw something away, pause them all
+  until somebody presses *Resume automatic actions*. The pause survives a
+  restart, is announced on every notification connection whatever its filters,
+  and is shown on every page. Buttons are never blocked, but count towards the
+  per-title limit. The numbers are under *Settings → Safety limits*.
+* **No download sits stuck unnoticed.** Two new rules, `stuck_in_queue` and
+  `stuck_in_downloader`, catch every state a download can be stuck in: imports
+  that are blocked or pending — including Radarr's *"matched to movie by ID.
+  Manual Import required"*, which nothing reported when the release name did not
+  fit the film — failed downloads, jobs SABnzbd paused because they are
+  encrypted or carry an unwanted file, post-processing that never finishes, and
+  jobs that failed or finished without the service that grabbed them noticing.
+  Each finding carries the service's own words and the fix they call for. The
+  new action *Do what the finding suggests* carries that fix out only when the
+  outcome is certain; everything else is offered as a button. New setting: *A
+  download counts as stuck after* (3 hours).
+* **Every open finding is one press from resolved.** What was found and not
+  dealt with by itself waits under *Findings → Waiting for you*, one card each:
+  what was found, why nothing happened, and what is recommended, as the first
+  button. Everything else the rule can do sits beside it; what cannot be undone
+  is marked and asks first. **Dismiss** hides a finding until it changes.
+* **The overview says what is waiting for you,** rule by rule, with one button
+  that does what is recommended for all of them. Anything that would delete is
+  left out and keeps its own button.
+
+### Changed
+
+* An action counts when it was attempted, not when it succeeded.
+* A season pack is thrown out once, not once per episode.
+* A burst of webhooks is one pass now and one after the gap; the last event of
+  a burst used to be dropped.
+* `manual_import` understands Sonarr's wording and alternate titles;
+  `not_an_upgrade` also catches entries marked as blocked.
+* The batch button applies each finding's own recommendation and leaves out a
+  finding when what it would do deletes, rather than when its rule merely could.
+* A design pass over the whole interface: one set of colour and spacing tokens,
+  buttons that show they are working, proper empty and loading states, tables
+  that become cards on a phone, long release names that wrap.
+
+### Fixed
+
+* Profiles built here counted every English WEB-DL as German: the bare `DL` of
+  German dual-language releases also matched the `DL` of `WEB-DL`.
+* Profiles set their language to "Original" when a service offered no "Any" —
+  the film's own language, which refuses German dubs.
+* Asking for WEB-DL without WEBRip let WEBRip in.
+* A profile made by hand was overwritten when its name was typed into the
+  builder. The builder now refuses instead.
+* Profiles written to Sonarr no longer refuse box sets: a pack of every season
+  is how a finished series is fetched. Films called *The Collection* or
+  *… Anthology* are no longer refused as box sets.
+* Source and quality modifier conditions never matched when a download was
+  scored again, and negated ones always did. A group condition was matched
+  against the whole name when a release had no group.
+* `collection_pack` took every release of a film with a colon in its title for
+  a box set.
+* Matching an orphaned file failed on accents, apostrophes and titles that are
+  numbers.
+* `indexer_ranking` reported indexers at the same priority as out of order.
+* `missing_audio_language` reported almost every German file: Radarr writes
+  `ger/eng`, the setting says "German". Languages are now compared as languages.
+* `unreadable_file` would report the whole library when media analysis is off.
+* `season_gaps`, `series_incomplete`, `missing_audio_language` and
+  `below_profile` searched on every full pass forever.
+
 ## 1.5.0
 
 Everything in this release was found by reading five days of a real store and a
