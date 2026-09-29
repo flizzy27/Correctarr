@@ -51,6 +51,15 @@ _FOUR_DIGITS = re.compile(r"(?<![\d])(\d{4})(?![\d])")
 #: spells its resolution that way.
 _RESOLUTION = re.compile(r"\b\d{3,4}\s*[xX×]\s*\d{3,4}\b")
 
+#: A release name that names an episode, a season or a broadcast date. What
+#: follows such a marker describes the airing, not the work, so several checks
+#: that ask "which year is this from" have to hold their tongue.
+EPISODE_MARKER = re.compile(
+    r"\b(s\d{1,2}[\s._-]?e\d{1,3}|s\d{1,2}\b"
+    r"|season[\s._-]?\d+|staffel[\s._-]?\d+"
+    r"|\d{4}[.\-]\d{2}[.\-]\d{2}\b)",
+    re.IGNORECASE)
+
 #: Anything that is not a letter or a digit separates words in a release name.
 _SEPARATORS = re.compile(r"[^0-9a-z]+")
 
@@ -107,6 +116,22 @@ def candidates(release: str, title: str = "") -> list[int]:
             continue
         kept.append(year)
     return kept
+
+
+def before_the_episode(release: str) -> str:
+    """The part of a release name that is about the series, not the episode.
+
+    Everything after the episode marker describes the episode: its title, its
+    broadcast, its source. And episode titles are sometimes a year —
+    *The Vampire Diaries* S03E16 is called "1912" — which was read as the
+    release year, judged a century off, and blocklisted. Eight times, each
+    time the episode was grabbed again.
+
+    A year that states which series this is sits in front of the marker, where
+    it always does: ``Doctor.Who.2005.S01E01``. So only that part is read.
+    """
+    match = EPISODE_MARKER.search(release or "")
+    return (release or "")[:match.start()] if match else (release or "")
 
 
 def _year_of(value) -> int | None:
@@ -229,7 +254,7 @@ def judge(release: str, item: dict, tolerance: int = 1) -> Verdict:
         return Verdict(wrong=False)
 
     title = item.get("title") or ""
-    found = candidates(release, title)
+    found = candidates(before_the_episode(release), title)
     if not found:
         return Verdict(wrong=False, expected=filed)
 

@@ -184,14 +184,7 @@ def _top_folder(path: str) -> str:
     return (path or "").replace("\\", "/").split("/")[0]
 
 
-#: A release name that names an episode, a season or a broadcast date. What
-#: follows such a marker describes the airing, not the work, so several checks
-#: that ask "which year is this from" have to hold their tongue.
-EPISODE_MARKER = re.compile(
-    r"\b(s\d{1,2}[\s._-]?e\d{1,3}|s\d{1,2}\b"
-    r"|season[\s._-]?\d+|staffel[\s._-]?\d+"
-    r"|\d{4}[.\-]\d{2}[.\-]\d{2}\b)",
-    re.IGNORECASE)
+EPISODE_MARKER = years.EPISODE_MARKER
 
 
 def _library_files(arr: Arr, ctx: dict):
@@ -264,12 +257,39 @@ def _settled(ctx: dict, key: str, cfg: dict) -> dict | None:
     if limit <= 0:
         return None
     record = store.attempt(key)
-    if not record or int(record.get("tries") or 0) < limit:
-        return record
-    if not record.get("settled"):
+    if not record:
+        return None
+    # The tries have to be spread out as well as numerous. Three searches in
+    # three days are evidence that nothing is out there; three searches in
+    # one minute are three presses of a button. Rows written before this was
+    # checked carry exactly that — seventy-one tries inside forty-five
+    # seconds — so the span is judged here rather than trusted from the
+    # count, and a verdict that does not survive it is taken back.
+    tries = int(record.get("tries") or 0)
+    span = _hours_between(record.get("first_try"), record.get("last_try"))
+    enough = tries >= limit and span >= (limit - 1) * SEARCH_GAP_HOURS
+    if enough and not record.get("settled"):
         store.settle(key)
         record = {**record, "settled": 1}
+    elif not enough and record.get("settled"):
+        store.settle(key, False)
+        record = {**record, "settled": 0}
     return record
+
+
+#: How far apart two searches have to be before they count as two. A full
+#: pass runs every ninety minutes by default, so this is several of them: the
+#: point is several separate occasions on which the answer was the same.
+SEARCH_GAP_HOURS = 12.0
+
+
+def _hours_between(first, last) -> float:
+    try:
+        a = datetime.fromisoformat(str(first).replace("Z", "+00:00"))
+        b = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    return abs((b - a).total_seconds()) / 3600
 
 
 def _settled_bits(record: dict | None) -> tuple[bool, dict, dict]:
@@ -301,7 +321,18 @@ def cutoff_of(profile: dict) -> str:
         return ""
     for entry in (profile.get("items") or []):
         if entry.get("id") == wanted and entry.get("name"):
-            return str(entry["name"])
+            # A group is named by what is in it. Profile managers name the
+            # group after the profile, so "the profile 1080p Heimkino would
+            # like 1080p Heimkino" was the whole of the explanation.
+            members = [str((child.get("quality") or {}).get("name"))
+                       for child in (entry.get("items") or [])
+                       if (child.get("quality") or {}).get("name")]
+            allowed = [str((child.get("quality") or {}).get("name"))
+                       for child in (entry.get("items") or [])
+                       if child.get("allowed")
+                       and (child.get("quality") or {}).get("name")]
+            chosen = allowed or members
+            return " / ".join(chosen) if chosen else str(entry["name"])
         quality = entry.get("quality") or {}
         if quality.get("id") == wanted:
             return str(quality.get("name") or "")
@@ -648,9 +679,10 @@ def check_collection_pack(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         findings.append(Finding(
             rule="collection_pack", severity="error", service=arr.kind,
             entry_id=entry["id"], title=item.get("title", "?"),
-            message="finding.collection_pack",
+            message=("finding.collection_pack" if verdict.span
+                     else "finding.collection_pack_no_span"),
             params={"reason": ", ".join(t(key, "en") for key in verdict.reasons),
-                    "span": verdict.span or "?",
+                    "span": verdict.span,
                     "gb": f"{_gb(entry):.1f}"},
             data={"release": release, "confidence": verdict.confidence,
                   "reasons": list(verdict.reasons), "span": verdict.span,
@@ -1266,16 +1298,26 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     Episodes are reported per season rather than one at a time. Nine missing
     episodes of one season are one gap, and nine identical lines saying so
     bury everything else on the page.
+
+    Only what is actually out. The services list every monitored title that
+    has no file, including the ones that have not been released — measured on
+    a live Radarr: *Avatar 5* (2031), *Avengers: Secret Wars* (2027) and a
+    handful of films still in cinemas were all reported as missing, and
+    searched for six times each. There is nothing to find for a film that
+    does not exist yet, and every one of those searches costs an indexer
+    query. Radarr says which ones are available; for an episode, the
+    broadcast date says it.
     """
+    rows = [row for row in ctx.get("missing", []) if _out_yet(row)]
     if arr.kind == "sonarr":
         return _season_findings(
-            arr, ctx.get("missing", []), rule="missing_items",
+            arr, rows, rule="missing_items",
             message="finding.missing_episodes", severity="info",
             ctx=ctx, cfg=cfg,
             settled_message="finding.missing_episodes_nothing_out_there")
 
     findings = []
-    for item in ctx.get("missing", []):
+    for item in rows:
         item_id, title, extra = _wanted_entry(arr, item)
         if not item_id:
             continue
@@ -1289,6 +1331,26 @@ def check_missing_items(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             data={"item_id": item_id, **extra, **noted},
         ))
     return findings
+
+
+def _out_yet(row: dict) -> bool:
+    """Has this been released, so that looking for it makes sense?
+
+    Radarr answers this itself with ``isAvailable``, which takes the film's
+    minimum availability setting into account — in cinemas, digitally, on
+    disc. An episode has aired when its broadcast date has passed. Anything
+    that says neither is given the benefit of the doubt, because a title that
+    is reported when it should not be is a nuisance, and one that is never
+    reported is a gap nobody knows about.
+    """
+    if row.get("isAvailable") is False:
+        return False
+    aired = row.get("airDateUtc")
+    if aired:
+        minutes = _age_minutes(aired)
+        if minutes is not None and minutes < 0:
+            return False
+    return True
 
 
 def _season_findings(arr: Arr, rows: list[dict], *, rule: str, message: str,
@@ -1368,11 +1430,18 @@ def check_cutoff_unmet(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
                                 ctx=ctx, cfg=cfg,
                                 settled_message="finding.cutoff_nothing_better")
 
+    # Radarr sends the list of titles below their cutoff without the files —
+    # asked for or not, measured against a live instance — so "on disk as ?"
+    # was all it could say. The movie list the library rules read carries
+    # every file, so the quality is looked up there.
+    library = {i.get("id"): i for i in ctx.get("items", []) if i.get("id")}
     findings = []
     for item in ctx.get("below_cutoff", []):
         item_id, title, extra = _wanted_entry(arr, item)
         if not item_id:
             continue
+        if not quality_of(item) and library.get(item_id):
+            item = {**item, "movieFile": library[item_id].get("movieFile")}
         profile, cutoff = wanted_for(item)
         done, said, noted = _settled_bits(_settled(
             ctx, searching_for(arr, "cutoff_unmet", item_id), cfg))
@@ -1798,6 +1867,154 @@ def check_indexer_unknown(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 # ===========================================================================
 # Category: system
 # ===========================================================================
+#: How many grabs under one profile it takes before "none of them reached the
+#: target" says something about the profile rather than about chance.
+PROFILE_SAMPLES = 5
+
+
+def _grab_score(entry: dict) -> int | None:
+    raw = (entry.get("data") or {}).get("customFormatScore")
+    if raw in (None, ""):
+        raw = entry.get("customFormatScore")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _allowed_quality_ids(profile: dict) -> set:
+    ids = set()
+    for entry in profile.get("items") or []:
+        children = entry.get("items") or []
+        if entry.get("allowed"):
+            if entry.get("quality"):
+                ids.add((entry["quality"] or {}).get("id"))
+            else:
+                ids.add(entry.get("id"))
+        for child in children:
+            if child.get("allowed") or entry.get("allowed"):
+                ids.add((child.get("quality") or {}).get("id"))
+    ids.discard(None)
+    return ids
+
+
+def retune_key(arr: Arr, profile_id) -> str:
+    return f"retune:{getattr(arr, 'service_id', None) or arr.kind}:{profile_id}"
+
+
+def check_profile_loop(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A quality profile that makes the service fetch the same thing forever.
+
+    Found on a live library before it was a rule. Six of seven profiles said
+    *keep upgrading until a file scores 520000*, and the best German release
+    those indexers carried scored 381600 — not one of 224 grabs reached the
+    target. So every file was permanently "not good enough yet", and the same
+    episode was fetched eleven times in one hour.
+
+    One setting decides whether that is possible: *upgrade until custom
+    format score*. Anything above zero is a bet that a file keeps the score its
+    release had and that the score is reachable at all. This rule measures the
+    bet against the grabs the service has actually made, so the finding says
+    what was reached and not only what was asked for.
+
+    Also caught: a cutoff pointing at a quality the profile does not allow, and
+    a floor no release can clear. Both make the service search for good.
+
+    A profile manager such as Profilarr writes its own values back on every
+    sync. When this rule has corrected a profile and finds it set back, it does
+    not correct it again — it says where the value has to be changed instead.
+    A tug of war with another program every hour helps nobody.
+    """
+    profiles = ctx.get("profiles") or []
+    if not profiles:
+        return []
+    items = ctx.get("items") or []
+    profile_of = {i.get("id"): i.get("qualityProfileId") for i in items
+                  if i.get("id")}
+    usage = Counter(profile_of.values())
+
+    best: dict = {}
+    samples: Counter = Counter()
+    per_title: Counter = Counter()
+    for entry in ctx.get("history", []):
+        if not compat.event_is(entry, compat.GRABBED):
+            continue
+        title_id = entry.get("movieId") or entry.get("seriesId")
+        pid = profile_of.get(title_id)
+        if pid is None:
+            continue
+        # Per episode on Sonarr, per film on Radarr: that is the unit that is
+        # fetched again.
+        per_title[(pid, entry.get("episodeId") or title_id)] += 1
+        score = _grab_score(entry)
+        if score is None:
+            continue
+        samples[pid] += 1
+        best[pid] = max(best.get(pid, score), score)
+    repeats = Counter(pid for (pid, _t), n in per_title.items() if n >= 3)
+
+    store = ctx.get("store")
+    findings = []
+    for profile in profiles:
+        pid = profile.get("id")
+        if items and not usage.get(pid):
+            continue                      # nothing uses it, nothing can loop
+        name = str(profile.get("name") or pid)
+        target = int(profile.get("cutoffFormatScore") or 0)
+        floor = int(profile.get("minFormatScore") or 0)
+        upgrades = bool(profile.get("upgradeAllowed"))
+        reachable = sum(max(0, int(f.get("score") or 0))
+                        for f in profile.get("formatItems") or [])
+        allowed = _allowed_quality_ids(profile)
+        base = {"profile_id": pid, "profile": name, "target": target,
+                "floor": floor, "best": best.get(pid), "samples": samples[pid],
+                "repeats": repeats[pid], "titles": usage.get(pid, 0)}
+
+        if upgrades and target > 0:
+            record = store.attempt(retune_key(arr, pid)) if store else None
+            if record:
+                # Corrected here once already, and set back since.
+                findings.append(Finding(
+                    rule="profile_loop", severity="error", service=arr.kind,
+                    title=name, message="finding.profile_loop_set_back",
+                    params={"target": target},
+                    data={**base, "problem": "set_back",
+                          "hold": "policy.managed_elsewhere"}))
+                continue
+            measured = samples[pid] >= PROFILE_SAMPLES
+            if measured and best.get(pid, 0) < target:
+                message, severity, problem = ("finding.profile_loop_unreachable",
+                                              "error", "unreachable")
+            elif repeats[pid]:
+                message, severity, problem = ("finding.profile_loop_repeating",
+                                              "error", "repeating")
+            else:
+                message, severity, problem = ("finding.profile_loop_risk",
+                                              "warning", "risk")
+            findings.append(Finding(
+                rule="profile_loop", severity=severity, service=arr.kind,
+                title=name, message=message,
+                params={"target": target, "best": best.get(pid, "?"),
+                        "samples": samples[pid], "repeats": repeats[pid],
+                        "titles": usage.get(pid, 0)},
+                data={**base, "problem": problem}))
+
+        if upgrades and allowed and profile.get("cutoff") not in allowed:
+            findings.append(Finding(
+                rule="profile_loop", severity="error", service=arr.kind,
+                title=name, message="finding.profile_cutoff_disabled",
+                data={**base, "problem": "cutoff_disabled"}))
+
+        if floor > reachable:
+            findings.append(Finding(
+                rule="profile_loop", severity="error", service=arr.kind,
+                title=name, message="finding.profile_floor_unreachable",
+                params={"floor": floor, "reachable": reachable},
+                # Changing the floor changes what is grabbed at all; that is
+                # a decision about taste, not a repair, and is left alone.
+                data={**base, "problem": "floor",
+                      "hold": "policy.needs_a_person"}))
+    return findings
 def check_api_changes(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The service has marked part of the API this uses as replaced.
 
@@ -1992,6 +2209,12 @@ ALL: tuple[Rule, ...] = (
          scope="once", deep=True),
 
     # -- system -------------------------------------------------------------
+    # Acting by default: this is the one thing that turns a library into a
+    # loop, and the correction — stop upgrading on score — takes nothing away
+    # except the loop. Resolution upgrades are untouched.
+    Rule("profile_loop", "system", check_profile_loop,
+         actions=(policy.REPORT, "retune_profile"),
+         default_action="retune_profile", deep=True),
     Rule("service_health", "system", check_service_health),
     Rule("disk_space", "system", check_disk_space),
     # Reporting only on purpose, and permanently: the thing that needs

@@ -748,7 +748,10 @@ PROFILE = {"id": 1, "name": "HD-1080p", "cutoff": 9,
 def test_the_cutoff_is_named_by_the_quality_it_stops_at():
     from app.rules import cutoff_of
     assert cutoff_of(PROFILE) == "WEBDL-1080p"
-    assert cutoff_of({"id": 1, "cutoff": 1000, "items": PROFILE["items"]}) == "WEB 1080p"
+    # A group is named by what is in it, not by its own name: profile
+    # managers name the group after the profile, and "the profile 1080p
+    # Heimkino would like 1080p Heimkino" was the entire explanation.
+    assert cutoff_of({"id": 1, "cutoff": 1000, "items": PROFILE["items"]}) == "WEBDL-1080p"
     assert cutoff_of({"name": "x"}) == ""
 
 

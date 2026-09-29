@@ -68,7 +68,8 @@
       "clear_warning": "would acknowledge the warning",
       "remove_entry": "would remove the entry and its source folder",
       "resume": "would resume the download client",
-      "unblocklist": "would take it off the blocklist and search again"
+      "unblocklist": "would take it off the blocklist and search again",
+      "retune_profile": "would stop the profile upgrading on score"
     },
     "result": {
       "removed": "taken out of the queue",
@@ -93,7 +94,8 @@
       "outside_paths": "the path lies outside the configured directories",
       "delete_failed": "could not delete it: {error}",
       "client_refused": "the download client refused: {error}",
-      "service_refused": "the service refused: {error}"
+      "service_refused": "the service refused: {error}",
+      "retuned": "“{profile}” no longer upgrades on score"
     }
   },
   "label": {
@@ -480,10 +482,17 @@
     "stale_blocklist": "Blocklisted {days} days ago: {release}. The title is still missing, so this refusal may be the reason.",
     "missing_episodes": "{count} episode(s) of season {season} are missing ({episodes}). Monitored and aired, with no file — nothing will look for them until a search is started.",
     "cutoff_unmet_season": "{count} episode(s) of season {season} ({episodes}) are on disk as {quality}. The profile “{profile}” keeps upgrading until {cutoff}. Nothing goes looking for a better copy on its own.",
-    "missing_nothing_out_there": "Searched {tries} times since {since} and nothing turned up. It looks like this simply is not available anywhere your indexers can see. Nothing further will be searched for by itself.",
-    "missing_episodes_nothing_out_there": "{count} episode(s) of season {season} ({episodes}) are still missing after {tries} searches since {since}. It looks like they are not out there. Nothing further will be searched for by itself.",
-    "cutoff_nothing_better": "On disk as {quality}. The profile “{profile}” would like {cutoff}, but {tries} searches since {since} have turned up nothing better — this is probably the best copy there is. Nothing further will be searched for by itself.",
-    "collection_pack": "This is not one film, it is the set: {reason} ({span}), {gb} GB. Radarr cannot import that — it downloads all of them and then fails, or takes the wrong one."
+    "missing_nothing_out_there": "Searched on {tries} separate occasions since {since} and nothing turned up. It looks like this simply is not available anywhere your indexers can see. Nothing further will be searched for by itself.",
+    "missing_episodes_nothing_out_there": "{count} episode(s) of season {season} ({episodes}) are still missing after searches on {tries} separate occasions since {since}. It looks like they are not out there. Nothing further will be searched for by itself.",
+    "cutoff_nothing_better": "On disk as {quality}. The profile “{profile}” would like {cutoff}, but searches on {tries} separate occasions since {since} have turned up nothing better — this is probably the best copy there is. Nothing further will be searched for by itself.",
+    "collection_pack": "This is not one film, it is the set: {reason} ({span}), {gb} GB. Radarr cannot import that — it downloads all of them and then fails, or takes the wrong one.",
+    "collection_pack_no_span": "This is not one film, it is the set: {reason}, {gb} GB. Radarr cannot import that — it downloads all of them and then fails, or takes the wrong one.",
+    "profile_loop_unreachable": "Keeps upgrading until a file scores {target}, and the best of the last {samples} grabs scored {best}. Nothing out there reaches the target, so every one of its {titles} titles is permanently “not good enough yet” and gets fetched again.",
+    "profile_loop_repeating": "Keeps upgrading until a file scores {target}, and {repeats} title(s) under it have been fetched three times or more. A target above zero is a bet that a file keeps its score after import — it does not.",
+    "profile_loop_risk": "Keeps upgrading until a file scores {target}. Nothing has looped yet, but any target above zero can: a file often scores less after import than its release did.",
+    "profile_loop_set_back": "Was corrected to 0 and has been set back to {target} since. Another program maintains this profile — in Profilarr, set “upgrade until score” to 0 in the profile itself, or it will be overwritten again.",
+    "profile_cutoff_disabled": "Stops upgrading at a quality the profile does not allow, so it can never stop. The service searches for it for good.",
+    "profile_floor_unreachable": "A release needs at least {floor} points to be grabbed, and the most any release can score under this profile is {reachable}. Nothing will ever be grabbed."
   },
   "rules": {
     "wrong_year": {
@@ -617,6 +626,10 @@
     "collection_pack": {
       "title": "A box set, when one film was asked for",
       "help": "Blocklists it and searches again straight away. Only above 80 % certainty by default, because it throws a download away — every signal is measured against the film's own title, so a year in the title does not count against it."
+    },
+    "profile_loop": {
+      "title": "A quality profile that makes the service fetch the same thing again",
+      "help": "Measured against the grabs the service has actually made. Stops the profile upgrading on score, which ends the loop and leaves resolution upgrades alone. If a profile manager such as Profilarr sets it back, it says so instead of fighting it."
     }
   },
   "settings": {
@@ -1014,7 +1027,8 @@
       "clear_warning": "Acknowledge the warning",
       "remove_entry": "Remove the entry and its folder",
       "resume": "Resume",
-      "unblocklist": "Take off the blocklist and search again"
+      "unblocklist": "Take off the blocklist and search again",
+      "retune_profile": "Stop upgrading on score"
     },
     "explain": {
       "report": "Record it and leave everything alone. Always available, and always the safe answer.",
@@ -1029,7 +1043,8 @@
       "clear_warning": "Record the warning and clear it in the download client.",
       "remove_entry": "Drop the finished entry from the download client and delete its source folder.",
       "resume": "Start the download client again.",
-      "unblocklist": "Removes the old blocklist entry and starts a search, so the release can be offered again."
+      "unblocklist": "Removes the old blocklist entry and starts a search, so the release can be offered again.",
+      "retune_profile": "Sets “upgrade until custom format score” to 0. The scores still choose the best release when something is grabbed; resolution upgrades still happen."
     },
     "min_age_hours": "Wait at least",
     "min_age_hours_help": "Nothing is acted on before this much time has passed. A download that arrived two minutes ago is not stuck, it is new.",
@@ -1044,7 +1059,11 @@
     "size_unknown": "no size known for this finding",
     "not_confident_enough": "match is {confidence} certain, {needed} required",
     "confidence_unknown": "no confidence known for this finding",
-    "nothing_better": "searched {tries} times already, nothing better exists"
+    "nothing_better": "searched {tries} times already, nothing better exists",
+    "failed_recently": "it failed last time — trying again in {hours} h",
+    "already_gone": "it had already left the queue",
+    "managed_elsewhere": "another program keeps setting this back",
+    "needs_a_person": "this is a matter of taste, not a fault"
   },
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",

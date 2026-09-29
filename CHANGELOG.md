@@ -3,6 +3,55 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 1.5.0
+
+Everything in this release was found by reading five days of a real store and a
+real Radarr and Sonarr history, not by reading the code. Most of it is about one
+thing: nothing should happen twice for no reason.
+
+### Added
+
+* **`profile_loop`: a quality profile that makes the service fetch the same
+  thing forever.** Six of seven profiles on a live library said *keep upgrading
+  until a file scores 520000*; the best German release those indexers carried
+  scored 381600, and not one of 224 grabs reached the target. Every file was
+  permanently "not good enough yet", and one episode was fetched eleven times in
+  an hour. The rule measures the target against the grabs the service actually
+  made, and its default action sets *upgrade until custom format score* to zero.
+  Scores still pick the best release on offer; resolution upgrades still
+  happen. When a profile manager such as Profilarr sets the value back, the
+  rule does not fight it — it says where the value has to be changed instead.
+  A cutoff on a disallowed quality is caught as well; a floor nothing can reach
+  is reported and left to a person.
+
+### Changed
+
+* **A failed action is not retried on the next pass.** The same import failed
+  ninety-six times in a row, once a minute. The wait now starts at an hour and
+  doubles with each failure, up to a day.
+* **Searches only count when they are spread out.** Seventy-one "searches"
+  inside forty-five seconds were enough to declare that nothing better existed.
+  Two tries now have to be twelve hours apart to count as two, and verdicts
+  drawn from rows written before this are taken back.
+* **Profiles built here never upgrade on score.** The target is zero, not the
+  floor: a file can score less after import than its release did before it.
+* **Only titles that are out are missing.** Films still in cinemas and
+  episodes that have not aired were reported and searched for.
+
+### Fixed
+
+* Sonarr's file list takes one series per request. A comma separated list is
+  answered with 400, so the series library rules never saw an episode file.
+* An import into Sonarr sent Radarr's description of the file (`webdl` where
+  Sonarr expects `web`) and was answered with a 500. The service that imports
+  is now asked what it makes of the file.
+* An episode called *1912* was read as the release year and blocklisted, eight
+  times. Only the part of the name in front of the episode marker is read.
+* A queue entry that left between being found and being acted on — imported,
+  or removed by somebody — was recorded as a failure.
+* `cutoff_unmet` on Radarr said "on disk as ?"; the quality is now read from the
+  movie list. A cutoff that is a group is named by the qualities in it.
+
 ## 1.4.0
 
 ### Added

@@ -68,7 +68,8 @@
       "clear_warning": "würde die Warnung bestätigen",
       "remove_entry": "würde den Eintrag und seinen Quellordner entfernen",
       "resume": "würde das Download-Programm fortsetzen",
-      "unblocklist": "würde die Sperre aufheben und neu suchen"
+      "unblocklist": "würde die Sperre aufheben und neu suchen",
+      "retune_profile": "würde das Nachbessern nach Punkten abschalten"
     },
     "result": {
       "removed": "aus der Warteschlange genommen",
@@ -93,7 +94,8 @@
       "outside_paths": "der Pfad liegt außerhalb der eingestellten Verzeichnisse",
       "delete_failed": "konnte nicht gelöscht werden: {error}",
       "client_refused": "das Download-Programm hat abgelehnt: {error}",
-      "service_refused": "der Dienst hat abgelehnt: {error}"
+      "service_refused": "der Dienst hat abgelehnt: {error}",
+      "retuned": "„{profile}“ bessert nicht mehr nach Punkten nach"
     }
   },
   "label": {
@@ -480,10 +482,17 @@
     "stale_blocklist": "Vor {days} Tagen gesperrt: {release}. Der Titel fehlt immer noch — möglicherweise genau deshalb.",
     "missing_episodes": "{count} Folge(n) der Staffel {season} fehlen ({episodes}). Überwacht und ausgestrahlt, aber ohne Datei — von allein sucht niemand danach.",
     "cutoff_unmet_season": "{count} Folge(n) der Staffel {season} ({episodes}) liegen als {quality} vor. Das Profil „{profile}“ bessert bis {cutoff} nach. Von allein sucht niemand eine bessere Kopie.",
-    "missing_nothing_out_there": "Seit {since} {tries}-mal gesucht, ohne Ergebnis. Es sieht so aus, als gäbe es das bei Ihren Indexern schlicht nicht. Von allein wird nicht weiter gesucht.",
-    "missing_episodes_nothing_out_there": "{count} Folge(n) der Staffel {season} ({episodes}) fehlen auch nach {tries} Suchen seit {since}. Es sieht so aus, als gäbe es sie nicht. Von allein wird nicht weiter gesucht.",
-    "cutoff_nothing_better": "Liegt als {quality} vor. Das Profil „{profile}“ hätte gern {cutoff}, aber {tries} Suchen seit {since} haben nichts Besseres gebracht — das ist vermutlich die beste Kopie, die es gibt. Von allein wird nicht weiter gesucht.",
-    "collection_pack": "Das ist nicht ein Film, das ist die ganze Reihe: {reason} ({span}), {gb} GB. Radarr kann das nicht importieren — es lädt alle herunter und scheitert dann, oder nimmt den falschen."
+    "missing_nothing_out_there": "Bei {tries} getrennten Gelegenheiten seit {since} gesucht, ohne Ergebnis. Es sieht so aus, als gäbe es das bei Ihren Indexern schlicht nicht. Von allein wird nicht weiter gesucht.",
+    "missing_episodes_nothing_out_there": "{count} Folge(n) der Staffel {season} ({episodes}) fehlen auch nach Suchen bei {tries} getrennten Gelegenheiten seit {since}. Es sieht so aus, als gäbe es sie nicht. Von allein wird nicht weiter gesucht.",
+    "cutoff_nothing_better": "Liegt als {quality} vor. Das Profil „{profile}“ hätte gern {cutoff}, aber Suchen bei {tries} getrennten Gelegenheiten seit {since} haben nichts Besseres gebracht — das ist vermutlich die beste Kopie, die es gibt. Von allein wird nicht weiter gesucht.",
+    "collection_pack": "Das ist nicht ein Film, das ist die ganze Reihe: {reason} ({span}), {gb} GB. Radarr kann das nicht importieren — es lädt alle herunter und scheitert dann, oder nimmt den falschen.",
+    "collection_pack_no_span": "Das ist nicht ein Film, das ist die ganze Reihe: {reason}, {gb} GB. Radarr kann das nicht importieren — es lädt alle herunter und scheitert dann, oder nimmt den falschen.",
+    "profile_loop_unreachable": "Bessert nach, bis eine Datei {target} Punkte hat — das Beste der letzten {samples} Griffe hatte {best}. Das Ziel erreicht nichts, was es gibt, also ist jeder seiner {titles} Titel dauerhaft „noch nicht gut genug“ und wird wieder geholt.",
+    "profile_loop_repeating": "Bessert nach, bis eine Datei {target} Punkte hat, und {repeats} Titel darunter wurden drei- oder mehrmal geholt. Ein Ziel über null wettet darauf, dass eine Datei nach dem Import ihre Punkte behält — tut sie nicht.",
+    "profile_loop_risk": "Bessert nach, bis eine Datei {target} Punkte hat. Noch hat sich nichts wiederholt, aber jedes Ziel über null kann es: eine Datei hat nach dem Import oft weniger Punkte als ihr Release davor.",
+    "profile_loop_set_back": "Wurde auf 0 korrigiert und seitdem wieder auf {target} gesetzt. Ein anderes Programm pflegt dieses Profil — in Profilarr im Profil selbst „Upgrade until score“ auf 0 setzen, sonst wird es wieder überschrieben.",
+    "profile_cutoff_disabled": "Hört bei einer Qualität auf nachzubessern, die das Profil gar nicht erlaubt — kann also nie aufhören. Der Dienst sucht ewig danach.",
+    "profile_floor_unreachable": "Ein Release braucht mindestens {floor} Punkte, und mehr als {reachable} kann unter diesem Profil keines erreichen. Es wird nie etwas geholt."
   },
   "rules": {
     "wrong_year": {
@@ -617,6 +626,10 @@
     "collection_pack": {
       "title": "Eine Sammelbox, obwohl ein Film gefragt war",
       "help": "Sperrt sie und sucht sofort neu. Standardmäßig erst ab 80 % Sicherheit, weil ein Download weggeworfen wird — jedes Anzeichen wird gegen den Filmtitel selbst geprüft, eine Jahreszahl im Titel zählt also nicht dagegen."
+    },
+    "profile_loop": {
+      "title": "Ein Qualitätsprofil, durch das dasselbe immer wieder geholt wird",
+      "help": "Gemessen an den Griffen, die der Dienst tatsächlich gemacht hat. Schaltet das Nachbessern nach Punkten ab — das beendet die Schleife und lässt Auflösungs-Upgrades unangetastet. Dreht ein Profilverwalter wie Profilarr es zurück, sagt die Regel das, statt dagegen anzukämpfen."
     }
   },
   "settings": {
@@ -1014,7 +1027,8 @@
       "clear_warning": "Warnung bestätigen",
       "remove_entry": "Eintrag und Ordner entfernen",
       "resume": "Fortsetzen",
-      "unblocklist": "Sperre aufheben und neu suchen"
+      "unblocklist": "Sperre aufheben und neu suchen",
+      "retune_profile": "Nachbessern nach Punkten abschalten"
     },
     "explain": {
       "report": "Festhalten und sonst nichts anfassen. Immer verfügbar und immer die sichere Antwort.",
@@ -1029,7 +1043,8 @@
       "clear_warning": "Die Warnung festhalten und im Download-Programm löschen.",
       "remove_entry": "Den fertigen Eintrag aus dem Download-Programm nehmen und seinen Quellordner löschen.",
       "resume": "Das Download-Programm wieder starten.",
-      "unblocklist": "Entfernt den alten Sperreintrag und startet eine Suche, damit das Release wieder angeboten wird."
+      "unblocklist": "Entfernt den alten Sperreintrag und startet eine Suche, damit das Release wieder angeboten wird.",
+      "retune_profile": "Setzt „Upgrade until custom format score“ auf 0. Die Punkte wählen weiter das beste Release aus, wenn etwas geholt wird; Auflösungs-Upgrades gibt es weiterhin."
     },
     "min_age_hours": "Mindestens warten",
     "min_age_hours_help": "Vorher wird nicht eingegriffen. Ein Download, der vor zwei Minuten angekommen ist, hängt nicht — er ist neu.",
@@ -1044,7 +1059,11 @@
     "size_unknown": "zu diesem Fund ist keine Größe bekannt",
     "not_confident_enough": "Zuordnung ist zu {confidence} sicher, verlangt sind {needed}",
     "confidence_unknown": "zu diesem Fund ist keine Sicherheit bekannt",
-    "nothing_better": "schon {tries}-mal gesucht, es gibt nichts Besseres"
+    "nothing_better": "schon {tries}-mal gesucht, es gibt nichts Besseres",
+    "failed_recently": "beim letzten Mal gescheitert — nächster Versuch in {hours} h",
+    "already_gone": "war schon nicht mehr in der Warteschlange",
+    "managed_elsewhere": "ein anderes Programm setzt das immer wieder zurück",
+    "needs_a_person": "das ist Geschmackssache, kein Fehler"
   },
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",

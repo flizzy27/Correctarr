@@ -32,12 +32,15 @@ from typing import Any
 
 from . import compat, notifications, policy
 from . import settings as S
-from .arr import Arr, ArrError
+from .arr import Arr, ArrError, GoneError
 from .i18n import t
 from .indexers import build_views, rate
 from .matching import build_candidates
 from .prowlarr import Prowlarr, ProwlarrError
 from .rules import ALL, Finding
+from .rules import SEARCH_GAP_HOURS as rules_gap_hours
+from .rules import _allowed_quality_ids as rules_allowed_ids
+from .rules import retune_key as rules_retune_key
 from .rules import searching_for as rules_searching_for
 from .sab import Sab, SabError
 from .storage import Store
@@ -180,7 +183,7 @@ class Engine:
         if enabled("disk_space"):
             safe("disk space", arr.disk_space, "disk_space")
             safe("root folders", arr.root_folders, "root_folders")
-        if enabled("grab_loop"):
+        if enabled("grab_loop") or (deep and enabled("profile_loop")):
             safe("history", lambda: arr.history(500), "history")
         if deep and enabled("missing_items"):
             safe("missing items", arr.missing, "missing")
@@ -189,7 +192,8 @@ class Engine:
 
         library_rules = ("missing_audio_language", "unreadable_file",
                          "below_profile", "grab_loop", "wrong_title",
-                         "season_gaps", "series_incomplete", "stale_blocklist")
+                         "season_gaps", "series_incomplete", "stale_blocklist",
+                         "cutoff_unmet", "profile_loop")
         if deep and any(enabled(n) for n in library_rules):
             safe("item list", arr.items, "items")
 
@@ -482,7 +486,9 @@ class Engine:
         key = rules_searching_for(arr, finding.rule, item_id,
                                   finding.data.get("season"))
         try:
-            self.store.note_attempt(key)
+            # Only counts as a new try once enough time has passed since the
+            # last one. See rules.SEARCH_GAP_HOURS.
+            self.store.note_attempt(key, gap_hours=rules_gap_hours)
         except Exception:                                       # noqa: BLE001
             log.exception("Could not count the search for %s", key)
 
@@ -556,6 +562,55 @@ class Engine:
             arr.search([item_id])
             return done("action.result.unblocklisted_searched")
         return done("action.result.unblocklisted")
+
+    def _act_retune_profile(self, arr: Arr, finding: Finding, cfg: dict,
+                            is_dry: bool) -> policy.Outcome | None:
+        """Stop a quality profile upgrading on score.
+
+        Sets *upgrade until custom format score* to zero, which the services
+        document as "do not upgrade on score at all". The scores go on choosing
+        the best release when something is grabbed; resolution upgrades go on
+        happening. What stops is the service deciding that a file it has is not
+        good enough because of a number it can never reach.
+
+        A cutoff that points at a disallowed quality is moved to the best
+        quality the profile does allow. The floor is not touched: that decides
+        what is grabbed at all, and is somebody's taste rather than a fault.
+        """
+        pid = finding.data.get("profile_id")
+        if not pid:
+            return None
+        if is_dry:
+            return dry("action.dry.retune_profile")
+        profile = arr.quality_profile(int(pid))
+        if not profile:
+            return None
+        body = dict(profile)
+        changed = []
+        if int(body.get("cutoffFormatScore") or 0) > 0:
+            body["cutoffFormatScore"] = 0
+            changed.append("target")
+        allowed = rules_allowed_ids(body)
+        if allowed and body.get("cutoff") not in allowed:
+            # The last allowed rung in the list is the best one.
+            best = None
+            for entry in body.get("items") or []:
+                ident = ((entry.get("quality") or {}).get("id")
+                         if entry.get("quality") else entry.get("id"))
+                if ident in allowed:
+                    best = ident
+            if best is not None:
+                body["cutoff"] = best
+                changed.append("cutoff")
+        if not body.get("minUpgradeFormatScore"):
+            body["minUpgradeFormatScore"] = 1
+        if not changed:
+            return None
+        arr.save_quality_profile(body, int(pid))
+        # Remembered, so that finding it set back later can be told apart
+        # from finding it for the first time.
+        self.store.note_attempt(rules_retune_key(arr, pid))
+        return done("action.result.retuned", profile=str(profile.get("name")))
 
     def _act_resume(self, arr: Arr, finding: Finding, cfg: dict,
                     is_dry: bool) -> policy.Outcome | None:
@@ -651,17 +706,27 @@ class Engine:
         if is_dry:
             return dry("action.dry.import_and_clean" if clean
                        else "action.dry.import")
-        payload = {"path": path, "quality": finding.data.get("quality"),
-                   "languages": finding.data.get("languages") or []}
+        # The folder was listed through whichever service answered first —
+        # usually Radarr — and that listing describes the file in that
+        # service's words. They are not the same words: Radarr calls a source
+        # "webdl" where Sonarr expects "web", and handing Radarr's description
+        # to Sonarr is answered with a 500. That happened ninety-six times in a
+        # row on one season pack before anybody saw it.
+        #
+        # So the service about to do the import is asked what *it* makes of the
+        # file, and its answer is what goes back to it: quality, languages and,
+        # for a series, which episodes are in there.
+        own = self._candidate_at(arr, path)
+        payload = {"path": path,
+                   "quality": (own or {}).get("quality")
+                   or (finding.data.get("quality") if arr.kind == "radarr" else None),
+                   "languages": (own or {}).get("languages")
+                   or finding.data.get("languages") or []}
         if arr.kind == "radarr":
             payload["movieId"] = item_id
         else:
-            # The folder was listed through whichever service answered first,
-            # and that listing carries no episodes when the title turns out to
-            # belong to the other one. Ask the service that is about to do the
-            # import, which is the only one that can answer.
-            episodes = self._episodes_at(arr, path)
-            if not episodes:
+            episodes = _episode_ids(own) if own else []
+            if not episodes or not payload["quality"]:
                 return failed("action.result.no_episodes")
             payload["seriesId"] = item_id
             payload["episodeIds"] = episodes
@@ -695,19 +760,24 @@ class Engine:
                 and episode.get("monitored") and not episode.get("hasFile")
                 and episode.get("id")]
 
-    def _episodes_at(self, arr: Arr, path: str) -> list[int]:
-        """Which episodes Sonarr thinks this file holds."""
+    def _candidate_at(self, arr: Arr, path: str) -> dict | None:
+        """What this service makes of one file, in its own words."""
         folder = os.path.dirname(path.replace("\\", "/"))
         try:
             candidates = arr.import_candidates(folder=folder)
         except ArrError as e:
-            log.warning("Could not look up the episodes for %s: %s", path, e)
-            return []
+            log.warning("Could not look up %s: %s", path, e)
+            return None
         wanted = path.replace("\\", "/")
         for candidate in candidates:
             if (candidate.get("path") or "").replace("\\", "/") == wanted:
-                return _episode_ids(candidate)
-        return []
+                return candidate
+        return None
+
+    def _episodes_at(self, arr: Arr, path: str) -> list[int]:
+        """Which episodes Sonarr thinks this file holds."""
+        candidate = self._candidate_at(arr, path)
+        return _episode_ids(candidate) if candidate else []
 
     def _delete_path(self, finding: Finding, cfg: dict,
                      is_dry: bool) -> policy.Outcome | None:
@@ -1042,8 +1112,28 @@ class Engine:
                 target = self._target_for(finding, services, lead)
                 if target is None:
                     continue
+
+                # A failure is not retried on the next pass. The same import
+                # was attempted every minute for an hour and a half and failed
+                # ninety-six times in the same way, and nothing about the
+                # ninety-sixth attempt was going to be different. The wait
+                # doubles with each failure: an outage that clears in minutes
+                # is retried soon, a refusal that never will is left alone.
+                waiting = self._still_backing_off(finding)
+                if waiting:
+                    finding.data["_held"] = "policy.failed_recently"
+                    finding.data["_held_params"] = {"hours": waiting}
+                    continue
+
                 try:
                     outcome = self._perform(verdict.action, target, finding, cfg)
+                except GoneError:
+                    # It left the queue between being found and being acted
+                    # on — imported, or removed by somebody. Nothing went wrong
+                    # and nothing is left to do.
+                    outcome = None
+                    finding.data["_held"] = "policy.already_gone"
+                    finding.data["_held_params"] = {}
                 except ArrError as e:
                     outcome = failed("action.result.service_refused",
                                      error=str(e)[:200])
@@ -1053,6 +1143,8 @@ class Engine:
                     outcome = failed("action.result.service_refused",
                                      error=str(e)[:200])
                     errors.append(f"{finding.rule}: {e}")
+                if outcome is not None and outcome.state == "failed":
+                    self._note_failure(finding)
                 if outcome is not None:
                     # The English rendering goes in the column that is queried
                     # for the prefixes; the key travels beside it so the same
@@ -1061,6 +1153,7 @@ class Engine:
                     finding.data["_action"] = outcome.as_dict()
                     if outcome.state == "done":
                         fixed += 1
+                        self.store.forget_attempt("fail:" + _dedup_key(finding))
 
             # 4. record
             for finding in findings:
@@ -1094,6 +1187,31 @@ class Engine:
             for arr in services:
                 arr.close()
             self.running = False
+
+    #: The first wait after a failure, doubled with each one after, and the
+    #: most it is ever allowed to grow to.
+    BACKOFF_FIRST_HOURS = 1.0
+    BACKOFF_MOST_HOURS = 24.0
+
+    def _still_backing_off(self, finding: Finding) -> float:
+        """Hours left before a finding that failed may be acted on again."""
+        record = self.store.attempt("fail:" + _dedup_key(finding))
+        if not record:
+            return 0.0
+        tries = int(record.get("tries") or 1)
+        wait = min(self.BACKOFF_MOST_HOURS,
+                   self.BACKOFF_FIRST_HOURS * 2 ** (tries - 1))
+        last = _moment(record.get("last_try"))
+        if last is None:
+            return 0.0
+        left = wait - (time.time() - last) / 3600
+        return round(left, 1) if left > 0 else 0.0
+
+    def _note_failure(self, finding: Finding) -> None:
+        try:
+            self.store.note_attempt("fail:" + _dedup_key(finding))
+        except Exception:                                       # noqa: BLE001
+            log.exception("Could not remember the failure")
 
     def _target_for(self, finding: Finding, services: list[Arr],
                     lead: Arr | None) -> Arr | None:

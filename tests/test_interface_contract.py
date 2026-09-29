@@ -87,7 +87,9 @@ def _expected_runtime_keys() -> set[str]:
     # And every reason a finding can be held back, so the explanation is never
     # a bare key in front of the user.
     for reason in ("report_only", "too_young", "age_unknown", "too_large",
-                   "size_unknown", "not_confident_enough", "confidence_unknown"):
+                   "size_unknown", "not_confident_enough", "confidence_unknown",
+                   "nothing_better", "failed_recently", "already_gone",
+                   "managed_elsewhere", "needs_a_person"):
         keys.add(f"policy.{reason}")
     return keys
 

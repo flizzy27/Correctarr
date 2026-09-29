@@ -26,10 +26,23 @@ release scored before it, which happens whenever the name the file was grabbed
 under is not the name it ends up with. Then the file is permanently below the
 target, and the service is permanently shopping.
 
-Here it is set to the same number a release had to clear to be grabbed at all.
-The reasoning is the whole of it: **a file that is good enough to fetch is good
-enough to keep.** Once it has cleared the bar, there is nothing further to
-chase, and no arithmetic that can make the service think otherwise.
+Here it is **zero**, which the services document as "do not upgrade on score
+at all". Nothing subtler survives contact with a real library:
+
+* A file can score less after import than its release scored before it,
+  whenever the name it was fetched under is not the name it ends up with.
+* The target can simply be higher than anything the indexers carry. Measured on
+  a German library of four hundred episodes: not one of 224 grabs reached the
+  520000 the profile was asking for, because the best release available scores
+  381600. The same episode was fetched eleven times in one hour.
+
+Any target above zero is a bet that the file will keep its score *and* that the
+score is reachable. Zero is not a bet.
+
+The scores still do their work — they decide which of the available releases is
+the best one when something is grabbed. What they no longer do is decide that
+what is already on disk is not good enough, which is the only thing that can
+loop.
 
 Quality upgrades still happen — 720p to 1080p — because those are governed by
 the ladder, which is finite and ordered. A ladder cannot loop.
@@ -588,11 +601,18 @@ def build(wish: Wish) -> Blueprint:
             why="profiles.why.too_large", why_params={"gb": _tidy(wish.max_gb)}))
 
     # And the one that matters. "Keep upgrading until the file scores this."
-    # Set to the same floor, which says: a file that was good enough to fetch
-    # is good enough to keep. Anything higher is a standing instruction to go
-    # shopping, and it is obeyed forever the moment a file scores lower after
-    # import than its release scored before it.
-    cutoff_score = min_score
+    #
+    # Zero, always, which the services document as "do not upgrade on score at
+    # all". Any other value is a bet that the file keeps the score its release
+    # had *and* that the score is reachable at all, and both of those lose:
+    # measured on a real library, not one of 224 grabs reached the 520000 its
+    # profile was asking for, so every file was permanently below target and
+    # the same episode was fetched eleven times in an hour.
+    #
+    # The scores are not wasted. They still choose the best of the releases on
+    # offer when something is grabbed. They simply no longer get to declare
+    # what is already on disk insufficient.
+    cutoff_score = 0
 
     if wish.language_required:
         notes.append(("profiles.note.language_required",
@@ -651,11 +671,11 @@ def check(blueprint: Blueprint) -> list[tuple[str, dict]]:
     if not wish.sources:
         problems.append(("profiles.problem.no_source", {}))
 
-    # A target above the floor is the loop. Stated as a check rather than left
-    # to the builder so that it stays true if the builder ever changes.
-    if blueprint.cutoff_score > blueprint.min_score:
+    # A target above zero is the loop. Stated as a check rather than left to
+    # the builder so that it stays true if the builder ever changes.
+    if blueprint.cutoff_score > 0:
         problems.append(("profiles.problem.cutoff_above_floor", {
-            "cutoff": blueprint.cutoff_score, "floor": blueprint.min_score}))
+            "cutoff": blueprint.cutoff_score, "floor": 0}))
 
     # A floor nothing can reach means nothing is ever grabbed, and the service
     # keeps looking for something that is not there.

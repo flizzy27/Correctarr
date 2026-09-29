@@ -43,7 +43,7 @@ def test_the_upgrade_target_never_rises_above_the_floor():
                          min_gb=4, max_gb=40, language_required=True),
                     _everything()):
         plan = profiles.build(answers)
-        assert plan.cutoff_score == plan.min_score
+        assert plan.cutoff_score == 0
         assert not profiles.check(plan)
 
 
@@ -532,7 +532,7 @@ def test_a_profile_and_its_formats_are_written():
     assert result["formats"] == len(plan.formats)
     assert len(service.saved_formats) == len(plan.formats)
     _existing, body = service.saved_profiles[0]
-    assert body["minFormatScore"] == body["cutoffFormatScore"]
+    assert body["cutoffFormatScore"] == 0
     assert body["name"] == "Test"
 
 

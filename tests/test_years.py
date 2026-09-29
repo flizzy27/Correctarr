@@ -205,8 +205,29 @@ def test_a_season_pack_from_a_later_year_is_accepted():
 
 
 def test_a_series_that_ended_does_not_accept_a_later_year():
+    """The year that says which series this is sits in front of the episode."""
     ended = _running(ended=True, lastAired="2018-05-05")
-    assert years.judge("The.Series.S09E01.2021.1080p", ended).wrong is True
+    assert years.judge("The.Series.2021.S09E01.1080p", ended).wrong is True
+
+
+def test_a_year_after_the_episode_marker_is_the_episodes_business():
+    """Episode titles are sometimes a year. The Vampire Diaries S03E16 is
+    called "1912"; read as a release year it was a century off, and the
+    episode was blocklisted eight times as it was grabbed again and again."""
+    series = _running(title="The Vampire Diaries", year=2009,
+                      firstAired="2009-09-10", ended=True,
+                      lastAired="2017-03-10")
+    verdict = years.judge(
+        "The.Vampire.Diaries.S03E16.1912.German.DL.1080p.BluRay.x264-iNTENTiON",
+        series)
+    assert verdict.wrong is False
+    assert verdict.found == ()
+
+
+def test_a_date_named_episode_is_left_alone():
+    """Daily programmes are named by date; the date is the episode."""
+    assert years.judge("The.Series.2024.03.04.1080p.WEB",
+                       _running(ended=True, lastAired="2018-01-01")).wrong is False
 
 
 def test_a_series_that_ended_without_a_last_date_keeps_the_benefit_of_the_doubt():

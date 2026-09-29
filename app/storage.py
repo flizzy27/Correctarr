@@ -584,23 +584,41 @@ class Store:
         return (now - since).total_seconds() / 60
 
     # -- searches that have already been tried ---------------------------------
-    def note_attempt(self, key: str) -> int:
-        """Record that something was searched for. Returns how often now.
+    def note_attempt(self, key: str, gap_hours: float = 0.0) -> int:
+        """Record that something was tried. Returns how often now.
 
         There is no result column on purpose. Whether a search helped is not
         something this has to be told — the next full pass answers it for
         free: if the title is still on the list, the search did not help. A
         result recorded here would be a second, worse copy of that answer.
+
+        ``gap_hours`` is how far apart two tries have to be to count as two.
+        Without it, pressing the button six times in a minute was six
+        separate searches, and three of those were enough to declare that no
+        better copy exists anywhere — measured on a live store: seventy-one
+        "searches" inside forty-five seconds, and a verdict drawn from them.
         """
-        now = _now()
+        now = datetime.now(UTC)
         with _lock, self._conn() as c:
-            c.execute(
-                "INSERT INTO attempts(key,tries,first_try,last_try) "
-                "VALUES(?,1,?,?) ON CONFLICT(key) DO UPDATE SET "
-                "tries=tries+1, last_try=excluded.last_try", (key, now, now))
-            row = c.execute("SELECT tries FROM attempts WHERE key=?",
+            row = c.execute("SELECT tries, last_try FROM attempts WHERE key=?",
                             (key,)).fetchone()
-        return int(row["tries"]) if row else 1
+            if row is None:
+                c.execute("INSERT INTO attempts(key,tries,first_try,last_try) "
+                          "VALUES(?,1,?,?)", (key, now.isoformat(), now.isoformat()))
+                return 1
+            tries = int(row["tries"])
+            if gap_hours > 0:
+                try:
+                    last = datetime.fromisoformat(str(row["last_try"]))
+                    if last.tzinfo is None:
+                        last = last.replace(tzinfo=UTC)
+                    if (now - last).total_seconds() < gap_hours * 3600:
+                        return tries
+                except ValueError:
+                    pass
+            c.execute("UPDATE attempts SET tries=tries+1, last_try=? WHERE key=?",
+                      (now.isoformat(), key))
+        return tries + 1
 
     def attempt(self, key: str) -> dict | None:
         with _lock, self._conn() as c:

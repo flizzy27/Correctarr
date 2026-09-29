@@ -40,7 +40,7 @@ Three ways, at the same time:
 
 ## The rules
 
-**33 rules across six categories.** For each one you decide what happens when
+**34 rules across six categories.** For each one you decide what happens when
 it finds something — not just on or off:
 
 | | |
@@ -64,7 +64,7 @@ finds and touches nothing, until you have seen the findings and turned it off
 yourself.
 
 <details>
-<summary><strong>All 33 rules</strong></summary>
+<summary><strong>All 34 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default action |
@@ -119,6 +119,7 @@ yourself.
 ### System
 | Rule | What it finds | Default action |
 |---|---|---|
+| `profile_loop` | A quality profile that makes the service fetch the same thing again | ***Stop upgrading on score*** |
 | `service_health` | The service reports a problem about itself | Report only |
 | `disk_space` | Free space is running low | Report only |
 | `api_changes` | The service marked a call this makes as on its way out | Report only |

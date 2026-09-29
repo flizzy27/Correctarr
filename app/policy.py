@@ -76,6 +76,7 @@ ACTIONS = (
     "remove_entry",          # drop a finished entry and its source folder
     "resume",                # start a paused download client
     "unblocklist",           # let a refused release be tried again
+    "retune_profile",        # stop a quality profile upgrading on score
 )
 
 #: What each action needs from a finding in order to do anything at all. A rule
@@ -98,6 +99,7 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "remove_entry": ("nzo_id",),
     "resume": ("client",),
     "unblocklist": ("blocklist_id",),
+    "retune_profile": ("profile_id",),
 }
 
 #: Actions that remove data. The interface marks them, and the conditions
@@ -289,6 +291,13 @@ def decide(policy: Policy, finding) -> Verdict:
     # pass from here is asking a question that has been answered, at the cost
     # of an indexer query each time — and those are rationed. A person can
     # still press the button; this only stops it happening by itself.
+    # The finding knows better than the policy: something about it means no
+    # automatic action is right — a profile another program keeps setting
+    # back, a floor that is a matter of taste. It is still reported.
+    if data.get("hold"):
+        return Verdict(act=False, action=policy.action,
+                       reason=str(data["hold"]), params={})
+
     if data.get("settled"):
         return Verdict(act=False, action=policy.action,
                        reason="policy.nothing_better",

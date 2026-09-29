@@ -28,6 +28,17 @@ class ArrError(Exception):
     """The service is unreachable or refused the request."""
 
 
+class GoneError(ArrError):
+    """The thing asked about no longer exists.
+
+    Kept apart from every other refusal because it is not one. A queue entry
+    that vanished between the check and the action has almost always done so
+    for a good reason — it finished and was imported, or somebody removed it —
+    and reporting that as a failure made the record say something went wrong
+    when nothing had.
+    """
+
+
 class Arr:
     def __init__(self, kind: str, url: str, api_key: str,
                  timeout: float = 30.0, name: str = "",
@@ -97,8 +108,8 @@ class Arr:
         if response.status_code == 401:
             raise ArrError(f"{self.name} rejected the API key")
         if response.status_code == 404:
-            raise ArrError(f"{self.name} does not know {path} — "
-                           f"is the address and version right?")
+            raise GoneError(f"{self.name} does not know {path} — "
+                            f"is the address and version right?")
         if response.status_code >= 400:
             raise ArrError(f"{self.name} {method} {path} returned "
                            f"{response.status_code}: {response.text[:200]}")
@@ -218,17 +229,33 @@ class Arr:
         return self._call("GET", "rootfolder") or []
 
     def files(self, item_ids: list[int]) -> list[dict]:
-        """Files for the given items. The services cap the query length, so
-        this goes in chunks."""
+        """Files for the given items.
+
+        Sonarr takes **one** series per request. Given a comma separated list
+        it answers 400, and it did so on every deep pass: the library rules
+        that were extended to series in 1.1 never saw a single episode file.
+        Measured against a live Sonarr — one id, 200; three ids, 400.
+
+        Radarr carries each movie's file inline in the movie list, which is
+        where the library rules read it from, so this is only ever asked on
+        Sonarr's behalf. It still works on Radarr, one movie at a time.
+        """
         out = []
         key = "movieId" if self.kind == "radarr" else "seriesId"
         path = "moviefile" if self.kind == "radarr" else "episodefile"
-        for start in range(0, len(item_ids), 30):
-            chunk = ",".join(str(i) for i in item_ids[start:start + 30])
+        failures = 0
+        for item_id in item_ids:
             try:
-                out += self._call("GET", path, params={key: chunk}) or []
+                out += self._call("GET", path, params={key: item_id}) or []
             except ArrError as e:
-                log.warning("File lookup failed: %s", e)
+                failures += 1
+                # One broken series should not hide the rest, and one log
+                # line per series would bury everything else in the log.
+                if failures == 1:
+                    log.warning("File lookup failed: %s", e)
+        if failures > 1:
+            log.warning("File lookup failed for %d of %d items",
+                        failures, len(item_ids))
         return out
 
     # -- quality profiles and custom formats -----------------------------------
@@ -256,6 +283,9 @@ class Arr:
             return self._call("PUT", f"customformat/{existing_id}",
                               json={**body, "id": existing_id}) or {}
         return self._call("POST", "customformat", json=body) or {}
+
+    def quality_profile(self, profile_id: int) -> dict:
+        return self._call("GET", f"qualityprofile/{profile_id}") or {}
 
     def save_quality_profile(self, body: dict,
                              existing_id: int | None = None) -> dict:
