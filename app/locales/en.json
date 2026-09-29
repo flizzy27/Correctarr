@@ -68,8 +68,10 @@
       "clear_warning": "would acknowledge the warning",
       "remove_entry": "would remove the entry and its source folder",
       "resume": "would resume the download client",
+      "resume_job": "would resume this job",
       "unblocklist": "would take it off the blocklist and search again",
-      "retune_profile": "would stop the profile upgrading on score"
+      "retune_profile": "would stop the profile upgrading on score",
+      "as_suggested": "would do what the finding suggests"
     },
     "result": {
       "removed": "taken out of the queue",
@@ -88,6 +90,7 @@
       "warning_cleared": "recorded and acknowledged",
       "entry_removed": "entry and source folder removed ({gb} GB)",
       "resumed": "resumed",
+      "job_resumed": "job resumed",
       "unblocklisted": "taken off the blocklist",
       "unblocklisted_searched": "taken off the blocklist, new search started",
       "no_episodes": "the service did not say which episodes this file holds",
@@ -447,6 +450,32 @@
     "not_an_upgrade": "Not an upgrade over the existing file. It will never be imported.",
     "stalled": "Unchanged for {minutes} minutes at {percent} percent.",
     "grab_loop": "{count} grabs in {hours} hours. Probably no available release satisfies the profile — that can only be solved in the profile.",
+    "stuck": {
+      "client_unavailable": "The download client has not been reachable for {hours} h. Nothing is done to the download while it cannot be asked. The service says: {text}",
+      "not_grabbed": "In the queue for {hours} h, but not grabbed by the service — somebody else's download, left alone. The service says: {text}",
+      "path_problem": "Stuck for {hours} h on a path or disk problem — a folder the service cannot see, a missing remote path mapping, missing permissions or a full disk. Blocklisting would not help. The service says: {text}",
+      "failed": "Failed {hours} h ago and already handled by the service, but still in the queue. Can be removed. The service says: {text}",
+      "failed_pending": "The download failed {hours} h ago and the service has not dealt with it. Blocklist and search again. The service says: {text}",
+      "already_imported": "Already imported, still in the queue after {hours} h. Can be removed. The service says: {text}",
+      "not_an_upgrade": "Would not be an upgrade and has been waiting {hours} h. Blocklist. The service says: {text}",
+      "sample": "Only a sample, or a file the service cannot measure, for {hours} h. Probably broken — blocklist and search again? The service says: {text}",
+      "no_files": "Finished {hours} h ago with nothing in it that can be imported. Blocklist and search again. The service says: {text}",
+      "matched_by_id": "Waiting for {hours} h: the grab history names the title, but the release name does not quite agree, so the service will not import it by itself. Import if the release is right. The service says: {text}",
+      "unknown_item": "Waiting for {hours} h: the service cannot tell which title this is. The service says: {text}",
+      "missing_episodes": "Waiting for {hours} h: some episodes the release should contain are missing or were not imported. Import what is there? The service says: {text}",
+      "tba_title": "Waiting for {hours} h for an episode title that is still TBA. Import anyway? The service says: {text}",
+      "manual": "Waiting for {hours} h for a manual import. The service says: {text}",
+      "import_pending": "Waiting for {hours} h to be imported without saying why. Import? The service says: {text}",
+      "importing": "Importing for {hours} h — that normally takes minutes. The service says: {text}",
+      "other": "Stuck for {hours} h in a state nothing else here knows. The service says: {text}",
+      "dl_paused": "Paused on its own in {client} for {hours} h while everything else runs. Resume? {text}",
+      "dl_encrypted": "{client} paused this {hours} h ago because it is encrypted. It cannot be unpacked — blocklist and search again. {text}",
+      "dl_unwanted": "{client} paused this {hours} h ago because it carries an unwanted file type. Blocklist and search again. {text}",
+      "dl_fetching": "{client} has been fetching this for {hours} h without starting. {text}",
+      "dl_postprocessing": "{client} has been post-processing this for {hours} h — that normally takes minutes. {text}",
+      "dl_failed_unnoticed": "{client} gave up on this {hours} h ago and the service that grabbed it never noticed — often a changed category. Blocklist and search again. {text}",
+      "dl_completed_unclaimed": "Finished in {client} {hours} h ago, and the service that grabbed it never picked it up — usually a category or path mismatch. Import? {text}"
+    },
     "manual_import": "Manual work is being demanded although the title and year line up.",
     "unpack_failed": "Unpacking failed: no usable video file, untouched for {hours} hours, and the download client no longer knows the job.",
     "detached_folder": "{service} reports {count} file(s) in {path}, but the same folder looks empty here. The service is working in a detached directory: invisible from outside, still occupying space, and its contents would be lost on the next container restart. Back the contents up, then restart the container.",
@@ -519,6 +548,10 @@
       "title": "The same title is grabbed over and over",
       "help": "Reports only: the cause sits in the profile, and that is where it has to be fixed."
     },
+    "stuck_in_queue": {
+      "title": "Download stuck in the queue",
+      "help": "The net under every other queue rule: anything the service has marked as blocked, pending, failed or with a warning for longer than the configured time. The finding carries the service's own words and the remedy they call for. Only certain remedies are carried out unasked — a dead download is replaced, one already in the library is tidied away; an import on weaker evidence than the service had is offered as a button."
+    },
     "manual_import": {
       "title": "Import waiting on manual work, but the match is right",
       "help": "Imports only when BOTH the year and the title similarity check out. Everything else belongs to the wrong year and wrong title rules."
@@ -574,6 +607,10 @@
     "downloader_update": {
       "title": "A new version of the download client is available",
       "help": "SABnzbd is reporting a newer version of itself. Worth knowing, nothing more — updating is up to you."
+    },
+    "stuck_in_downloader": {
+      "title": "Job stuck in the download client",
+      "help": "What the services cannot see: a job paused on its own because it is encrypted or carries an unwanted file, one fetching or post-processing for hours, one that failed or finished without the service that grabbed it ever noticing. Matched by download id against the services' grab history; a job no service grabbed is left alone. Deep pass only."
     },
     "indexer_disabled": {
       "title": "Prowlarr has switched an indexer off",
@@ -684,6 +721,10 @@
     "stalled_minutes": {
       "label": "Stalled after",
       "help": "When a started download counts as stuck. Downloads that have not begun are normal and never reported."
+    },
+    "stuck_hours": {
+      "label": "A download counts as stuck after",
+      "help": "How long a queue entry or download client job may sit in a waiting or failed state before it is reported. The services retry imports every minute, so hours rather than minutes."
     },
     "loop_grabs": {
       "label": "Grabs before it counts as a loop",
@@ -1028,7 +1069,8 @@
       "remove_entry": "Remove the entry and its folder",
       "resume": "Resume",
       "unblocklist": "Take off the blocklist and search again",
-      "retune_profile": "Stop upgrading on score"
+      "retune_profile": "Stop upgrading on score",
+      "as_suggested": "Do what the finding suggests"
     },
     "explain": {
       "report": "Record it and leave everything alone. Always available, and always the safe answer.",
@@ -1044,7 +1086,8 @@
       "remove_entry": "Drop the finished entry from the download client and delete its source folder.",
       "resume": "Start the download client again.",
       "unblocklist": "Removes the old blocklist entry and starts a search, so the release can be offered again.",
-      "retune_profile": "Sets “upgrade until custom format score” to 0. The scores still choose the best release when something is grabbed; resolution upgrades still happen."
+      "retune_profile": "Sets “upgrade until custom format score” to 0. The scores still choose the best release when something is grabbed; resolution upgrades still happen.",
+      "as_suggested": "Each finding names its own remedy — import, blocklist, remove or nothing — from what the service says. Only remedies that are certain are carried out unasked; the rest are offered as a button."
     },
     "min_age_hours": "Wait at least",
     "min_age_hours_help": "Nothing is acted on before this much time has passed. A download that arrived two minutes ago is not stuck, it is new.",
@@ -1063,7 +1106,10 @@
     "failed_recently": "it failed last time — trying again in {hours} h",
     "already_gone": "it had already left the queue",
     "managed_elsewhere": "another program keeps setting this back",
-    "needs_a_person": "this is a matter of taste, not a fault"
+    "needs_a_person": "this is a matter of taste, not a fault",
+    "needs_a_look": "not certain enough to do unasked — offered as a button",
+    "nothing_safe": "nothing here would help, so nothing is done",
+    "suggests_otherwise": "this finding calls for something else than the configured action"
   },
   "search": {
     "grabbed": "found and grabbed: {release} (and {count} in total)",

@@ -955,7 +955,7 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
         # from it, and a button has to know before it is pressed.
         rule = BY_NAME.get(row.get("rule"))
         if rule is not None:
-            offers = [a for a in rule.actions if a != policy.REPORT]
+            offers = _offers(rule, data)
             row["can_do"] = offers
             row["suggested"] = engine.suggested_action(
                 rule, _shallow_finding(row, data)) if offers else policy.REPORT
@@ -968,6 +968,19 @@ def _localise(rows: list[dict], language: str) -> list[dict]:
                 reason=i18n.t(held, language, **(data.get("_held_params") or {})))
         out.append(row)
     return out
+
+
+def _offers(rule, data: dict) -> list[str]:
+    """What a button on this one finding may do.
+
+    "Do what it suggests" is a setting, not a button — the button names the
+    suggestion itself. And a finding whose own suggestion is to leave it alone
+    — a download client that is not answering, somebody else's download —
+    gets no button at all: every action on offer would be the wrong one.
+    """
+    if (data or {}).get("suggested") == policy.REPORT:
+        return []
+    return [a for a in rule.actions if a not in (policy.REPORT, policy.AS_SUGGESTED)]
 
 
 class _ShallowFinding:
@@ -1081,7 +1094,13 @@ def act_on_many(body: ActOnMany, request: Request,
         rule = BY_NAME.get(row.get("rule"))
         if rule is None:
             continue
-        offers = [a for a in rule.actions if a != policy.REPORT]
+        stored = row.get("data")
+        if isinstance(stored, str):
+            try:
+                stored = json.loads(stored)
+            except (ValueError, TypeError):
+                stored = {}
+        offers = _offers(rule, stored or {})
         if not offers:
             continue
         if not body.allow_destructive and set(offers) & policy.DESTRUCTIVE:

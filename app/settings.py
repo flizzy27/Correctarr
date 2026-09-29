@@ -146,6 +146,10 @@ FIELDS: tuple[Field, ...] = (
           minimum=0.1, maximum=0.95, step=0.05),
     Field("stalled_minutes", "number", "detection", 120,
           minimum=10, maximum=10080, unit="unit.minutes"),
+    # Hours, not minutes: the services retry an import every minute, and a
+    # download that is merely between two of those tries is not stuck.
+    Field("stuck_hours", "number", "detection", 3,
+          minimum=0.5, maximum=168, step=0.5, unit="unit.hours"),
     Field("loop_grabs", "number", "detection", 4,
           minimum=2, maximum=50, unit="unit.grabs"),
     Field("loop_hours", "number", "detection", 12,

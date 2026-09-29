@@ -77,7 +77,15 @@ ACTIONS = (
     "resume",                # start a paused download client
     "unblocklist",           # let a refused release be tried again
     "retune_profile",        # stop a quality profile upgrading on score
+    "as_suggested",          # whatever the finding itself says is right
 )
+
+#: The action that stands for "whatever this one finding suggests". A rule
+#: whose findings differ in what they call for — a stuck download can want an
+#: import, a blocklist or nothing at all depending on why it is stuck — offers
+#: this instead of one answer for all of them. Resolved per finding, at the
+#: moment of acting, from ``data["suggested"]``.
+AS_SUGGESTED = "as_suggested"
 
 #: What each action needs from a finding in order to do anything at all. A rule
 #: that offers an action its own findings cannot satisfy is a trap: the action
@@ -100,6 +108,7 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "resume": ("client",),
     "unblocklist": ("blocklist_id",),
     "retune_profile": ("profile_id",),
+    "as_suggested": ("suggested",),
 }
 
 #: Actions that remove data. The interface marks them, and the conditions
@@ -297,6 +306,20 @@ def decide(policy: Policy, finding) -> Verdict:
     if data.get("hold"):
         return Verdict(act=False, action=policy.action,
                        reason=str(data["hold"]), params={})
+
+    # A finding that names its own remedy. "Nothing" is a remedy too: a
+    # download client that is not answering is not fixed by blocklisting what
+    # was waiting on it. And a rule told to do one fixed thing does not do it
+    # to a finding that asks for something else — blocklisting a download that
+    # only wants importing is the one mistake here that cannot be taken back.
+    suggested = data.get("suggested")
+    if suggested is not None:
+        if suggested == REPORT:
+            return Verdict(act=False, action=policy.action,
+                           reason="policy.nothing_safe", params={})
+        if policy.action not in (AS_SUGGESTED, suggested):
+            return Verdict(act=False, action=policy.action,
+                           reason="policy.suggests_otherwise", params={})
 
     if data.get("settled"):
         return Verdict(act=False, action=policy.action,

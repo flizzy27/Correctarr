@@ -40,7 +40,7 @@ Three ways, at the same time:
 
 ## The rules
 
-**34 rules across six categories.** For each one you decide what happens when
+**36 rules across six categories.** For each one you decide what happens when
 it finds something — not just on or off:
 
 | | |
@@ -53,6 +53,7 @@ it finds something — not just on or off:
 | **search** / **read the file again** | ask the service to look again |
 | **delete** | remove the files from disk |
 | **take off the blocklist** | let a release that was refused long ago be tried again |
+| **do what the finding suggests** | for rules whose findings each call for something different — only certain remedies are carried out, the rest are offered as a button |
 
 On top of that, a rule can carry **conditions**: *wait at least six hours*,
 *nothing over 20 GB*, *only when the match is at least 90 % certain*. A finding
@@ -64,7 +65,7 @@ finds and touches nothing, until you have seen the findings and turned it off
 yourself.
 
 <details>
-<summary><strong>All 34 rules</strong></summary>
+<summary><strong>All 36 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default action |
@@ -77,6 +78,7 @@ yourself.
 | `premature_grab` | A release for something that is not out yet | Report only |
 | `collection_pack` | A box set, when one film was asked for *(Radarr)* | ***Blocklist and search again*** |
 | `grab_loop` | The same title is grabbed over and over | Report only |
+| `stuck_in_queue` | Blocked, failed or waiting for hours, whatever the cause — with the service's own words and the fix they call for | *Do what the finding suggests* |
 
 ### Import
 | Rule | What it finds | Default action |
@@ -107,6 +109,7 @@ yourself.
 | `downloader_paused` | The download client is paused | Report only |
 | `downloader_disk_space` | Little free space | Report only |
 | `downloader_update` | A new version is available | Report only |
+| `stuck_in_downloader` | A job paused, failed or finished that the service which grabbed it never picked up | *Do what the finding suggests* |
 
 ### Indexers *(read only)*
 | Rule | What it finds | Default action |

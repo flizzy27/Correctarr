@@ -68,8 +68,10 @@
       "clear_warning": "würde die Warnung bestätigen",
       "remove_entry": "würde den Eintrag und seinen Quellordner entfernen",
       "resume": "würde das Download-Programm fortsetzen",
+      "resume_job": "würde diesen Auftrag fortsetzen",
       "unblocklist": "würde die Sperre aufheben und neu suchen",
-      "retune_profile": "würde das Nachbessern nach Punkten abschalten"
+      "retune_profile": "würde das Nachbessern nach Punkten abschalten",
+      "as_suggested": "würde tun, was der Fund vorschlägt"
     },
     "result": {
       "removed": "aus der Warteschlange genommen",
@@ -88,6 +90,7 @@
       "warning_cleared": "vermerkt und bestätigt",
       "entry_removed": "Eintrag und Quellordner entfernt ({gb} GB)",
       "resumed": "fortgesetzt",
+      "job_resumed": "Auftrag fortgesetzt",
       "unblocklisted": "Sperre aufgehoben",
       "unblocklisted_searched": "Sperre aufgehoben, neue Suche gestartet",
       "no_episodes": "der Dienst sagt nicht, welche Folgen in dieser Datei stecken",
@@ -447,6 +450,32 @@
     "not_an_upgrade": "Kein Upgrade gegenüber der vorhandenen Datei. Wird nie importiert.",
     "stalled": "Seit {minutes} Minuten unverändert bei {percent} Prozent.",
     "grab_loop": "{count} Griffe in {hours} Stunden. Vermutlich erfüllt kein verfügbares Release die Profilregeln — das lässt sich nur im Profil lösen.",
+    "stuck": {
+      "client_unavailable": "Das Download-Programm ist seit {hours} h nicht erreichbar. Solange es nicht gefragt werden kann, wird am Download nichts getan. Der Dienst sagt: {text}",
+      "not_grabbed": "Seit {hours} h in der Warteschlange, aber nicht vom Dienst geholt — ein fremder Download, der in Ruhe gelassen wird. Der Dienst sagt: {text}",
+      "path_problem": "Hängt seit {hours} h an einem Pfad- oder Plattenproblem — ein Ordner, den der Dienst nicht sieht, eine fehlende Pfadzuordnung, fehlende Rechte oder eine volle Platte. Sperren würde nicht helfen. Der Dienst sagt: {text}",
+      "failed": "Vor {hours} h gescheitert und vom Dienst schon behandelt, aber noch in der Warteschlange. Kann entfernt werden. Der Dienst sagt: {text}",
+      "failed_pending": "Der Download ist vor {hours} h gescheitert, und der Dienst hat sich nicht darum gekümmert. Sperren und neu suchen. Der Dienst sagt: {text}",
+      "already_imported": "Schon importiert, nach {hours} h noch in der Warteschlange. Kann entfernt werden. Der Dienst sagt: {text}",
+      "not_an_upgrade": "Wäre keine Verbesserung und wartet seit {hours} h. Sperren. Der Dienst sagt: {text}",
+      "sample": "Seit {hours} h nur ein Sample oder eine Datei, die der Dienst nicht ausmessen kann. Vermutlich kaputt — sperren und neu suchen? Der Dienst sagt: {text}",
+      "no_files": "Vor {hours} h fertig geworden, ohne etwas Importierbares darin. Sperren und neu suchen. Der Dienst sagt: {text}",
+      "matched_by_id": "Wartet seit {hours} h: der Griff-Verlauf nennt den Titel, aber der Releasename passt nicht ganz, deshalb importiert der Dienst nicht von selbst. Importieren, wenn das Release stimmt. Der Dienst sagt: {text}",
+      "unknown_item": "Wartet seit {hours} h: der Dienst kann nicht sagen, welcher Titel das ist. Der Dienst sagt: {text}",
+      "missing_episodes": "Wartet seit {hours} h: Folgen, die das Release enthalten sollte, fehlen oder wurden nicht importiert. Importieren, was da ist? Der Dienst sagt: {text}",
+      "tba_title": "Wartet seit {hours} h auf einen Folgentitel, der noch „TBA“ heißt. Trotzdem importieren? Der Dienst sagt: {text}",
+      "manual": "Wartet seit {hours} h auf einen Import von Hand. Der Dienst sagt: {text}",
+      "import_pending": "Wartet seit {hours} h auf den Import, ohne zu sagen, warum. Importieren? Der Dienst sagt: {text}",
+      "importing": "Wird seit {hours} h importiert — das dauert sonst Minuten. Der Dienst sagt: {text}",
+      "other": "Hängt seit {hours} h in einem Zustand, den sonst nichts hier kennt. Der Dienst sagt: {text}",
+      "dl_paused": "Seit {hours} h in {client} für sich angehalten, während alles andere läuft. Fortsetzen? {text}",
+      "dl_encrypted": "{client} hat das vor {hours} h angehalten, weil es verschlüsselt ist. Es lässt sich nicht entpacken — sperren und neu suchen. {text}",
+      "dl_unwanted": "{client} hat das vor {hours} h angehalten, weil es einen unerwünschten Dateityp enthält. Sperren und neu suchen. {text}",
+      "dl_fetching": "{client} holt das seit {hours} h, ohne anzufangen. {text}",
+      "dl_postprocessing": "{client} bearbeitet das seit {hours} h nach — das dauert sonst Minuten. {text}",
+      "dl_failed_unnoticed": "{client} hat das vor {hours} h aufgegeben, und der Dienst, der es geholt hat, hat es nie bemerkt — oft eine geänderte Kategorie. Sperren und neu suchen. {text}",
+      "dl_completed_unclaimed": "Vor {hours} h in {client} fertig geworden, und der Dienst, der es geholt hat, hat es nie abgeholt — meist passen Kategorie oder Pfad nicht. Importieren? {text}"
+    },
     "manual_import": "Handarbeit wird verlangt, obwohl Titel und Jahr passen.",
     "unpack_failed": "Entpacken gescheitert: keine brauchbare Videodatei, seit {hours} Stunden unberührt, und das Download-Programm kennt den Vorgang nicht mehr.",
     "detached_folder": "{service} meldet {count} Datei(en) in {path}, hier erscheint derselbe Ordner aber leer. Der Dienst arbeitet in einem abgehängten Verzeichnis: unsichtbar von außen, belegt weiter Platz, und bei einem Neustart des Containers wäre der Inhalt verloren. Inhalt sichern, dann den Container neu starten.",
@@ -519,6 +548,10 @@
       "title": "Derselbe Titel wird ständig neu gegriffen",
       "help": "Nur melden: die Ursache liegt im Profil, dort muss man ansetzen."
     },
+    "stuck_in_queue": {
+      "title": "Download hängt in der Warteschlange",
+      "help": "Das Netz unter allen anderen Warteschlangenregeln: alles, was der Dienst länger als die eingestellte Zeit als blockiert, wartend, gescheitert oder mit Warnung führt. Der Fund trägt den Wortlaut des Dienstes und die Abhilfe, die daraus folgt. Von selbst geschieht nur, was sicher ist — ein toter Download wird ersetzt, einer, der schon in der Bibliothek liegt, aufgeräumt; ein Import auf schwächerer Grundlage, als der Dienst selbst hatte, wird als Knopf angeboten."
+    },
     "manual_import": {
       "title": "Import wartet auf Handarbeit, Zuordnung stimmt",
       "help": "Importiert nur, wenn Jahr UND Titelähnlichkeit passen. Alles andere gehört zu den Regeln für falsches Jahr und falschen Titel."
@@ -574,6 +607,10 @@
     "downloader_update": {
       "title": "Neue Fassung des Download-Programms",
       "help": "SABnzbd meldet eine neuere Fassung seiner selbst. Gut zu wissen, mehr nicht — das Aktualisieren bleibt deine Sache."
+    },
+    "stuck_in_downloader": {
+      "title": "Auftrag hängt im Download-Programm",
+      "help": "Was die Dienste nicht sehen: ein Auftrag, der von selbst angehalten wurde, weil er verschlüsselt ist oder eine unerwünschte Datei enthält, einer, der stundenlang lädt oder nachbearbeitet wird, einer, der gescheitert oder fertig ist, ohne dass der Dienst, der ihn geholt hat, es je bemerkt hat. Abgeglichen über die Download-Kennung mit dem Griff-Verlauf der Dienste; einen Auftrag, den kein Dienst geholt hat, rührt die Regel nicht an. Nur im vollständigen Durchlauf."
     },
     "indexer_disabled": {
       "title": "Prowlarr hat einen Indexer abgeschaltet",
@@ -684,6 +721,10 @@
     "stalled_minutes": {
       "label": "Stillstand bis zur Meldung",
       "help": "Ab wann ein begonnener Download als steckengeblieben gilt. Noch nicht begonnene Downloads sind normal und werden nie gemeldet."
+    },
+    "stuck_hours": {
+      "label": "Ein Download hängt nach",
+      "help": "Wie lange ein Eintrag in der Warteschlange oder ein Auftrag im Download-Programm wartend oder gescheitert dastehen darf, bevor er gemeldet wird. Die Dienste versuchen Importe jede Minute neu, deshalb Stunden statt Minuten."
     },
     "loop_grabs": {
       "label": "Griffe bis zur Endlosschleife",
@@ -1028,7 +1069,8 @@
       "remove_entry": "Eintrag und Ordner entfernen",
       "resume": "Fortsetzen",
       "unblocklist": "Sperre aufheben und neu suchen",
-      "retune_profile": "Nachbessern nach Punkten abschalten"
+      "retune_profile": "Nachbessern nach Punkten abschalten",
+      "as_suggested": "Tun, was der Fund vorschlägt"
     },
     "explain": {
       "report": "Festhalten und sonst nichts anfassen. Immer verfügbar und immer die sichere Antwort.",
@@ -1044,7 +1086,8 @@
       "remove_entry": "Den fertigen Eintrag aus dem Download-Programm nehmen und seinen Quellordner löschen.",
       "resume": "Das Download-Programm wieder starten.",
       "unblocklist": "Entfernt den alten Sperreintrag und startet eine Suche, damit das Release wieder angeboten wird.",
-      "retune_profile": "Setzt „Upgrade until custom format score“ auf 0. Die Punkte wählen weiter das beste Release aus, wenn etwas geholt wird; Auflösungs-Upgrades gibt es weiterhin."
+      "retune_profile": "Setzt „Upgrade until custom format score“ auf 0. Die Punkte wählen weiter das beste Release aus, wenn etwas geholt wird; Auflösungs-Upgrades gibt es weiterhin.",
+      "as_suggested": "Jeder Fund nennt seine eigene Abhilfe — importieren, sperren, entfernen oder nichts —, abgeleitet aus dem, was der Dienst sagt. Von selbst geschieht nur, was sicher ist; alles andere wird als Knopf angeboten."
     },
     "min_age_hours": "Mindestens warten",
     "min_age_hours_help": "Vorher wird nicht eingegriffen. Ein Download, der vor zwei Minuten angekommen ist, hängt nicht — er ist neu.",
@@ -1063,7 +1106,10 @@
     "failed_recently": "beim letzten Mal gescheitert — nächster Versuch in {hours} h",
     "already_gone": "war schon nicht mehr in der Warteschlange",
     "managed_elsewhere": "ein anderes Programm setzt das immer wieder zurück",
-    "needs_a_person": "das ist Geschmackssache, kein Fehler"
+    "needs_a_person": "das ist Geschmackssache, kein Fehler",
+    "needs_a_look": "nicht sicher genug, um es ungefragt zu tun — als Knopf angeboten",
+    "nothing_safe": "hier würde nichts helfen, also geschieht nichts",
+    "suggests_otherwise": "dieser Fund verlangt etwas anderes als die eingestellte Aktion"
   },
   "search": {
     "grabbed": "gefunden und geholt: {release} (insgesamt {count})",

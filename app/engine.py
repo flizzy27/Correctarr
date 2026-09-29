@@ -234,10 +234,14 @@ class Engine:
             "indexer_state": [],
             "match_candidates": None,
             "all_queues": [],
+            "arr_history": [],
             "store": self.store,
         }
 
-        needs_downloader = any(enabled(n) for n in (
+        # The rule that looks for forgotten jobs is a deep-pass rule; nothing
+        # it needs is fetched on the fast pass on its behalf.
+        stuck = deep and enabled("stuck_in_downloader")
+        needs_downloader = stuck or any(enabled(n) for n in (
             "downloader_warning", "downloader_paused", "downloader_disk_space",
             "downloader_update", "downloader_stale_entry", "leftover_files",
             "unpack_failed", "unmatched_files"))
@@ -250,13 +254,16 @@ class Engine:
                 ctx["downloader_reachable"] = False
             for entry, client in clients:
                 try:
+                    slots = client.queue().get("slots") or []
                     ctx["downloaders"].append({
                         "name": entry["name"], "id": entry["id"],
                         "status": client.status(),
                         "warnings": client.warnings() if enabled("downloader_warning") else [],
-                        "waiting": len(client.queue().get("slots") or []),
+                        "waiting": len(slots),
+                        "slots": slots if stuck else [],
                         "history": (client.history(200)
-                                    if enabled("downloader_stale_entry") else []),
+                                    if enabled("downloader_stale_entry") or stuck
+                                    else []),
                     })
                     ctx["downloader_names"] |= client.known_names()
                     ctx["downloader_reachable"] = True
@@ -265,12 +272,34 @@ class Engine:
                 finally:
                     client.close()
 
-        if needs_files:
+        if needs_files or stuck:
             for service in services:
                 try:
-                    ctx["all_queues"] += service.queue()
+                    batch = service.queue()
                 except ArrError as e:
                     log.warning("Could not read the queue of %s: %s", service.name, e)
+                    continue
+                # Which service each entry belongs to. A queue id means
+                # something only to the service that handed it out, and a job
+                # found through the download client has to be acted on there.
+                for queued in batch:
+                    queued.setdefault("_kind", service.kind)
+                    queued.setdefault("_instance", getattr(service, "service_id", None))
+                ctx["all_queues"] += batch
+
+        if stuck:
+            # Every service's own history: which download ids it grabbed and
+            # which it is done with. Memoised per connection for the run, so
+            # a deep pass that has already asked pays nothing more.
+            ctx["arr_history"] = []
+            for service in services:
+                try:
+                    ctx["arr_history"].append({
+                        "kind": service.kind,
+                        "instance": getattr(service, "service_id", None),
+                        "rows": service.history(500)})
+                except ArrError as e:
+                    log.warning("Could not read the history of %s: %s", service.name, e)
 
         # Import candidates come from the first reachable service — they
         # describe the contents of the download folder, and that is the same
@@ -512,7 +541,30 @@ class Engine:
                     is_dry: bool) -> policy.Outcome | None:
         if finding.rule == "unmatched_files":
             return self._import_match(arr, finding, is_dry, clean=False)
+        if finding.rule == "stuck_in_downloader":
+            return self._import_folder(arr, finding, is_dry)
         return self._import_waiting(arr, finding, is_dry)
+
+    def _act_as_suggested(self, arr: Arr, finding: Finding, cfg: dict,
+                          is_dry: bool) -> policy.Outcome | None:
+        """Do what this one finding says is right for it.
+
+        Resolved here, at the last moment, rather than when the rule is set up:
+        the same rule finds a download that only wants importing and one that
+        can only be replaced, and one fixed answer for both would be wrong for
+        one of them. A suggestion outside what the rule may do is ignored —
+        a stored finding is data, and data does not widen what a rule is
+        allowed to do.
+        """
+        chosen = finding.data.get("suggested")
+        rule = next((r for r in ALL if r.name == finding.rule), None)
+        if (rule is None or not chosen or chosen not in rule.actions
+                or chosen in (policy.REPORT, policy.AS_SUGGESTED)):
+            return None
+        outcome = self._perform(chosen, arr, finding, cfg)
+        if outcome is None and is_dry:
+            return dry("action.dry.as_suggested")
+        return outcome
 
     def _act_import_and_clean(self, arr: Arr, finding: Finding, cfg: dict,
                               is_dry: bool) -> policy.Outcome | None:
@@ -614,8 +666,15 @@ class Engine:
 
     def _act_resume(self, arr: Arr, finding: Finding, cfg: dict,
                     is_dry: bool) -> policy.Outcome | None:
+        # A finding about one job resumes that job and nothing else. Resuming
+        # the whole client because one job in it was paused would overrule
+        # every other pause somebody made on purpose.
+        job = finding.data.get("nzo_id") if finding.rule == "stuck_in_downloader" else None
         if is_dry:
-            return dry("action.dry.resume")
+            return dry("action.dry.resume_job") if job else dry("action.dry.resume")
+        if job:
+            return self._on_client(finding, lambda c: (
+                c.resume_job(str(job)), done("action.result.job_resumed"))[1])
         return self._on_client(finding, lambda c: (
             c.resume(), done("action.result.resumed"))[1])
 
@@ -686,6 +745,44 @@ class Engine:
         if blind:
             return done("action.result.imported_partly",
                         count=len(files), skipped=blind)
+        return done("action.result.imported", count=len(files))
+
+    def _import_folder(self, arr: Arr, finding: Finding,
+                       is_dry: bool) -> policy.Outcome | None:
+        """Import a finished job the service that grabbed it lost track of.
+
+        Asking by download id does not work here — the service answers that
+        question only for downloads it is still tracking, and this one it is
+        not. So the folder is listed instead, and only files the service
+        itself assigns to the title its own grab history names are imported.
+        A folder it cannot see, or files it assigns elsewhere, import nothing,
+        which is the right answer to both.
+        """
+        item_id = finding.data.get("item_id")
+        path = finding.data.get("path")
+        if not item_id or not path:
+            return None
+        if is_dry:
+            return dry("action.dry.import")
+        files = []
+        for candidate in arr.import_candidates(folder=path):
+            item = candidate.get("movie") or candidate.get("series") or {}
+            if item.get("id") != item_id or not candidate.get("path"):
+                continue
+            payload = {"path": candidate["path"], "quality": candidate.get("quality"),
+                       "languages": candidate.get("languages") or []}
+            if arr.kind == "radarr":
+                payload["movieId"] = item_id
+            else:
+                episodes = _episode_ids(candidate)
+                if not episodes:
+                    continue
+                payload["seriesId"] = item_id
+                payload["episodeIds"] = episodes
+            files.append(payload)
+        if not files:
+            return None
+        arr.manual_import(files)
         return done("action.result.imported", count=len(files))
 
     def _import_match(self, arr: Arr, finding: Finding, is_dry: bool,
@@ -983,10 +1080,19 @@ class Engine:
         doing it now is no surprise. A rule left on "report only" still has
         something worth offering, and it is the first thing it can do.
         """
+        # A finding that names its own remedy is taken at its word — within
+        # what the rule may do. That includes "nothing": a download client that
+        # is not answering gets no button, because no button would help.
+        own = (getattr(finding, "data", None) or {}).get("suggested")
+        if own and own != policy.AS_SUGGESTED and (
+                own == policy.REPORT or own in rule.actions):
+            return own
+        concrete = [a for a in rule.actions
+                    if a not in (policy.REPORT, policy.AS_SUGGESTED)]
         stored = rule.default_action
-        if stored != policy.REPORT and stored in rule.actions:
+        if stored in concrete:
             return stored
-        return next((a for a in rule.actions if a != policy.REPORT), policy.REPORT)
+        return concrete[0] if concrete else policy.REPORT
 
     def _what_the_search_found(self, arr: Arr, finding: Finding, started: float,
                                language: str) -> dict:
@@ -1251,7 +1357,9 @@ class Engine:
         for finding in found:
             # Which connection produced it, so acting on it later comes back
             # here rather than to whichever service happens to be first.
-            finding.data["_instance"] = getattr(arr, "service_id", None)
+            # A rule that already knows better — a job found through the
+            # download client that belongs to another service — has said so.
+            finding.data.setdefault("_instance", getattr(arr, "service_id", None))
             finding.is_new = self.store.is_new(
                 _dedup_key(finding), int(cfg.get("recheck_hours", 12)))
         return found

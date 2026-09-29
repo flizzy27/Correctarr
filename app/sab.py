@@ -145,5 +145,9 @@ class Sab:
     def resume(self) -> None:
         self._call("resume")
 
+    def resume_job(self, nzo_id: str) -> None:
+        """Resume one job in the queue, leaving every other pause alone."""
+        self._call("queue", name="resume", value=nzo_id)
+
     def pause(self) -> None:
         self._call("pause")

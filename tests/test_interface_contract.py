@@ -89,7 +89,8 @@ def _expected_runtime_keys() -> set[str]:
     for reason in ("report_only", "too_young", "age_unknown", "too_large",
                    "size_unknown", "not_confident_enough", "confidence_unknown",
                    "nothing_better", "failed_recently", "already_gone",
-                   "managed_elsewhere", "needs_a_person"):
+                   "managed_elsewhere", "needs_a_person", "needs_a_look",
+                   "nothing_safe", "suggests_otherwise"):
         keys.add(f"policy.{reason}")
     return keys
 

@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import time
+import zlib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -537,13 +538,23 @@ def check_profile_violation(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     return findings
 
 
+def _not_an_upgrade(entry: dict) -> bool:
+    """Is this entry held back because the file would be no improvement?
+
+    Both waiting states. The services park it in ``importPending`` and retry,
+    or give up and call it ``importBlocked`` — which of the two depends on the
+    version, and a rule that only knew the first let the second sit there for
+    good.
+    """
+    return (entry.get("trackedDownloadState") in ("importPending", "importBlocked")
+            and "upgrade" in _messages(entry).lower())
+
+
 def check_not_an_upgrade(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The import would not be an upgrade, so it sits there forever."""
     findings = []
     for entry in ctx["queue"]:
-        if entry.get("trackedDownloadState") != "importPending":
-            continue
-        if "upgrade" not in _messages(entry).lower():
+        if not _not_an_upgrade(entry):
             continue
         findings.append(Finding(
             rule="not_an_upgrade", severity="warning", service=arr.kind,
@@ -729,9 +740,303 @@ def check_grab_loop(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     return findings
 
 
+# ---------------------------------------------------------------------------
+# Stuck in the queue — the net under every other queue rule
+# ---------------------------------------------------------------------------
+#: Tracked states that mean the service has stopped moving this on by itself,
+#: or is waiting on something. ``downloading``, ``imported`` and ``ignored``
+#: are not among them: the first is somebody else's question (``stalled``),
+#: the other two are finished.
+STUCK_STATES = frozenset({"importBlocked", "importPending", "importing",
+                          "failedPending", "failed"})
+
+#: States the service leaves on its own within a minute or two when all is
+#: well. Only time spent *observed* in them counts. Everything else is final:
+#: the service has said it will not go on, and how long ago the download was
+#: added is as good a measure of how long it has been waiting as any.
+_SELF_RESOLVING = frozenset({"client_unavailable", "failed_pending",
+                             "importing", "import_pending", "tba_title",
+                             "path_problem", "other"})
+
+#: The texts the download client writes when a job is beyond saving. They
+#: arrive in the queue entry's ``errorMessage``, word for word as SABnzbd put
+#: them. Checked *after* the disk and path wording on purpose: "Unpacking
+#: failed, write error or disk is full?" is not a broken release, and
+#: blocklisting it would throw away a good one because a disk ran full.
+_DEAD_DOWNLOAD = ("aborted", "cannot be completed", "out of retention",
+                  "missing articles", "not complete", "password", "encrypted",
+                  "unpacking failed", "crc", "repair failed", "failed to repair",
+                  "download failed", "unwanted extension")
+
+_PATH_PROBLEM = ("not a valid local path", "remote path mapping",
+                 "does not exist or is not accessible", "access to the path",
+                 "is denied", "permission", "intermediate path",
+                 "destination already exists", "disk is full", "no space",
+                 "not enough free space", "read-only file system")
+
+#: Cause → (what to suggest, whether that is certain enough to do unasked).
+#: "Certain" is kept narrow on purpose. A download the service or the client
+#: has declared dead can only be replaced; a file that is already in the
+#: library can only be tidied away. Anything that brings a file *into* the
+#: library on weaker evidence than the service itself had is offered, never
+#: done — that is exactly the judgement the service declined to make.
+STUCK_CAUSES: dict[str, tuple[str, bool]] = {
+    "client_unavailable": (policy.REPORT, False),
+    "not_grabbed":        (policy.REPORT, False),
+    "path_problem":       (policy.REPORT, False),
+    "failed":             ("remove", True),
+    "failed_pending":     ("blocklist_and_search", True),
+    "already_imported":   ("remove", True),
+    "not_an_upgrade":     ("blocklist", True),
+    "no_files":           ("blocklist_and_search", True),
+    "sample":             ("blocklist_and_search", False),
+    "matched_by_id":      ("import", False),
+    "unknown_item":       ("import", False),
+    "missing_episodes":   ("import", False),
+    "tba_title":          ("import", False),
+    "manual":             ("import", False),
+    "import_pending":     ("import", False),
+    "importing":          (policy.REPORT, False),
+    "other":              (policy.REPORT, False),
+}
+
+
+def stuck_cause(entry: dict) -> str:
+    """Why this queue entry is not moving, read off what the service says.
+
+    The order matters, and each step is there because of a case that would be
+    mishandled one step later:
+
+    * an unreachable download client first — nothing about the download is
+      known while it cannot be asked, so nothing is to be done to it;
+    * "wasn't grabbed by Radarr" — somebody else's download, not ours to touch;
+    * disk and path trouble before any verdict on the download itself, because
+      the client describes a full disk as a failed unpack;
+    * the failure states, then the rejections of an import attempt, most
+      specific first: "Not a Custom Format upgrade" is about upgrades, not
+      about custom formats.
+    """
+    text = _messages(entry).lower()
+    status = str(entry.get("status") or "").lower()
+    state = entry.get("trackedDownloadState") or ""
+    if status == "downloadclientunavailable" or "client not available" in text \
+            or "client is unavailable" in text:
+        return "client_unavailable"
+    if "wasn't grabbed by" in text or "was not grabbed by" in text:
+        return "not_grabbed"
+    if any(phrase in text for phrase in _PATH_PROBLEM):
+        return "path_problem"
+    if state == "failed":
+        return "failed"
+    if state == "failedPending" or status == "failed" \
+            or any(phrase in text for phrase in _DEAD_DOWNLOAD):
+        return "failed_pending"
+    if "already imported" in text or "has already been imported" in text:
+        return "already_imported"
+    if "upgrade" in text:
+        return "not_an_upgrade"
+    if "sample" in text:
+        return "sample"
+    if "no files found are eligible" in text:
+        return "no_files"
+    if "matched to movie by id" in text or "matched to series by id" in text \
+            or "via grab history" in text:
+        return "matched_by_id"
+    if ("title mismatch" in text or "unable to parse" in text
+            or "unknown movie" in text or "unknown series" in text
+            or "unable to identify" in text or not _item(entry).get("id")):
+        return "unknown_item"
+    if "tba title" in text:
+        return "tba_title"
+    if "episodes expected" in text or "missing from the release" in text \
+            or "were not imported or missing" in text:
+        return "missing_episodes"
+    if "manual import" in text or "automatic import is not possible" in text:
+        return "manual"
+    if state == "importing":
+        return "importing"
+    if state == "importPending":
+        return "import_pending"
+    return "other"
+
+
+def _stuck_candidate(entry: dict) -> bool:
+    """Is this entry in a state that can be stuck at all?"""
+    if entry.get("trackedDownloadState") in STUCK_STATES:
+        return True
+    if str(entry.get("trackedDownloadStatus") or "").lower() in ("warning", "error"):
+        return True
+    return str(entry.get("status") or "").lower() in (
+        "failed", "warning", "downloadclientunavailable")
+
+
+def _service_texts(entry: dict) -> list[str]:
+    """What the service itself says, one line each, without repeats."""
+    out: list[str] = []
+    for part in (entry.get("statusMessages") or []):
+        for line in (part.get("messages") or []):
+            if line and line not in out:
+                out.append(str(line)[:300])
+    if entry.get("errorMessage") and entry["errorMessage"] not in out:
+        out.append(str(entry["errorMessage"])[:300])
+    return out[:8]
+
+
+def _enabled(cfg: dict, name: str) -> bool:
+    return bool(((cfg.get("rules") or {}).get(name) or {}).get("enabled", True))
+
+
+def check_stuck_in_queue(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A queue entry that has sat in a waiting or failed state for hours.
+
+    The net under every other queue rule. Each of those knows one situation
+    and knows it well; this one exists for everything they do not know, and
+    for the cases where they decline — a release matched to its film by ID,
+    say, with a name that does not quite agree, which ``manual_import`` rightly
+    will not import unasked and which then sat there for two days with nobody
+    being told. Nothing in the queue that the service has flagged is allowed
+    to wait unnoticed any more.
+
+    What to do is read off the service's own words (:func:`stuck_cause`) and
+    stored on the finding as ``suggested``, together with the words themselves.
+    Only the causes whose remedy is certain are acted on unasked; everything
+    else is held back with the suggestion on it, one button away.
+
+    An entry another rule is already dealing with is left to that rule, so the
+    same download is not blocklisted by one rule and imported by another.
+    """
+    threshold = float(cfg.get("stuck_hours", 3))
+    store = ctx.get("store")
+    scope = f"stuck:{getattr(arr, 'service_id', None) or arr.kind}:"
+    findings, active = [], set()
+    for entry in ctx.get("queue", []):
+        if not _stuck_candidate(entry):
+            continue
+        cause = stuck_cause(entry)
+        if cause == "not_an_upgrade" and _enabled(cfg, "not_an_upgrade") \
+                and _not_an_upgrade(entry):
+            continue
+        if _asks_for_manual_import(entry) and _enabled(cfg, "manual_import") \
+                and _manual_import_fits(entry, cfg):
+            continue
+
+        # How long it has sat in exactly this state. The store remembers a
+        # fingerprint of state and messages; it restarts the clock the moment
+        # either changes, so an entry that is making progress through the
+        # states is never mistaken for one that is not.
+        texts = _service_texts(entry)
+        key = f"{scope}{entry.get('downloadId') or entry.get('id')}"
+        active.add(key)
+        fingerprint = zlib.crc32("|".join(
+            [str(entry.get("status")), str(entry.get("trackedDownloadStatus")),
+             str(entry.get("trackedDownloadState")), *texts]).encode("utf-8"))
+        observed = store.check_progress(key, fingerprint) / 60 if store else 0.0
+        suggested, certain = STUCK_CAUSES[cause]
+        if cause == "not_an_upgrade" and not _enabled(cfg, "not_an_upgrade"):
+            # Somebody switched the rule for this off. Saying so is still
+            # right; doing its work behind its back is not.
+            certain = False
+        waited = observed
+        if cause not in _SELF_RESOLVING and not certain:
+            # Reported straight away rather than hours after an update: an
+            # entry the service has given up on has been waiting since it
+            # arrived, as far as anyone can tell. Only for reporting — what
+            # is acted on unasked has to have been *seen* stuck that long.
+            added = _age_minutes(entry.get("added"))
+            if added is not None:
+                waited = max(waited, added / 60)
+        if waited < threshold:
+            continue
+
+        item = _item(entry)
+        if suggested == "import" and not (item.get("id") and entry.get("downloadId")):
+            # Nothing to import it into, or no way to name the download. The
+            # service's own words are still worth passing on.
+            suggested, certain = policy.REPORT, False
+        data = {"release": entry.get("title"), "cause": cause,
+                "suggested": suggested, "certain": certain,
+                "messages": texts,
+                "state": entry.get("trackedDownloadState"),
+                "status": entry.get("status"),
+                "tracked_status": entry.get("trackedDownloadStatus"),
+                "downloadId": entry.get("downloadId"),
+                "item_id": item.get("id"), "gb": _gb(entry),
+                "age_hours": round(waited, 1)}
+        if suggested != policy.REPORT and not certain:
+            data["hold"] = "policy.needs_a_look"
+        findings.append(Finding(
+            rule="stuck_in_queue",
+            severity="error" if cause.startswith("failed") else "warning",
+            service=arr.kind, entry_id=entry.get("id"),
+            title=item.get("title") or entry.get("title") or "?",
+            message=f"finding.stuck.{cause}",
+            params={"hours": f"{waited:.1f}",
+                    "text": " / ".join(texts)[:400] or "—"},
+            data=data))
+    if store is not None:
+        store.prune_progress(active, scope)
+    return findings
+
+
 # ===========================================================================
 # Category: import
 # ===========================================================================
+#: How the services say "somebody has to import this by hand". Radarr ends its
+#: sentences with "Manual Import required"; Sonarr says the same thing as
+#: "Automatic import is not possible" and never uses the other phrase, so a
+#: rule that only knew Radarr's wording could not fire for a series at all.
+_MANUAL_IMPORT_WORDING = ("manual import", "automatic import is not possible",
+                          "matched to movie by id", "matched to series by id")
+
+
+def _asks_for_manual_import(entry: dict) -> bool:
+    if entry.get("trackedDownloadState") != "importBlocked":
+        return False
+    text = _messages(entry).lower()
+    return any(phrase in text for phrase in _MANUAL_IMPORT_WORDING)
+
+
+def _known_titles(item: dict) -> list[str]:
+    """Every name the service knows this title by.
+
+    The alternate titles are the point. A German release of a film carries the
+    German title, the service holds it as an alternate title, and comparing
+    only against the original meant a release named exactly like one of the
+    service's own spellings was judged "not similar enough" and left waiting.
+    """
+    names = [item.get("title") or "", item.get("originalTitle") or ""]
+    for alternate in (item.get("alternateTitles") or []):
+        if isinstance(alternate, dict) and alternate.get("title"):
+            names.append(str(alternate["title"]))
+    return [name for name in names if name]
+
+
+def _manual_import_fits(entry: dict, cfg: dict) -> bool:
+    """Do the year AND the title of the release both agree with the item?"""
+    tolerance = int(cfg.get("year_tolerance", 1))
+    threshold = float(cfg.get("title_similarity", 0.45))
+    item = _item(entry)
+    release = entry.get("title", "")
+    if not item:
+        return False
+    # Importing without being asked needs the year to be stated AND to fit.
+    # A name that mentions no year at all is not evidence of anything, and
+    # this is the gate in front of an action, not a reason to report one.
+    verdict = years.judge(release, item, tolerance)
+    # A film release states the year it came out, and a name that states
+    # none is no evidence of anything. An episode states an episode
+    # instead, and demanding a year of it meant this rule could never fire
+    # for a series at all — every episode sat waiting for somebody to press
+    # the button by hand.
+    if EPISODE_MARKER.search(release):
+        year_ok = not verdict.wrong
+    else:
+        year_ok = bool(verdict.found) and not verdict.wrong
+    title_ok = max((_similarity(release, name) for name in _known_titles(item)),
+                   default=0.0) >= threshold
+    return year_ok and title_ok
+
+
 def check_manual_import(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """Manual work is demanded although title and year line up.
 
@@ -739,33 +1044,12 @@ def check_manual_import(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     Everything else belongs to ``wrong_year`` or ``wrong_title`` — this rule
     must never cement a wrong match.
     """
-    tolerance = int(cfg.get("year_tolerance", 1))
-    threshold = float(cfg.get("title_similarity", 0.45))
     findings = []
     for entry in ctx["queue"]:
-        if entry.get("trackedDownloadState") != "importBlocked":
-            continue
-        if "manual import" not in _messages(entry).lower():
+        if not _asks_for_manual_import(entry) or not _manual_import_fits(entry, cfg):
             continue
         item = _item(entry)
         release = entry.get("title", "")
-        # Importing without being asked needs the year to be stated AND to fit.
-        # A name that mentions no year at all is not evidence of anything, and
-        # this is the gate in front of an action, not a reason to report one.
-        verdict = years.judge(release, item, tolerance)
-        # A film release states the year it came out, and a name that states
-        # none is no evidence of anything. An episode states an episode
-        # instead, and demanding a year of it meant this rule could never fire
-        # for a series at all — every episode sat waiting for somebody to press
-        # the button by hand.
-        if EPISODE_MARKER.search(release):
-            year_ok = not verdict.wrong
-        else:
-            year_ok = bool(verdict.found) and not verdict.wrong
-        title_ok = max(_similarity(release, item.get("title", "")),
-                       _similarity(release, item.get("originalTitle") or "")) >= threshold
-        if not (year_ok and title_ok):
-            continue
         findings.append(Finding(
             rule="manual_import", severity="warning", service=arr.kind,
             entry_id=entry["id"], title=item.get("title", "?"),
@@ -1750,6 +2034,217 @@ def check_downloader_update(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     return findings
 
 
+#: SABnzbd's names for a job that is finished downloading and still being
+#: worked on. Each is normal for minutes; none of them is normal for hours.
+_POSTPROCESSING = frozenset({"queued", "quickcheck", "verifying", "repairing",
+                             "fetching", "extracting", "moving", "running"})
+
+#: Cause → (what to suggest, whether that is certain enough to do unasked).
+DOWNLOADER_CAUSES: dict[str, tuple[str, bool]] = {
+    "dl_paused":             ("resume", False),
+    "dl_encrypted":          ("blocklist_and_search", True),
+    "dl_unwanted":           ("blocklist_and_search", True),
+    "dl_fetching":           (policy.REPORT, False),
+    "dl_postprocessing":     (policy.REPORT, False),
+    "dl_failed_unnoticed":   ("blocklist_and_search", True),
+    "dl_completed_unclaimed": ("import", False),
+}
+
+
+def _grab_ledger(ctx: dict) -> tuple[dict[str, dict], set[str]]:
+    """Which download ids a service grabbed, and which it has finished with.
+
+    The grab history is the one place that knows for certain which title a
+    download was fetched for — the name can be anything, the download id is
+    the id. "Finished with" means imported, marked failed or ignored: in each
+    case the service has seen the end of it and a leftover history row in the
+    download client is not a stuck download.
+    """
+    grabs: dict[str, dict] = {}
+    done: set[str] = set()
+    for source in ctx.get("arr_history") or []:
+        for row in source.get("rows") or []:
+            download = str(row.get("downloadId") or "").lower()
+            if not download:
+                continue
+            if compat.event_is(row, compat.GRABBED):
+                grabs.setdefault(download, {
+                    "kind": source.get("kind"), "instance": source.get("instance"),
+                    "item_id": row.get("movieId") or row.get("seriesId"),
+                    "release": row.get("sourceTitle") or ""})
+            elif (compat.event_is(row, compat.IMPORTED)
+                  or compat.event_is(row, compat.FAILED)
+                  or row.get("eventType") == "downloadIgnored"):
+                done.add(download)
+    return grabs, done
+
+
+def _in_library(name: str, ctx: dict) -> bool:
+    """Does a library file say it came from this download?
+
+    A file imported by hand — by this program, say — leaves no import event
+    carrying the download id, so the ledger alone would call it unclaimed.
+    The file remembers its scene name, and that is enough to know better.
+    """
+    if not name:
+        return False
+    for item in ctx.get("items") or []:
+        info = item.get("movieFile") or {}
+        origin = str(info.get("sceneName") or info.get("originalFilePath") or "")
+        if origin and (origin == name or origin.startswith(name[:40])):
+            return True
+    return False
+
+
+def check_stuck_in_downloader(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """A job in the download client that nobody is moving on.
+
+    The queue rules see what the services see. This sees what they do not:
+
+    * a job paused on its own while the client runs — the client pauses a job
+      it has found to be **encrypted** or to contain an **unwanted extension**,
+      and the service goes on showing it as merely paused, for ever;
+    * a job still fetching its NZB, or stuck in post-processing, for hours;
+    * a job the client gave up on (**Failed**) that the service which grabbed
+      it never noticed — usually because its category was changed on the way;
+    * a job the client **completed** that the service which grabbed it never
+      picked up — the same category or path mismatch, the other way round.
+
+    What the services grabbed is read from their history by download id, never
+    guessed from the name (the grab history is the most reliable source there
+    is). A job no service grabbed is somebody's own and is left alone. Nothing
+    here deletes: the one remedy that clears a job is blocklisting it through
+    the service that grabbed it, and that only for a job the client itself has
+    already declared dead.
+    """
+    threshold = float(cfg.get("stuck_hours", 3))
+    store = ctx.get("store")
+    tracked = {str(e.get("downloadId") or "").lower(): e
+               for e in ctx.get("all_queues") or [] if e.get("downloadId")}
+    grabs, done = _grab_ledger(ctx)
+    findings, active = [], set()
+
+    def observed_hours(key: str, state: str) -> float:
+        active.add(key)
+        if store is None:
+            return 0.0
+        return store.check_progress(key, zlib.crc32(state.encode("utf-8"))) / 60
+
+    def finding(client: dict, slot: dict, cause: str, hours: float,
+                gb: float, extra: dict, ours: bool = True) -> Finding:
+        suggested, certain = DOWNLOADER_CAUSES[cause] if ours \
+            else (policy.REPORT, False)
+        extra = dict(extra)
+        service = extra.pop("_service", None) or "sabnzbd"
+        entry_id = extra.pop("_entry_id", None)
+        name = str(slot.get("filename") or slot.get("name") or "?")
+        data = {"client": client["name"], "nzo_id": slot.get("nzo_id"),
+                "release": name, "cause": cause, "suggested": suggested,
+                "certain": certain, "age_hours": round(hours, 1), "gb": gb,
+                "status": slot.get("status"),
+                "messages": [str(x)[:300] for x in
+                             ([slot.get("fail_message")] + list(slot.get("labels") or []))
+                             if x][:8],
+                **extra}
+        if suggested != policy.REPORT and not certain:
+            data["hold"] = "policy.needs_a_look"
+        return Finding(
+            rule="stuck_in_downloader",
+            severity="error" if certain else "warning",
+            service=service, entry_id=entry_id,
+            title=name[:70], message=f"finding.stuck.{cause}",
+            params={"hours": f"{hours:.1f}", "client": client["name"],
+                    "text": " / ".join(data["messages"])[:400] or "—"},
+            data=data)
+
+    def owner(download: str) -> dict:
+        """Where acting on this job has to go, and what it concerns."""
+        entry = tracked.get(download)
+        if entry is not None:
+            return {"_service": entry.get("_kind"), "_entry_id": entry.get("id"),
+                    "_instance": entry.get("_instance"),
+                    "item_id": _item(entry).get("id")}
+        grab = grabs.get(download)
+        if grab is not None:
+            return {"_service": grab["kind"], "_instance": grab["instance"],
+                    "item_id": grab["item_id"]}
+        return {}
+
+    for client in ctx.get("downloaders") or []:
+        status = client.get("status") or {}
+        everything_paused = bool(status.get("paused") or status.get("paused_all"))
+        scope = f"stuckdl:{client['name']}:"
+
+        for slot in client.get("slots") or []:
+            download = str(slot.get("nzo_id") or "")
+            state = str(slot.get("status") or "")
+            labels = " ".join(str(x) for x in (slot.get("labels") or [])).upper()
+            if state.lower() == "paused":
+                # The whole client being paused is downloader_paused's
+                # business; every job in it would otherwise be reported too.
+                if everything_paused:
+                    continue
+                cause = ("dl_encrypted" if "ENCRYPTED" in labels
+                         else "dl_unwanted" if "UNWANTED" in labels
+                         else "dl_paused")
+            elif state.lower() in ("grabbing", "fetching"):
+                cause = "dl_fetching"
+            else:
+                continue
+            hours = observed_hours(f"{scope}q:{download}", f"{state}|{labels}")
+            if hours < threshold:
+                continue
+            extra = owner(download.lower())
+            # Dead, but not ours to replace when no service is tracking it:
+            # there is nobody to blocklist it with and nothing to search for.
+            ours = "_entry_id" in extra or cause not in ("dl_encrypted", "dl_unwanted")
+            findings.append(finding(client, slot, cause, hours,
+                                    _mb_to_gb(slot.get("mb")), extra, ours))
+
+        for slot in client.get("history") or []:
+            download = str(slot.get("nzo_id") or "")
+            key = download.lower()
+            state = str(slot.get("status") or "").lower()
+            name = str(slot.get("name") or "")
+            gb = round(int(slot.get("bytes") or 0) / 1024 ** 3, 2)
+            if key in tracked:
+                # The service sees it — whatever is wrong is on its queue, and
+                # stuck_in_queue speaks for it with the service's own words.
+                continue
+            if state in _POSTPROCESSING:
+                hours = observed_hours(f"{scope}h:{download}", state)
+                if hours >= threshold:
+                    findings.append(finding(client, slot, "dl_postprocessing",
+                                            hours, gb, {}))
+                continue
+            if state not in ("failed", "completed"):
+                continue
+            if key not in grabs or key in done:
+                continue
+            completed = slot.get("completed") or 0
+            hours = (time.time() - completed) / 3600 if completed else 0.0
+            if hours < threshold:
+                continue
+            extra = owner(key)
+            if state == "failed":
+                findings.append(finding(client, slot, "dl_failed_unnoticed",
+                                        hours, gb, extra))
+            elif not _in_library(name, ctx):
+                findings.append(finding(
+                    client, slot, "dl_completed_unclaimed", hours, gb,
+                    {**extra, "path": slot.get("storage") or slot.get("path")}))
+        if store is not None:
+            store.prune_progress(active, scope)
+    return findings
+
+
+def _mb_to_gb(value) -> float:
+    try:
+        return round(float(value or 0) / 1024, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 # ===========================================================================
 # Category: indexers
 # ===========================================================================
@@ -2138,6 +2633,14 @@ ALL: tuple[Rule, ...] = (
     # Nothing to do here on purpose: the cause is in the profile, and no
     # action taken on the queue can fix that.
     Rule("grab_loop", "queue", check_grab_loop, deep=True),
+    # The net under all of the above. Each finding carries its own remedy, so
+    # "do what it suggests" is the default — and only the remedies that are
+    # certain are carried out unasked; the rest wait for a button.
+    Rule("stuck_in_queue", "queue", check_stuck_in_queue,
+         actions=(policy.REPORT, policy.AS_SUGGESTED, "import", "remove",
+                  "blocklist", "blocklist_and_search"),
+         default_action=policy.AS_SUGGESTED,
+         conditions=("min_age_hours", "max_gb")),
 
     # -- import -------------------------------------------------------------
     Rule("manual_import", "import", check_manual_import,
@@ -2197,6 +2700,14 @@ ALL: tuple[Rule, ...] = (
     Rule("downloader_disk_space", "downloader", check_downloader_disk_space,
          scope="once"),
     Rule("downloader_update", "downloader", check_downloader_update, scope="once"),
+    # Deep pass only: telling a forgotten job from a finished one takes the
+    # services' history, and that is not worth fetching every minute for
+    # something measured in hours.
+    Rule("stuck_in_downloader", "downloader", check_stuck_in_downloader,
+         actions=(policy.REPORT, policy.AS_SUGGESTED, "resume", "import",
+                  "blocklist_and_search"),
+         default_action=policy.AS_SUGGESTED,
+         conditions=("min_age_hours", "max_gb"), scope="once", deep=True),
 
     # -- indexers -----------------------------------------------------------
     Rule("indexer_disabled", "indexers", check_indexer_disabled,
