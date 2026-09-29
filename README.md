@@ -209,11 +209,16 @@ can fetch and is wrong about that. One setting decides whether that is
 possible — *upgrade until custom format score* — and published profiles set it
 to ten or fifty thousand so the best available is always chased. That works
 right up until a file scores lower after import than its release scored before
-it, and then the service is permanently shopping. Here it is set to the same
-number a release had to clear to be grabbed at all: **a file that was good
-enough to fetch is good enough to keep.** Resolution upgrades still happen,
-because a ladder is finite. A profile that could never be satisfied is refused
-rather than written.
+it, and then the service is permanently shopping. Here it is zero, which the
+services read as "do not upgrade on score at all": **a file that was good
+enough to fetch is good enough to keep.** The scores still pick the best of the
+releases on offer; resolution upgrades still happen, because a ladder is
+finite. A profile that could never be satisfied is refused rather than written.
+
+Asking for WEB-DL without WEBRip means exactly that: the services let a
+quality group in or keep it out as a whole, so a group you only want half of is
+taken apart on the ladder. A profile you made by hand is never overwritten —
+if the name you type is already taken by one, nothing is written.
 
 **If you only want German, say so.** The language is asked for with a custom
 format rather than the profile's language setting, because before the import
@@ -221,7 +226,8 @@ the service reads the language out of the release *name* — and the German
 marker `.DL.` is not one its parser knows. A profile that demands German throws
 away most of the German releases it was set up to find. A custom format sees
 the whole name: `German DL`, `GerDub`, `[DE+EN]`, and the bare `DL` that the
-majority of them actually carry.
+majority of them actually carry — but not the `DL` of `WEB-DL`, which is where
+the release came from, not what it sounds like.
 
 ---
 
@@ -242,7 +248,8 @@ again — on by default, above 80 % certainty. Four signals, each measured
 against the film's own title, so *Blade Runner 2049 (2017)* is not read as a
 span of years and a film actually called *The Collection* is not read as one.
 Profiles built here refuse box sets as well, so it is usually never grabbed at
-all.
+all — in Radarr. A profile written to Sonarr leaves that refusal out, because a
+pack of every season is how a finished series is fetched.
 
 ---
 

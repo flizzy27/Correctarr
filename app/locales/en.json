@@ -752,7 +752,7 @@
     },
     "audio_languages": {
       "label": "Wanted audio languages",
-      "help": "Comma separated, as they appear in the media information, for example \"German, English\". Leave empty to switch the check off — there is no sensible default."
+      "help": "Comma separated, for example \"German, English\". Names and codes mean the same: \"de\", \"ger\" and \"deu\" are all German, whichever of them the media information uses. Leave empty to switch the check off — there is no sensible default."
     },
     "trash_age_hours": {
       "label": "Untouched for at least",
@@ -1251,7 +1251,8 @@
       "impossible_size": "The smallest file ({min} GB) is not smaller than the largest ({max} GB).",
       "language_without_one": "A language is required but none is selected.",
       "bad_pattern": "A pattern could not be compiled: {error}",
-      "no_source": "No source is selected, so there is nothing the profile could ever accept."
+      "no_source": "No source is selected, so there is nothing the profile could ever accept.",
+      "name_taken": "A profile with this name already exists and was not made here. Pick another name — a profile somebody made by hand is left alone."
     }
   },
   "pack": {

@@ -185,24 +185,41 @@ def rank_deviation(views: list[IndexerView], tolerance: int = 2) -> list[dict]:
 
     by_setting = sorted(rated, key=lambda v: v.priority)
     by_measurement = sorted(rated, key=lambda v: -v.rating)
-    actual_rank = {v.name: i + 1 for i, v in enumerate(by_setting)}
     target_rank = {v.name: i + 1 for i, v in enumerate(by_measurement)}
+
+    # Indexers at the same priority share every place their block covers.
+    # Ranked one after the other by an arbitrary tie-break instead, a setup
+    # with every indexer at the default priority — the most common one there
+    # is — was "out of order" everywhere, and the suggestion was to change 25
+    # to 25. A finding nobody can act on never goes away.
+    first_place: dict[int, int] = {}
+    last_place: dict[int, int] = {}
+    for place, view in enumerate(by_setting, start=1):
+        first_place.setdefault(view.priority, place)
+        last_place[view.priority] = place
 
     out = []
     for view in rated:
-        difference = actual_rank[view.name] - target_rank[view.name]
+        target = target_rank[view.name]
+        low, high = first_place[view.priority], last_place[view.priority]
+        if low <= target <= high:
+            continue
+        actual = low if target < low else high
+        difference = actual - target
         if abs(difference) < tolerance:
             continue
         # Which number would put it in the right place? Taken from the priority
         # that already sits there, so the suggestion stays inside the range the
         # operator chose.
-        slot = target_rank[view.name] - 1
+        # The target place lies outside this indexer's own block, so the
+        # priority found there is always a different number.
+        slot = target - 1
         neighbours = [v.priority for v in by_setting]
         suggested = neighbours[slot] if slot < len(neighbours) else view.priority
         out.append({
             "view": view,
-            "actual_rank": actual_rank[view.name],
-            "target_rank": target_rank[view.name],
+            "actual_rank": actual,
+            "target_rank": target,
             "actual_priority": view.priority,
             "suggested_priority": suggested,
             "direction": "higher" if difference > 0 else "lower",

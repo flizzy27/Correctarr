@@ -260,6 +260,11 @@ class Format:
     #: Why it is there, in the user's language, for the preview.
     why: str = ""
     why_params: dict = field(default_factory=dict)
+    #: Only written into a service that holds films. A box set is a refusal
+    #: for one film asked for; for a series, a pack of every season is how a
+    #: finished show is fetched, and the rule that watches for box sets is
+    #: Radarr's alone for the same reason.
+    films_only: bool = False
 
     @property
     def full_name(self) -> str:
@@ -308,16 +313,24 @@ LANGUAGE_PATTERNS: dict[str, str] = {
     # accepted by .NET and by the `regex` module and refused by Python's own,
     # which is what :func:`check` validates with — on purpose, because it is
     # the strictest of the three and a pattern that passes it works everywhere.
+    #
+    # A bare "DL" only counts when it is not the second half of "WEB-DL".
+    # Without that, every English WEB-DL collected the German bonus, and a
+    # profile with German made compulsory grabbed them as German.
     "de": r"(?i)(?:(?<![a-z0-9])(german|deutsch|ger[. _-]?dub|synchro"
-          r"|g(?:er)?[. _-]?dl|dl)(?![a-z0-9])"
+          r"|g(?:er)?[. _-]?dl|(?<!web[. _-])dl)(?![a-z0-9])"
           r"|\[(?:de|ger)(?:\s*[+,]\s*[a-z]{2,3})*\])",
     "en": r"(?i)(?<![a-z0-9])(english|eng)(?![a-z0-9])",
+    # VOSTFR is the original with French subtitles, not French sound, and is
+    # left out on purpose.
     "fr": r"(?i)(?<![a-z0-9])(french|vff|vfq|truefrench)(?![a-z0-9])",
-    "es": r"(?i)(?<![a-z0-9])(spanish|castellano|espanol)(?![a-z0-9])",
+    "es": r"(?i)(?<![a-z0-9])(spanish|castellano|espa(?:n|ñ)ol|latino|spa)"
+          r"(?![a-z0-9])",
     "it": r"(?i)(?<![a-z0-9])(italian|ita)(?![a-z0-9])",
     "nl": r"(?i)(?<![a-z0-9])(dutch|nl[. _-]?subbed)(?![a-z0-9])",
     "pl": r"(?i)(?<![a-z0-9])(polish|pl[. _-]?dub|lektor)(?![a-z0-9])",
-    "pt": r"(?i)(?<![a-z0-9])(portuguese|dublado)(?![a-z0-9])",
+    "pt": r"(?i)(?<![a-z0-9])(portuguese|dublado|pt[. _-]?br|brazilian)"
+          r"(?![a-z0-9])",
     "ru": r"(?i)(?<![a-z0-9])(russian|rus)(?![a-z0-9])",
     "ja": r"(?i)(?<![a-z0-9])(japanese|jap|jpn)(?![a-z0-9])",
     "ko": r"(?i)(?<![a-z0-9])(korean|kor)(?![a-z0-9])",
@@ -414,14 +427,23 @@ RETAGGED = (r"(?i)(?<![a-z0-9])(obfuscated|scrambled|postbot|xpost|rartv"
 #: Collection*. A custom format sees the name and nothing else, so it sticks to
 #: the markers that cannot be anything but a box: a span of years, and the
 #: words nobody writes by accident.
+#:
+#: Nobody writes them by accident, but somebody does name a film with them:
+#: *The Collection* (2012), *Trilogy of Terror*, *The Beatles Anthology*. Every
+#: release of such a film carries the word, and refusing it means the film can
+#: never be grabbed at all. So a word does not count at the very start of the
+#: name, where a title begins, or directly in front of a single year, where a
+#: title ends. A box set says so after the title, and a box set that states
+#: its years states a span, which is caught on its own.
 COLLECTION_PATTERN = (
     r"(?i)(?:"
     r"(?<![0-9])(?:19|20)[0-9]{2}\s*[-\u2013\u2014]\s*(?:19|20)[0-9]{2}(?![0-9])"
-    r"|(?<![a-z0-9])(?:collection|kollektion|anthology|anthologie|trilogy"
+    r"|(?<=[^a-z0-9])(?:collection|kollektion|anthology|anthologie|trilogy"
     r"|trilogie|duology|dilogie|quadrilogy|quadrilogie|tetralogy|tetralogie"
     r"|pentalogy|pentalogie|hexalogy|hexalogie|box[. _-]?set|boxset"
     r"|gesamtedition|gesamtbox|filmreihe|movie[. _-]?pack|film[. _-]?pack"
     r"|all[. _-]?movies|alle[. _-]?filme)(?![a-z0-9])"
+    r"(?![. _-]*(?:19|20)[0-9]{2}(?![0-9]))"
     r"|(?<![a-z0-9])(?:teile?|parts?|filme?|movies?)[. _-]*"
     r"(?:[0-9]{1,2})\s*[-\u2013\u2014]\s*(?:[0-9]{1,2})(?![a-z0-9])"
     r")")
@@ -587,7 +609,7 @@ def build(wish: Wish) -> Blueprint:
         formats.append(Format(
             name="Box set", score=refuse,
             conditions=[_title(COLLECTION_PATTERN)],
-            why="profiles.why.collection"))
+            why="profiles.why.collection", films_only=True))
 
     if wish.min_gb > 0:
         formats.append(Format(
@@ -798,19 +820,28 @@ def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
         nested = entry.get("items") or []
         if nested:
             children = []
-            group_on = False
             for child_raw in nested:
                 child = dict(child_raw)
                 quality = child.get("quality") or {}
-                on = str(quality.get("name", "")).lower() in names
-                child["allowed"] = on
-                group_on = group_on or on
+                child["allowed"] = str(quality.get("name", "")).lower() in names
                 children.append(child)
-                if on:
-                    best_id = quality.get("id", best_id)
+            wanted_here = [c["allowed"] for c in children]
+            if any(wanted_here) and not all(wanted_here):
+                # Half a group. The services judge a group by the group's own
+                # switch and never read its members', so a group left
+                # together lets in whatever it holds: asking for WEB-DL and
+                # not WEBRip let WEBRip in through "WEB 1080p". Taken apart,
+                # each quality stands on the ladder on its own, in the
+                # group's place, which the services accept.
+                for child in children:
+                    child["items"] = []
+                    items.append(child)
+                    if child["allowed"]:
+                        best_id = (child.get("quality") or {}).get("id", best_id)
+                continue
             entry["items"] = children
-            entry["allowed"] = group_on
-            if group_on:
+            entry["allowed"] = all(wanted_here)
+            if entry["allowed"]:
                 best_id = entry.get("id", best_id)
         else:
             quality = entry.get("quality") or {}
@@ -849,9 +880,15 @@ def profile_body(blueprint: Blueprint, items: list[dict], cutoff: int,
 
 
 def any_language(languages: list[dict]) -> dict | None:
-    """Whatever this service calls "any language"."""
+    """Whatever this service calls "any language", or nothing.
+
+    "Original" is not a stand-in for it. It means the film's own language, so
+    a German library of American films set to it refuses every German dub it
+    was built to find. Sonarr offers no "Any" because its profiles carry no
+    language at all, and then nothing is sent.
+    """
     for entry in languages:
-        if str(entry.get("name", "")).lower() in ("any", "original"):
+        if str(entry.get("name", "")).lower() == "any":
             return {"id": entry.get("id"), "name": entry.get("name")}
     return None
 
@@ -859,6 +896,18 @@ def any_language(languages: list[dict]) -> dict | None:
 # ---------------------------------------------------------------------------
 # Writing it into a service
 # ---------------------------------------------------------------------------
+def written_here(profile: dict) -> bool:
+    """Did this program write the profile?
+
+    Every profile built here scores at least one of its own formats — the
+    sound always does — and a profile somebody made by hand scores none of
+    them, because they did not exist when it was made.
+    """
+    return any(str(entry.get("name", "")).startswith(f"{MARK}: ")
+               and entry.get("score")
+               for entry in profile.get("formatItems") or [])
+
+
 def apply_to(arr, blueprint: Blueprint) -> dict:
     """Create or update the formats and the profile on one service.
 
@@ -874,11 +923,22 @@ def apply_to(arr, blueprint: Blueprint) -> dict:
     if problems:
         raise ValueError("|".join(key for key, _params in problems))
 
+    # The profile is found by the name that was typed in, and a name can be
+    # one somebody already gave a profile of their own. Overwriting that
+    # would replace their ladder and every score on it without a word.
+    mine = next((p for p in arr.profiles()
+                 if str(p.get("name")) == blueprint.wish.name), None)
+    if mine is not None and not written_here(mine):
+        raise ValueError("profiles.problem.name_taken")
+
+    formats = [f for f in blueprint.formats
+               if not (f.films_only and arr.kind == "sonarr")]
+
     schemas = arr.custom_format_schema()
     existing = {str(f.get("name")): f for f in arr.custom_formats()}
 
     written: list[dict] = []
-    for entry in blueprint.formats:
+    for entry in formats:
         body = custom_format_body(schemas, entry)
         there = existing.get(entry.full_name)
         saved = arr.save_custom_format(body, there.get("id") if there else None)
@@ -906,8 +966,6 @@ def apply_to(arr, blueprint: Blueprint) -> dict:
     language = any_language(arr.languages())
     body = profile_body(blueprint, items, best, format_items, language)
 
-    mine = next((p for p in arr.profiles()
-                 if str(p.get("name")) == blueprint.wish.name), None)
     saved = arr.save_quality_profile(body, mine.get("id") if mine else None)
     return {"service": arr.name, "kind": arr.kind,
             "profile": saved.get("name") or blueprint.wish.name,

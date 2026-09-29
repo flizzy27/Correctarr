@@ -68,18 +68,50 @@ PART = re.compile(r"\b(teil|part|kapitel|chapter)\s*([0-9ivx]+)\b")
 EXTENSION = re.compile(r"\.(mkv|mp4|avi|m4v|ts|mov|wmv)$", re.IGNORECASE)
 
 
+#: Letters that do not come apart into a base letter and an accent.
+_LETTERS = str.maketrans({"ø": "o", "æ": "ae", "œ": "oe", "ł": "l", "đ": "d",
+                          "ð": "d", "þ": "th", "ı": "i"})
+
+
+def _fold(text: str) -> str:
+    """Accents off every letter except the German ones.
+
+    Done before anything that is not a-z is thrown away. The other way round,
+    "Amélie" came out as "am lie" — the accent was cut out, and the letter
+    with it, before :func:`_strip_diacritics` ever saw it. The umlauts stay,
+    because both of their spellings are generated later.
+    """
+    out = []
+    for char in (text or "").lower().translate(_LETTERS):
+        if char in "äöüß":
+            out.append(char)
+            continue
+        out.extend(c for c in unicodedata.normalize("NFD", char)
+                   if unicodedata.category(c) != "Mn")
+    return "".join(out)
+
+
 def _normalise(text: str) -> str:
     """Lower case, punctuation out, technical markers cut off."""
     value = EXTENSION.sub("", text or "")
     value = re.sub(r"[._]+", " ", value)
     value = value.replace("&", " und ")
+    # An apostrophe joins, it does not separate: "Ocean's" and "Oceans" are
+    # the same word, and "ocean s" matches neither.
+    value = re.sub(r"['’`´]", "", value)
     value = re.sub(r"[\[\](){}]", " ", value)
-    cut = TECHNICAL.search(value.lower())
-    if cut and cut.start() > 2:            # do not cut when it starts there
+    # The first marker that is not the very start of the name. A title that is
+    # itself a number — 1917, 2012, 2001: A Space Odyssey — starts with
+    # something that looks like a year; stopping at the first marker found
+    # and then declining to cut there cut nothing at all, and the whole name,
+    # resolution and all, was compared with the title.
+    cut = next((m for m in TECHNICAL.finditer(value.lower()) if m.start() > 2),
+               None)
+    if cut:
         value = value[:cut.start()]
     value = PART.sub(r"\2", value)         # "Part 2" -> "2"
-    value = EDITION.sub(" ", value.lower())
-    value = re.sub(r"[^a-z0-9äöüß ]", " ", value.lower())
+    value = EDITION.sub(" ", _fold(value))
+    value = re.sub(r"[^a-z0-9äöüß ]", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -116,9 +148,14 @@ def _usable(variant: str, source: str) -> bool:
     """
     if len(variant) < 3:
         return False
-    if not re.search(r"[a-zäöüß]{3}", variant):
-        return False                       # digits or fragments only
     foreign = re.findall(r"[^\x00-\x7fäöüßÄÖÜ]", source or "")
+    if not re.search(r"[a-zäöüß]{3}", variant):
+        # Digits or fragments only. That is a ruin when a foreign script was
+        # stripped away around it, and a title when there was nothing else:
+        # *1917*, *2012*. Only a whole number of three digits or more counts,
+        # and the year still has to fit.
+        return (not foreign and variant.replace(" ", "").isdigit()
+                and len(variant.replace(" ", "")) >= 3)
     if len(foreign) >= 3:
         latin = re.findall(r"[a-zA-ZäöüßÄÖÜ]", source or "")
         if len(variant.replace(" ", "")) < max(3, len(latin) * 0.5):

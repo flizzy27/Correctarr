@@ -1423,7 +1423,12 @@ def apply_profile(body: ProfileWish, request: Request,
         try:
             done.append(vprofiles.apply_to(connector, blueprint))
         except (ArrError, ValueError) as e:
-            failures.append({"service": entry["name"], "error": str(e)[:300]})
+            # A refusal from the builder arrives as a translation key, and a
+            # key is not something to put in front of a person.
+            error = str(e)
+            if isinstance(e, ValueError) and error.startswith("profiles.problem."):
+                error = i18n.t(error, language_for(request))
+            failures.append({"service": entry["name"], "error": error[:300]})
             log.warning("Could not write the profile to %s: %s",
                         entry["name"], e)
         finally:

@@ -824,8 +824,12 @@ def test_a_series_file_can_lack_a_language_too():
 
 
 def test_a_series_file_that_cannot_be_read_is_reported():
+    # A second file that was read: with none read at all, analysing files is
+    # switched off in the service and nothing can be concluded.
     ctx = {"items": [_series()],
-           "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv"}]}
+           "files": [{"seriesId": 3, "relativePath": "Season 01/ep01.mkv"},
+                     {"seriesId": 3, "relativePath": "Season 01/ep02.mkv",
+                      "mediaInfo": {"audioLanguages": "eng"}}]}
     found = check_unreadable_file(FakeArr("sonarr"), ctx, config())
     assert len(found) == 1
     assert found[0].data["item_id"] == 3

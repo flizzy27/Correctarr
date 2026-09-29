@@ -752,7 +752,7 @@
     },
     "audio_languages": {
       "label": "Gewünschte Tonspuren",
-      "help": "Kommagetrennt, so wie sie in den Medieninformationen stehen, etwa „German, English“. Leer lassen schaltet die Prüfung ab — eine sinnvolle Vorgabe gibt es dafür nicht."
+      "help": "Kommagetrennt, etwa „Deutsch, Englisch“. Namen und Kürzel bedeuten dasselbe: „de“, „ger“ und „deu“ sind alle Deutsch, gleich welches davon in den Medieninformationen steht. Leer lassen schaltet die Prüfung ab — eine sinnvolle Vorgabe gibt es dafür nicht."
     },
     "trash_age_hours": {
       "label": "Unberührt seit mindestens",
@@ -1251,7 +1251,8 @@
       "impossible_size": "Die kleinste Datei ({min} GB) ist nicht kleiner als die größte ({max} GB).",
       "language_without_one": "Eine Sprache wird verlangt, aber keine ist ausgewählt.",
       "bad_pattern": "Ein Muster ließ sich nicht übersetzen: {error}",
-      "no_source": "Es ist keine Quelle ausgewählt, das Profil könnte also nie etwas annehmen."
+      "no_source": "Es ist keine Quelle ausgewählt, das Profil könnte also nie etwas annehmen.",
+      "name_taken": "Ein Profil mit diesem Namen gibt es schon, und es wurde nicht hier angelegt. Bitte einen anderen Namen wählen — ein von Hand angelegtes Profil bleibt unangetastet."
     }
   },
   "pack": {

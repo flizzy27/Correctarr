@@ -46,6 +46,7 @@ sentence, but it is not evidence and is not treated as any.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 #: The window a four digit number has to fall in to be a year at all. Same
@@ -75,7 +76,9 @@ _CONCLUSIVE = re.compile(
     r"|pentalogy|pentalogie|hexalogy|hexalogie"
     r"|saga|box[. _-]?set|boxset|gesamtedition|gesamtbox|filmreihe"
     r"|movie[. _-]?pack|film[. _-]?pack|all[. _-]?movies|alle[. _-]?filme"
-    r"|complete[. _-]?(collection|series|saga|set|pack|movies|edition)"
+    # Not "complete edition": that is one film with everything on the disc,
+    # and reading it as a box set threw the film away.
+    r"|complete[. _-]?(collection|series|saga|set|pack|movies)"
     r")(?![a-z0-9])", re.IGNORECASE)
 
 _SUGGESTIVE = re.compile(
@@ -152,25 +155,100 @@ def _spare_years(release: str, title: str) -> list[int]:
     return kept
 
 
-def _without_title(release: str, title: str) -> str:
+#: Anything between two words of a title in a release name: a full stop, a
+#: space, a dash, a colon that became nothing, " - ".
+_SEP = r"[^0-9a-zäöüß]+"
+
+#: Each German letter, and what a release name makes of it.
+_GERMAN = {"ä": "(?:ä|ae|a)", "ö": "(?:ö|oe|o)", "ü": "(?:ü|ue|u)",
+           "ß": "(?:ß|ss)"}
+
+#: An article a release name keeps or drops as it pleases.
+_ARTICLES = ("the", "der", "die", "das", "a", "an", "le", "la", "les", "el",
+             "il")
+
+_LETTERS = str.maketrans({"ø": "o", "æ": "ae", "œ": "oe", "ł": "l"})
+
+
+def _plain(text: str) -> str:
+    """Lower case, apostrophes out, accents off everything but ä, ö, ü, ß."""
+    text = re.sub(r"['’`´]", "", (text or "").lower().translate(_LETTERS))
+    out = []
+    for char in text:
+        if char in "äöüß":
+            out.append(char)
+            continue
+        out.extend(c for c in unicodedata.normalize("NFD", char)
+                   if unicodedata.category(c) != "Mn")
+    return "".join(out)
+
+
+def _title_pattern(title: str) -> str | None:
+    """A pattern for a title however a release name spells it.
+
+    Taken literally, the title was only found when the release wrote it the
+    way the service does. *The Twilight Saga: New Moon* is
+    ``The.Twilight.Saga.New.Moon`` in a release — no colon — and every release
+    of it was a box set for the word "Saga", which by default is blocklisted
+    and searched for again.
+    """
+    words = re.findall(r"[0-9a-zäöüß]+", _plain(title).replace("&", " and "))
+    if not words:
+        return None
+    parts = []
+    for index, word in enumerate(words):
+        if word in ("and", "und"):
+            # "&", "and", "und", or left out altogether.
+            parts.append(rf"(?:(?:and|und|&){_SEP})?")
+            continue
+        body = "".join(_GERMAN.get(c, re.escape(c)) for c in word)
+        if index == 0 and word in _ARTICLES and len(words) > 1:
+            parts.append(rf"(?:{body}{_SEP})?")
+            continue
+        parts.append(body if index == len(words) - 1 else body + _SEP)
+    articles = "|".join(_ARTICLES)
+    return (rf"^[^0-9a-zäöüß]*(?:(?:{articles}){_SEP})?"
+            + "".join(parts) + r"(?![0-9a-zäöüß])")
+
+
+def _titles(item: dict) -> list[str]:
+    """Every name the item goes by: its title, the original, the others.
+
+    A German library files *The Twilight Saga: New Moon* as *New Moon – Biss
+    zur Mittagsstunde*, and the release still carries the original.
+    """
+    names = [item.get("title"), item.get("originalTitle")]
+    names += [a.get("title") for a in (item.get("alternateTitles") or [])
+              if isinstance(a, dict)]
+    return [str(n) for n in names if n]
+
+
+def _without_title(release: str, item_or_title) -> str:
     """The release name with the item's own title taken out of it.
 
     So that a film called *The Collection* is not accused by its own name. The
-    title is removed once, from the front, where it always sits.
+    title is removed once, from the front, where it always sits. Every name
+    the item goes by is tried, and the one that takes the most away wins.
     """
-    if not title:
-        return release or ""
-    loose = re.escape(title.strip())
-    loose = loose.replace(r"\ ", r"[. _-]+")
-    return re.sub(rf"^{loose}", " ", release or "", count=1, flags=re.IGNORECASE)
+    names = ([item_or_title] if isinstance(item_or_title, str)
+             else _titles(item_or_title or {}))
+    plain = _plain(release)
+    best = release or ""
+    for name in names:
+        pattern = _title_pattern(name)
+        if not pattern:
+            continue
+        found = re.match(pattern, plain, flags=re.IGNORECASE)
+        if found and len(plain) - found.end() < len(best):
+            best = " " + plain[found.end():]
+    return best
 
 
 def judge(release: str, item: dict | None = None) -> Verdict:
     """Is this release a box set rather than the one film that was asked for?"""
     release = release or ""
     item = item or {}
-    title = str(item.get("title") or "")
-    rest = _without_title(release, title)
+    rest = _without_title(release, item)
 
     found: list[tuple[str, float]] = []
     span_text = ""

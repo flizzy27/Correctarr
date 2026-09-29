@@ -38,12 +38,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import compat, packs, policy, years
+from . import compat, languages, packs, policy, years
 from .arr import Arr
 from .i18n import t
 from .indexers import UNKNOWN_TO_PROWLARR, rank_deviation
 from .matching import match
-from .scoring import score
+from .scoring import matched, refused, score
 
 log = logging.getLogger(__name__)
 
@@ -1484,36 +1484,54 @@ def check_missing_audio_language(arr: Arr, ctx: dict, cfg: dict) -> list[Finding
 
     Does nothing until ``audio_languages`` is set, because there is no sensible
     default: which languages matter is entirely up to whoever runs this.
+
+    Compared by language, not by text. The setting says "German"; Radarr
+    writes the tracks as ``ger/eng``, or ``deu/eng`` for the same tracks muxed
+    by something else. Compared as text, every German file in a German library
+    lacked German — and "en" was found inside "french".
     """
-    wanted = [w.strip().lower() for w in (cfg.get("audio_languages") or "").split(",")
-              if w.strip()]
+    raw = [w.strip() for w in (cfg.get("audio_languages") or "").split(",")
+           if w.strip()]
+    wanted = {languages.key(w) for w in raw}
     if not wanted:
         return []
     findings = []
     for item, file_info, label in _library_files(arr, ctx):
         media_info = file_info.get("mediaInfo") or {}
-        languages = (media_info.get("audioLanguages") or "").lower()
-        if not languages:
-            continue                                   # no data, no judgement
-        if any(w in languages for w in wanted):
+        tracks = languages.keys(media_info.get("audioLanguages") or "")
+        if not tracks:
+            continue                    # no data, or undetermined: no judgement
+        if wanted & set(tracks):
             continue
+        _done, said, noted = _settled_bits(_settled(
+            ctx, searching_for(arr, "missing_audio_language", item.get("id")),
+            cfg))
         findings.append(Finding(
             rule="missing_audio_language", severity="warning", service=arr.kind,
             title=label,
             message="finding.missing_audio_language",
             params={"found": media_info.get("audioLanguages"),
-                    "wanted": ", ".join(wanted)},
+                    "wanted": ", ".join(raw), **said},
             data={"item_id": item.get("id"),
                   "languages": media_info.get("audioLanguages"),
-                  "file": file_info.get("relativePath")},
+                  "file": file_info.get("relativePath"), **noted},
         ))
     return findings
 
 
 def check_unreadable_file(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
-    """The file could not be read — often a sign of damage."""
+    """The file could not be read — often a sign of damage.
+
+    Only said when the service reads files at all. Analysing video files can
+    be switched off in Radarr and Sonarr, and then no file carries media
+    information — which read file by file is every file in the library
+    reported as damaged, at the highest severity there is.
+    """
+    everything = list(_library_files(arr, ctx))
+    if not any(file_info.get("mediaInfo") for _item, file_info, _label in everything):
+        return []
     findings = []
-    for item, file_info, label in _library_files(arr, ctx):
+    for item, file_info, label in everything:
         if file_info.get("mediaInfo"):
             continue
         findings.append(Finding(
@@ -1529,12 +1547,17 @@ def check_unreadable_file(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The existing file would not be accepted under today's rules.
 
-    Re-scores the release name of the file on disk against the profile. Below
-    the blocking threshold, the file no longer matches what is being asked for —
-    after a profile change, for instance.
+    Re-scores the release name of the file on disk against the profile. When
+    it carries a format the profile refuses, the file no longer matches what
+    is being asked for — after a profile change, for instance.
+
+    A refusal is whatever no bonus can climb back over, not only -999999: the
+    profiles built by this program refuse with a few thousand points, and were
+    never looked at here.
     """
     profiles = {p["id"]: p for p in ctx["profiles"]}
     formats = {f["name"]: f for f in ctx["formats"]}
+    refusals = {pid: refused(profile) for pid, profile in profiles.items()}
     findings = []
     for item, file_info, label in _library_files(arr, ctx):
         profile = profiles.get(item.get("qualityProfileId"))
@@ -1545,10 +1568,13 @@ def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             continue
         synthetic = {"title": name, "size": file_info.get("size"),
                      "quality": file_info.get("quality"), "movie": item}
-        total, hits = score(synthetic, profile, formats)
-        if total > BLOCKED:
+        found = matched(synthetic, profile, formats)
+        no = refusals.get(item.get("qualityProfileId")) or set()
+        blocking = [f"{n} ({w:+})" for n, w in found if n in no]
+        if not blocking:
             continue
-        blocking = [h for h in hits if "-999999" in h]
+        total = sum(w for _n, w in found)
+        hits = [f"{n} ({w:+})" for n, w in found]
         # Leave pure size violations out: the lower bounds in a profile say what
         # should still be GRABBED — they are not a verdict on what is already
         # there. Measured against the owner's own library that would otherwise
@@ -1558,12 +1584,16 @@ def check_below_profile(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
                         if not re.search(r"(under|over)\s[\d.,]+\s?GB", h, re.IGNORECASE)]
         if not without_size:
             continue
+        _done, said, noted = _settled_bits(_settled(
+            ctx, searching_for(arr, "below_profile", item.get("id")), cfg))
         findings.append(Finding(
             rule="below_profile", severity="warning", service=arr.kind,
             title=label,
             message="finding.below_profile",
-            params={"profile": profile.get("name"), "reason": ", ".join(without_size)},
-            data={"item_id": item.get("id"), "file": name, "score": total, "hits": hits},
+            params={"profile": profile.get("name"),
+                    "reason": ", ".join(without_size), **said},
+            data={"item_id": item.get("id"), "file": name, "score": total,
+                  "hits": hits, **noted},
         ))
     return findings
 
@@ -1773,13 +1803,21 @@ def check_season_gaps(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
             if not have or missing < max(1, minimum):
                 continue
             number = season.get("seasonNumber")
+            # Searched for on several separate occasions and still a gap:
+            # nobody has the episodes. Still reported, no longer searched for
+            # by itself on every full pass.
+            _done, said, noted = _settled_bits(_settled(
+                ctx, searching_for(arr, "season_gaps", item.get("id"), number),
+                cfg))
             findings.append(Finding(
                 rule="season_gaps", severity="warning", service=arr.kind,
                 title=f"{item.get('title', '?')} — Season {number}",
                 message="finding.season_gaps",
-                params={"missing": missing, "total": total, "season": number},
+                params={"missing": missing, "total": total, "season": number,
+                        **said},
                 data={"item_id": item.get("id"), "season": number,
-                      "missing": missing, "have": have, "total": total},
+                      "missing": missing, "have": have, "total": total,
+                      **noted},
             ))
     return findings
 
@@ -1801,13 +1839,16 @@ def check_series_incomplete(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         total = int(stats.get("episodeCount") or 0)
         if not total or have >= total:
             continue
+        _done, said, noted = _settled_bits(_settled(
+            ctx, searching_for(arr, "series_incomplete", item.get("id")), cfg))
         findings.append(Finding(
             rule="series_incomplete", severity="info", service=arr.kind,
             title=item.get("title", "?"),
             message="finding.series_incomplete",
-            params={"have": have, "total": total, "missing": total - have},
+            params={"have": have, "total": total, "missing": total - have,
+                    **said},
             data={"item_id": item.get("id"), "have": have, "total": total,
-                  "missing": total - have},
+                  "missing": total - have, **noted},
         ))
     return findings
 

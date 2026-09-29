@@ -51,11 +51,44 @@ _RESOLUTIONS = {360: "360", 480: "480", 540: "540", 576: "576",
 
 _GROUP_PATTERN = re.compile(r"-([A-Za-z0-9_.]+)$")
 
+_EXTENSION = re.compile(r"\.(mkv|mp4|avi|m4v|ts|mov|wmv|mpg|mpeg)$", re.IGNORECASE)
+
+#: Source words that are the end of a name without being a group:
+#: ``Movie.2020.1080p.WEB-DL`` has no group, not a group called "DL".
+_NOT_A_GROUP = re.compile(r"(?i)web-(dl|rip)$")
+
+#: A score at or below this is a refusal whatever else the profile says.
+#: Published profiles write -999999 for "never".
+BLOCKED = -900000
+
 
 def _field(spec: dict, name: str) -> Any:
     for f in spec.get("fields", []):
         if f.get("name") == name:
             return f.get("value")
+    return None
+
+
+def _option_name(spec: dict, name: str = "value") -> str | None:
+    """The name of the chosen entry of a select field, lower case.
+
+    Source and quality modifier are stored as numbers, and the numbers are the
+    service's own: 7 is WEB-DL in Radarr and a Blu-ray remux in Sonarr. A
+    release reports the same thing as a word ("webdl", "blurayRaw"). Compared
+    as they were, no source condition ever held — and a negated one held for
+    everything. The field carries its own list of what each number means, so
+    that list is what is read; without it nothing is guessed.
+    """
+    for entry in spec.get("fields", []):
+        if entry.get("name") != name:
+            continue
+        value = entry.get("value")
+        if isinstance(value, str) and not value.isdigit():
+            return value.lower()
+        for option in entry.get("selectOptions") or []:
+            if str(option.get("value")) == str(value):
+                return str(option.get("name") or "").lower() or None
+        return None
     return None
 
 
@@ -79,8 +112,13 @@ def _condition(spec: dict, release: dict) -> bool | None:
 
     if kind == "ReleaseGroupSpecification":
         pattern = _field(spec, "value")
-        group = release.get("group") or title
-        return _matches(str(pattern), group) if pattern else None
+        if not pattern:
+            return None
+        # The service matches the group and nothing else; a release without
+        # one matches no group. Matched against the whole name instead, a
+        # film called *Ghost* belonged to the group of that name.
+        group = release.get("group") or ""
+        return _matches(str(pattern), group) if group else False
 
     if kind == "SizeSpecification":
         gb = release.get("gb")
@@ -104,16 +142,16 @@ def _condition(spec: dict, release: dict) -> bool | None:
         return int(low) <= int(year) <= int(high)
 
     if kind == "SourceSpecification":
-        wanted, actual = _field(spec, "value"), release.get("source")
+        wanted, actual = _option_name(spec), release.get("source")
         if wanted is None or actual is None:
             return None
-        return str(wanted) == str(actual)
+        return wanted == str(actual).lower()
 
     if kind == "QualityModifierSpecification":
-        wanted, actual = _field(spec, "value"), release.get("modifier")
+        wanted, actual = _option_name(spec), release.get("modifier")
         if wanted is None or actual is None:
             return None
-        return str(wanted) == str(actual)
+        return wanted == str(actual).lower()
 
     return None
 
@@ -149,7 +187,8 @@ def release_from_entry(entry: dict) -> dict:
     item = entry.get("movie") or entry.get("series") or {}
     size = entry.get("size") or 0
     title = entry.get("title") or ""
-    group_match = _GROUP_PATTERN.search(title)
+    bare = _EXTENSION.sub("", title)
+    group_match = None if _NOT_A_GROUP.search(bare) else _GROUP_PATTERN.search(bare)
     return {
         "title": title,
         "group": group_match.group(1) if group_match else "",
@@ -161,12 +200,11 @@ def release_from_entry(entry: dict) -> dict:
     }
 
 
-def score(entry: dict, profile: dict,
-          formats_by_name: dict[str, dict]) -> tuple[int, list[str]]:
-    """Returns (total score, the formats that matched) under today's rules."""
+def matched(entry: dict, profile: dict,
+            formats_by_name: dict[str, dict]) -> list[tuple[str, int]]:
+    """``(name, score)`` of every format with a score that the entry meets."""
     release = release_from_entry(entry)
-    total = 0
-    hits: list[str] = []
+    out: list[tuple[str, int]] = []
     for item in profile.get("formatItems", []):
         weight = item.get("score") or 0
         if weight == 0:
@@ -175,9 +213,37 @@ def score(entry: dict, profile: dict,
         if not custom_format:
             continue
         if format_matches(custom_format, release):
-            total += weight
-            hits.append(f"{item['name']} ({weight:+})")
-    return total, hits
+            out.append((str(item["name"]), int(weight)))
+    return out
+
+
+def score(entry: dict, profile: dict,
+          formats_by_name: dict[str, dict]) -> tuple[int, list[str]]:
+    """Returns (total score, the formats that matched) under today's rules."""
+    hits = matched(entry, profile, formats_by_name)
+    return (sum(weight for _name, weight in hits),
+            [f"{name} ({weight:+})" for name, weight in hits])
+
+
+def refused(profile: dict) -> set[str]:
+    """The formats that are a "no" in this profile, by name.
+
+    A format is a refusal when a release carrying it cannot reach the
+    profile's floor however many bonuses it collects besides — which is what
+    the service itself makes of it. Published profiles say so with -999999;
+    a profile built by this program says so with a few thousand, worked out
+    to beat every bonus it hands out. Read only as the first, the refusals of
+    a profile built here were never seen at all.
+    """
+    items = profile.get("formatItems") or []
+    bonuses = sum(max(0, int(item.get("score") or 0)) for item in items)
+    floor = int(profile.get("minFormatScore") or 0)
+    out = set()
+    for item in items:
+        weight = int(item.get("score") or 0)
+        if weight < 0 and (weight <= BLOCKED or weight + bonuses < floor):
+            out.add(str(item.get("name")))
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -542,7 +542,7 @@ def test_saving_twice_changes_the_same_profile():
     service = FakeService()
     plan = profiles.build(wish())
     profiles.apply_to(service, plan)
-    service._profiles = [{"id": 7, "name": "Test"}]
+    service._profiles = [{**service.saved_profiles[-1][1], "id": 7}]
 
     again = profiles.apply_to(service, plan)
     assert again["updated"] is True
