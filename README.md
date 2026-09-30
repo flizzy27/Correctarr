@@ -8,7 +8,7 @@ lying around — the ones that sit there because nobody is looking.**
 [![Build](https://github.com/flizzy27/Correctarr/actions/workflows/docker.yml/badge.svg)](https://github.com/flizzy27/Correctarr/actions/workflows/docker.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-<img src="docs/screenshot-overview.png" alt="The overview page" width="900">
+<img src="docs/screenshot-overview.png" alt="The home page: how things stand at a glance" width="900">
 
 </div>
 
@@ -40,7 +40,7 @@ Three ways, at the same time:
 
 ## The rules
 
-**36 rules across six categories.** For each one you decide what happens when
+**37 rules across six categories.** For each one you decide what happens when
 it finds something — not just on or off:
 
 | | |
@@ -65,7 +65,7 @@ finds and touches nothing, until you have seen the findings and turned it off
 yourself.
 
 <details>
-<summary><strong>All 36 rules</strong></summary>
+<summary><strong>All 37 rules</strong></summary>
 
 ### Queue
 | Rule | What it finds | Default action |
@@ -100,6 +100,7 @@ yourself.
 | `season_gaps` | A season that is only partly there *(Sonarr)* | Report only |
 | `series_incomplete` | A finished series that is still incomplete *(Sonarr)* | Report only |
 | `stale_blocklist` | An old refusal that may be why a title never arrives | Report only |
+| `stray_files` | Archive parts, half-unpacked downloads and videos in a title's folder that the service knows nothing about | Report only |
 
 ### Download client
 | Rule | What it finds | Default action |
@@ -144,7 +145,7 @@ for".
 **And you can act on it there and then.** Everything that was found and not
 dealt with by itself — because its rule only reports, the dry run is on, a
 condition held it back, or the last attempt failed — waits for you under
-*Findings → Waiting for you*, one card each. A card says what was found, why
+*To do*, one card each. A card says what was found, why
 nothing happened, and what is recommended: the rule's own setting, or, where a
 rule has looked at that particular case and knows better, its own suggestion
 with the reason. The recommendation is the first button; everything else the
@@ -153,10 +154,26 @@ the same release with a new complaint comes straight back. A search waits for
 the answer: it reports what was grabbed and from which indexer, or that there
 was nothing out there. Actions that remove something are marked and ask first.
 
-The overview counts what is waiting, rule by rule, with a link into that rule's
+The home page counts what is waiting, rule by rule, with a link into that rule's
 findings and one button that does what is recommended for all of them. The
-same button sits above the list, for exactly what the filters are showing.
-Whatever would delete is always left out of it and keeps its own button.
+same button sits above the list, for exactly what the filters are showing, and
+says what each of them would get before it does anything. Whatever would delete
+is always left out of it and keeps its own button.
+
+**It also looks inside the title folders.** The services keep a list of the
+files that belong to a title and look at nothing else in its folder, so whatever
+else ends up in there stays for good. `stray_files` walks every film and series
+folder and reports what the service does not account for — archive parts, the
+remains of an unpack, sample videos, other videos — with the size and the
+largest files named. Measured on a library of about five hundred films before it
+was built: ten folders, ninety gigabytes, one of them holding the complete
+archive set of a different film. It only reports: the library is mounted read
+only on purpose, and a video that is not the title's own file may be the only
+copy of something else. Subtitles, artwork, `.nfo` files and extras in the
+folders Plex and Jellyfin read them from are left alone. It needs the library
+mounted and set under *Settings → Paths*; when the service calls its folder
+something else (`/tv` against `/series`, say), a service with one root folder is
+matched to that setting.
 
 **It also works out when there is nothing better to find.** A title below its
 cutoff used to be reported and searched for again on every pass, for ever. It
@@ -187,7 +204,7 @@ When a limit pauses everything, a notification goes out on every connection
 automatically until you press **Resume automatic actions**. A restart does not
 undo it. Findings are still checked and reported throughout, and buttons still
 work: an action you take by hand is never blocked, but it is counted towards the
-per-title limit. The limits live under *Settings → Safety limits*; none of them
+per-title limit. The limits live under *Settings → Checks & safety*; none of them
 can be switched off.
 
 A burst of webhooks — a search wave sends one per grab, seconds apart — starts
@@ -207,12 +224,14 @@ can actually answer, so you cannot set one that could never be met.
 <img src="docs/screenshot-phone.png" alt="The rules page on a phone" width="300" align="right">
 
 The interface is the same one at every size — nothing is hidden on a small
-screen and there is no separate mobile version to fall behind. Below 620 pixels
-the columns stack, the navigation becomes a row of tabs across the top, and
-every control you tap grows to a size you can hit without aiming. It has been
-checked from 320 pixels up to 4K, on every page, with nothing running off the
-side at any width, and heights are measured against what is actually on screen
-rather than against a viewport that ignores the browser's own toolbars.
+screen and there is no separate mobile version to fall behind. Below 880 pixels
+the navigation moves to a bar along the bottom — home, to do, activity and
+downloads under your thumb, everything else one press away under *More* — and
+below 620 the columns stack and every control you tap grows to a size you can
+hit without aiming. It has been checked from 320 pixels up to 4K, on every page,
+with nothing running off the side at any width, and heights are measured against
+what is actually on screen rather than against a viewport that ignores the
+browser's own toolbars.
 
 <br clear="right">
 
@@ -265,6 +284,44 @@ away most of the German releases it was set up to find. A custom format sees
 the whole name: `German DL`, `GerDub`, `[DE+EN]`, and the bare `DL` that the
 majority of them actually carry — but not the `DL` of `WEB-DL`, which is where
 the release came from, not what it sounds like.
+
+**Or pick one that is ready.** Ten presets — for films *720p compact*, *1080p
+space-saving*, *1080p balanced*, *1080p high quality*, *2160p HDR*, *2160p
+archive*; for series *720p*, *1080p* and *2160p HDR*; and *Anime 1080p* — each
+combined with the languages you choose. A preset opens in the full form as a
+starting point, and passes the same checks as anything built by hand. Series
+presets stop upgrading at the WEB-DL, because fetching every season again when
+the Blu-ray comes out costs half as much room once more.
+
+The full form can also narrow **one resolution on its own**: its own sources
+(HDTV at 720p only, say, where an old series exists as nothing else), its own
+size window (15 GB is generous for a 1080p film and refuses nearly every 2160p
+one), a codec that is **required** rather than preferred, and a source to
+**stop upgrading at**.
+
+**How much room it will take.** Every profile, built here or already in the
+service, comes with an estimate — per film or episode, and for the whole
+library: what is on disk now, what it will be, which files would be replaced,
+and whether that fits in the free space. The numbers are measured on your own
+files wherever there are any, because the services' own size settings say
+nothing until somebody sets them: left at their defaults, a two hour film at
+WEB-DL is "233 GB". Each estimate says what it rests on — your files at that
+quality, the profile's own files, a size you set in the service, or a reference
+value. The storage view adds up the root folders per disk (Radarr and Sonarr on
+one pool count once), measures how fast the library has grown over the last
+90 days from the service's own history, and says when the disk is full at that
+pace — or that the history is too short to say.
+
+Titles can be moved to another profile from there too. You see first which
+files that would replace and what it does to the disk; nothing is searched —
+what the new profile wants arrives when an indexer next offers it.
+
+On the page that is three tabs for the service you pick: *Ready profiles*, each
+with its size per film or episode and whether it fits your library; *Build your
+own*, with the plan and the room it takes beside the form as you change it; and
+*In the service now*, with what every existing profile holds, whether it can
+loop, and the button that moves titles onto it. The disks, their pace and the
+largest titles are under *Library*.
 
 ---
 
@@ -345,7 +402,8 @@ the port, the configuration directory and the folder holding finished downloads.
 
 > **About the paths:** they have to be the same inside the container as the ones
 > Radarr and Sonarr see. Mount the download folders exactly the way you mounted
-> them there. The overview page shows you whether that worked.
+> them there. *Settings → Paths* shows you whether that worked, and the home
+> page says so as long as it did not.
 
 ### Docker
 
@@ -395,8 +453,25 @@ services:
    once you agree with it. Every rule that acts was built that way first, and
    every single time it turned something up.
 
-All of it can be done later by hand under *Services* and *Settings*; the
-assistant is reachable again from the sidebar at any time.
+All of it can be done later by hand under *Settings*; the assistant is
+reachable again under *Settings → System* at any time.
+
+### Supported versions
+
+Checked against the API description each project publishes for the version,
+and against live installations of the newest ones.
+
+| Service | Versions | Notes |
+|---|---|---|
+| Radarr | 4, 5, 6 | Radarr 4 has no *wanted* lists; the missing and cutoff rules read the movie list there instead. |
+| Sonarr | 3, 4 | Sonarr 3 has no custom formats, so the score checks have nothing to compare against there. It also cannot be told not to search again after a release is blocklisted. |
+| Prowlarr | 1, 2 | Read only. |
+| SABnzbd | 3, 4, 5 | From 4.2 on, a removed history entry is archived rather than deleted — it can still be recovered in SABnzbd. |
+
+A service can be reached under a sub path (`http://host/radarr`). An address
+pasted with `/api` or `/api/v3` on the end is fine. For a service behind https
+with a self-signed certificate, switch on *Accept a self-signed certificate*
+for that one service; certificates are checked everywhere else.
 
 ## Configuration
 
@@ -408,6 +483,7 @@ assistant is reachable again from the sidebar at any time.
 | `BASE_URL` | – | Sub path behind a reverse proxy, e.g. `/correctarr` |
 | `PUID` / `PGID` | `99` / `100` | Ids the service runs as |
 | `UMASK` | `022` | Permission mask for new files |
+| `FORWARDED_ALLOW_IPS` | `*` | Whose `X-Forwarded-*` headers are believed — set it to your reverse proxy's address if you have one |
 | `TZ` | `Etc/UTC` | Timezone |
 | `LOGLEVEL` | `INFO` | `DEBUG` for troubleshooting only |
 
@@ -420,9 +496,20 @@ configured in the interface and survives every update.
 
 <img src="docs/screenshot-fixed.png" alt="A record of every change that was made" width="900">
 
-The *Fixed* page lists only changes that actually happened — plain reports and
+*Activity → Done* lists only changes that actually happened — plain reports and
 dry runs are not in there. It is the record of what the program did on your
-behalf, which matters for something that is allowed to delete files.
+behalf, which matters for something that is allowed to delete files. *All
+findings* beside it is the whole log, narrowed by rule, by what became of each
+finding, or by a word.
+
+Over days rather than one pass, *Activity → Numbers* (and
+`GET /api/insights?days=30`) answers from the store alone, without contacting a
+service: per day how many findings there were,
+how many actions were taken by themselves and by hand and how many of those
+failed, and how much space deleting gave back; which rules find the most; how
+long a problem stays before no pass comes across it any more; what is waiting
+for you now; and every time the safety limits paused automatic actions. Actions
+and pauses are kept for 90 days, so that is as far back as it goes.
 
 ## Languages
 
@@ -446,7 +533,10 @@ location /correctarr/ {
 ```
 
 `X-Forwarded-Proto` is not optional: without that header the service treats an
-HTTPS connection as plain and sets the session cookie without `Secure`.
+HTTPS connection as plain and sets the session cookie without `Secure`. Neither
+is `Host` (or `X-Forwarded-Host`): a change is only accepted from a page of this
+interface, and over plain http the address the browser used is how that is
+recognised.
 
 ## Notifications
 
@@ -466,13 +556,29 @@ configurable period after a message).
 The Telegram connection can find your chat id for you — start a chat with your
 bot, press the button, pick the chat from the list.
 
+**A summary, if you want one.** Under *Settings → Notifications*, *Send a
+summary* sends a daily or weekly message at the hour you choose, through every
+enabled connection: what was fixed and how much space that freed, what is still
+waiting for you, what was tried and did not work, and whether automatic actions
+were paused. When there is nothing to say, nothing is sent. Off by default. The
+same page shows what the summary would say right now, and *Send it now* sends it
+straight away to see how it looks.
+
 ## Security
 
 * Built-in login, PBKDF2-HMAC-SHA256 with 600,000 rounds and a per-user salt.
-* Sessions are stored as a digest, never as the token itself.
-* API keys never leave the server — not through the interface and not into the
-  log.
-* Failed sign-ins are throttled with a growing delay.
+* Sessions are stored as a digest, never as the token itself. The cookie is
+  `HttpOnly`, `SameSite=Lax`, and `Secure` behind https.
+* Anything that changes something is refused when another web page sent it —
+  including a page of another service on the same host.
+* API keys never leave the server — not through the interface, not into the
+  log, not into an error message. A stored key is only reused for the address
+  it was entered for; a changed address needs the key again.
+* Failed sign-ins are throttled with a growing delay, per address and per
+  account.
+* The webhook the services call in on carries a random token.
+* The database in `/config`, which holds the keys, is readable by its owner
+  only.
 
 `AUTH=off` disables the login when something in front already handles it.
 Without one of the two, the port does not belong on the open internet.
@@ -482,6 +588,21 @@ Without one of the two, the port does not belong on the open internet.
 Settings, services and history live under `/config` and survive every update.
 The schema is upgraded automatically at startup, and a backup of the file is
 written next to it before anything changes.
+
+To carry a configuration to another installation, or to keep one safe,
+*Settings → System* downloads a backup and restores one — showing, before
+anything is written, exactly what the file would change. Behind it,
+`GET /api/backup` returns every setting, what every rule is set to do, the
+services and the notification connections as one JSON file — **without API keys
+and tokens** unless you ask for them with `?secrets=true`.
+`POST /api/backup/restore` checks such a file against the same rules the
+interface is held to and says what it would change; only with `"apply": true`
+does it write. A restore never deletes anything, keeps the stored key of a
+service or connection of the same name and address when the file has none,
+and skips — and names — whatever it cannot use rather than refusing the whole
+file. It changes nothing in Radarr or Sonarr: a restored service's webhook
+still points where the old installation told it to, until the service is saved
+once under *Settings → Services*.
 
 ## Development
 

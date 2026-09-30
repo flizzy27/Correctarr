@@ -13,6 +13,7 @@ is the one most German releases actually carry.
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 
 import pytest
 
@@ -102,7 +103,9 @@ def _everything() -> profiles.Wish:
         sources=profiles.SOURCES, audio="nah", surround=True, codec="x265",
         languages=("de", "en", "fr"), language_required=True, colour="dv",
         edition="extended", streamers=profiles.STREAMERS, good_groups=True,
-        prefer_repack=True, min_gb=2, max_gb=90)
+        prefer_repack=True, min_gb=2, max_gb=90, codec_required=True,
+        size_limits=(("2160p", 10, 80),), upgrade_until="webdl",
+        ladder=(("720p", ("hdtv", "webdl")),))
 
 
 def test_what_is_unwanted_is_worth_less_than_every_bonus_together():
@@ -317,6 +320,8 @@ FORMAT_SCHEMA = [
      "fields": [{"name": "value", "value": ""}]},
     {"implementation": "SizeSpecification", "implementationName": "Size",
      "fields": [{"name": "min", "value": 0}, {"name": "max", "value": 0}]},
+    {"implementation": "ResolutionSpecification", "implementationName": "Resolution",
+     "fields": [{"name": "value", "value": 0}]},
 ]
 
 
@@ -584,3 +589,211 @@ def test_a_profile_that_could_loop_is_never_written():
         profiles.apply_to(service, plan)
     assert service.saved_profiles == []
     assert service.saved_formats == []
+
+
+# ---------------------------------------------------------------------------
+# Presets
+# ---------------------------------------------------------------------------
+LANGUAGE_CHOICES = [(), *((code,) for code in profiles.LANGUAGES), ("de", "en"),
+                    ("ja", "en"), ("de", "en", "fr")]
+
+
+@pytest.mark.parametrize("preset", profiles.PRESETS, ids=lambda p: p.id)
+@pytest.mark.parametrize("languages", LANGUAGE_CHOICES,
+                         ids=lambda codes: "+".join(codes) or "any")
+@pytest.mark.parametrize("required", [False, True])
+def test_every_preset_in_every_language_builds_a_profile_that_cannot_loop(
+        preset, languages, required):
+    """A preset is picked by somebody who will not read the plan, so every
+    combination it can be picked in has to pass the same checks a hand-built
+    profile does."""
+    plan = profiles.build(profiles.preset_wish(preset, languages, required))
+    assert profiles.check(plan) == []
+    assert plan.cutoff_score == 0
+    assert plan.wish.language_required is (required and bool(languages))
+
+
+def test_every_preset_has_a_name_and_a_description_in_both_languages():
+    from app import i18n
+    for language in ("en", "de"):
+        texts = i18n.bundle(language)
+        for preset in profiles.PRESETS:
+            assert texts.get(f"profiles.preset.{preset.id}.name")
+            assert texts.get(f"profiles.preset.{preset.id}.help")
+
+
+def test_presets_are_distinct_and_belong_somewhere():
+    ids = [p.id for p in profiles.PRESETS]
+    assert len(ids) == len(set(ids))
+    assert len({p.wish.name for p in profiles.PRESETS}) == len(ids)
+    for preset in profiles.PRESETS:
+        assert preset.services
+        assert set(preset.services) <= {"radarr", "sonarr"}
+        # A preset is data: tidying it must not change what it says. The old
+        # remux switch is derived from the sources and does not count.
+        tidy = preset.wish.tidy()
+        assert replace(tidy, allow_remux=preset.wish.allow_remux) == preset.wish
+
+
+def test_the_language_goes_into_the_name():
+    """The profile is found again by its name. The same preset saved for German
+    and for English would otherwise be one profile overwritten by the other."""
+    preset = profiles.PRESETS_BY_ID["film_1080p"]
+    german = profiles.preset_wish(preset, ("de",))
+    both = profiles.preset_wish(preset, ("en", "de"))
+    assert german.name == "1080p balanced (DE)"
+    assert both.name == "1080p balanced (DE+EN)"
+    assert profiles.preset_wish(preset).name == "1080p balanced"
+
+
+def test_a_series_preset_sets_no_size_window():
+    """A size condition is compared with the release, and a whole season in
+    one release is how a series is often fetched."""
+    for preset in profiles.PRESETS:
+        if "sonarr" in preset.services:
+            wish = preset.wish
+            assert not (wish.min_gb or wish.max_gb or wish.size_limits), preset.id
+
+
+def test_a_preset_opens_in_the_advanced_form_unchanged():
+    for preset in profiles.PRESETS:
+        wish = profiles.preset_wish(preset, ("de",), True)
+        assert profiles.wish_from(profiles.wish_as_dict(wish)).tidy() == wish
+
+
+# ---------------------------------------------------------------------------
+# Per resolution
+# ---------------------------------------------------------------------------
+def test_a_size_window_can_be_set_per_resolution():
+    """One window cannot fit two rungs: 15 GB is generous for a 1080p film and
+    refuses nearly every 2160p one."""
+    plan = profiles.build(wish(resolutions=("1080p", "2160p"),
+                               size_limits=(("1080p", 0, 15), ("2160p", 20, 60))))
+    by_name = {f.name: f for f in plan.formats}
+    over = by_name["2160p over 60 GB"]
+    kinds = {c[0]: c[1] for c in over.conditions}
+    assert kinds["ResolutionSpecification"] == {"value": 2160}
+    assert kinds["SizeSpecification"] == {"min": 60.0, "max": 2000.0}
+    assert over.score < 0
+    assert "2160p under 20 GB" in by_name
+    assert "1080p over 15 GB" in by_name
+    assert "1080p under 0 GB" not in by_name
+    assert not profiles.check(plan)
+
+
+def test_a_window_for_a_resolution_that_was_not_asked_for_is_dropped():
+    tidy = profiles.Wish(resolutions=("1080p",),
+                         size_limits=(("2160p", 0, 60),)).tidy()
+    assert tidy.size_limits == ()
+
+
+def test_a_window_per_resolution_nothing_fits_through_is_refused():
+    plan = profiles.build(wish(size_limits=(("1080p", 20, 10),)))
+    assert "profiles.problem.impossible_size_at" in dict(profiles.check(plan))
+
+
+def test_the_global_window_and_the_one_per_resolution_both_apply():
+    """Both are written, so a rung asking for 5 GB at most under a global
+    floor of 10 GB takes nothing at all."""
+    answers = wish(min_gb=10, size_limits=(("1080p", 0, 5),))
+    assert answers.tidy().limits_at("1080p") == (10, 5)
+    assert "profiles.problem.impossible_size_at" in dict(
+        profiles.check(profiles.build(answers)))
+    assert wish(max_gb=30, size_limits=(("1080p", 0, 50),)).tidy().limits_at(
+        "1080p") == (0, 30)
+
+
+def test_a_rung_can_take_different_sources_than_the_rest():
+    """An old series exists at 720p only as a broadcast capture; letting HDTV in
+    at 1080p as well would take captures where a WEB-DL is out."""
+    answers = wish(resolutions=("720p", "1080p"), sources=("webdl",),
+                   ladder=(("720p", ("hdtv", "webdl")),)).tidy()
+    items, _best = profiles.quality_items(
+        LADDER_WITH_HDTV, answers.resolutions, answers.allow_remux,
+        answers.sources, ladder=dict(answers.ladder))
+    on = {(i.get("quality") or {}).get("name") for i in items if i["allowed"]}
+    assert on == {"HDTV-720p", "WEBDL-720p", "WEBDL-1080p"}
+    assert profiles.ladder_keys(answers) == ["hdtv-720p", "webdl-720p",
+                                             "webdl-1080p"]
+    # The rung that takes HDTV also earns HDTV its place in the preferences.
+    assert "Source hdtv" in {f.name for f in profiles.build(answers).formats}
+
+
+def test_a_rung_that_says_the_same_as_the_rest_is_not_kept_twice():
+    tidy = wish(sources=("webdl", "bluray"),
+                ladder=(("1080p", ("bluray", "webdl")),)).tidy()
+    assert tidy.ladder == ()
+
+
+LADDER_WITH_HDTV = [
+    {"quality": {"id": 4, "name": "HDTV-720p"}, "items": [], "allowed": False},
+    {"quality": {"id": 5, "name": "WEBDL-720p"}, "items": [], "allowed": False},
+    {"quality": {"id": 9, "name": "HDTV-1080p"}, "items": [], "allowed": False},
+    {"quality": {"id": 3, "name": "WEBDL-1080p"}, "items": [], "allowed": False},
+    {"quality": {"id": 7, "name": "Bluray-1080p"}, "items": [], "allowed": False},
+]
+
+
+# ---------------------------------------------------------------------------
+# Codec and upgrades
+# ---------------------------------------------------------------------------
+def test_a_required_codec_refuses_everything_else():
+    plan = profiles.build(wish(codec="x265", codec_required=True))
+    refusal = next(f for f in plan.formats if f.name == "Not x265")
+    implementation, fields, negate, _required = refusal.conditions[0]
+    assert implementation == "ReleaseTitleSpecification"
+    assert negate is True
+    assert refusal.score < 0
+    assert ("profiles.note.codec_required", {"codec": "x265"}) in plan.notes
+    assert not profiles.check(plan)
+
+
+def test_a_codec_cannot_be_required_when_any_will_do():
+    assert wish(codec="any", codec_required=True).tidy().codec_required is False
+
+
+def test_upgrading_can_stop_at_a_source():
+    """Keep the WEB-DL rather than fetch it all again when the Blu-ray is out."""
+    items, cutoff = profiles.quality_items(
+        SCHEMA_ITEMS, ("1080p",), False, ("webdl", "bluray"), stop_at="webdl")
+    assert cutoff == 3                  # WEBDL-1080p, out of its split group
+    _items, cutoff = profiles.quality_items(
+        SCHEMA_ITEMS, ("1080p",), False, ("webdl", "webrip", "bluray"),
+        stop_at="webdl")
+    assert cutoff == 1000               # the whole WEB group is on
+    _items, cutoff = profiles.quality_items(
+        SCHEMA_ITEMS, ("1080p",), False, ("webdl", "bluray"))
+    assert cutoff == 7
+
+
+def test_a_stop_that_is_not_on_the_ladder_is_forgotten():
+    assert wish(sources=("bluray",), upgrade_until="webdl").tidy().upgrade_until == ""
+    # Stopping at the top is the same as not stopping.
+    assert wish(sources=("webdl", "bluray"),
+                upgrade_until="bluray").tidy().upgrade_until == ""
+    assert wish(sources=("webdl", "bluray"), upgrade=False,
+                upgrade_until="webdl").tidy().upgrade_until == ""
+
+
+def test_the_stop_is_written_into_the_profile():
+    service = FakeService()
+    profiles.apply_to(service, profiles.build(
+        wish(sources=("webdl", "bluray"), upgrade_until="webdl")))
+    _existing, body = service.saved_profiles[0]
+    assert body["cutoff"] == 3
+    assert body["cutoffFormatScore"] == 0
+
+
+@pytest.mark.parametrize("name,key", [
+    ("WEBDL-1080p", "webdl-1080p"), ("Bluray-1080p Remux", "remux-1080p"),
+    ("Remux-2160p", "remux-2160p"), ("HDTV-720p", "hdtv-720p"),
+    ("webrip-2160p", "webrip-2160p"), ("SDTV", None), ("DVD", None), ("", None)])
+def test_a_quality_is_known_by_the_same_key_in_both_services(name, key):
+    assert profiles.quality_key(name) == key
+
+
+def test_the_ladder_keys_run_worst_first_and_skip_a_remux_that_does_not_exist():
+    keys = profiles.ladder_keys(profiles.Wish(
+        resolutions=("720p", "1080p"), sources=("webdl", "bluray", "remux")))
+    assert keys == ["webdl-720p", "bluray-720p", "webdl-1080p", "bluray-1080p",
+                    "remux-1080p"]

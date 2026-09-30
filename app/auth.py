@@ -22,8 +22,13 @@ Why it is built this way
   who gets hold of the file cannot log in with it.
 * **Comparisons are constant time** (``hmac.compare_digest``), otherwise the
   response time leaks how many characters matched.
-* **Failed attempts are throttled.** After a handful of failures per origin the
-  wait grows. That is enough against guessing on a home network.
+* **Failed attempts are throttled.** After a handful of failures per origin,
+  and separately per account name, the wait grows. That is enough against
+  guessing on a home network.
+* **Changes have to come from this interface.** A request that changes
+  something and was sent by another web page is refused (see the gatekeeper
+  in ``main``); the ``SameSite`` cookie alone does not cover other services on
+  the same host.
 """
 from __future__ import annotations
 
@@ -161,6 +166,16 @@ def retry_after(origin: str) -> int:
     window = min(THROTTLE_MAX_SECONDS, 2 ** steps)
     remaining = window - (time.monotonic() - last)
     return max(0, int(remaining))
+
+
+def account_key(name: str) -> str:
+    """The throttling key for an account, kept apart from any address.
+
+    Sign-in is throttled per origin *and* per account name. The origin is only
+    as trustworthy as the X-Forwarded-For header a client chooses to send; the
+    name being guessed at is the same on every attempt.
+    """
+    return "account:" + (name or "").strip().lower()[:64]
 
 
 def note_failure(origin: str) -> None:

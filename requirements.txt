@@ -1,15 +1,36 @@
-# Auf feste Fassungen genagelt: ein Abbild, das heute baut, soll in einem Jahr
-# genauso bauen. Angehoben wird bewusst und im Changelog vermerkt.
+# Pinned to exact versions, all the way down: an image that builds today should
+# build the same way in a year. Only the first block was pinned before, and
+# every build quietly took whatever the rest had released that week.
+# Versions are raised on purpose and noted in the changelog.
 
-fastapi==0.141.1
-uvicorn[standard]==0.53.0
+fastapi==0.142.1
+# Plain uvicorn rather than uvicorn[standard]: the extra brings file watching
+# for reloads, websockets, YAML and .env support, none of which is used here,
+# and each is one more thing in the image to keep patched.
+uvicorn==0.54.0
 httpx==0.28.1
 apscheduler==3.11.3
 pydantic==2.13.5
 
-# Bewusst 'regex' und nicht das eingebaute 're': Radarr läuft auf .NET, und die
-# Muster der Profildatenbank nutzen durchgehend Lookbehind mit variabler Breite,
-# etwa (?<=^|[\s.-])YIFY\b. Das eingebaute 're' lehnt so etwas ab — gemessen
-# scheiterten damit 523 von 814 Mustern (64 Prozent), die Bewertung war also
-# stillschweigend lückenhaft. 'regex' kann es: 814 von 814.
-regex==2026.9.10
+# Deliberately 'regex' and not the built-in 're': Radarr runs on .NET, and the
+# patterns in the profile database use variable-width lookbehind throughout,
+# e.g. (?<=^|[\s.-])YIFY\b. The built-in 're' rejects that — measured, 523 of
+# 814 patterns (64 percent) failed with it, so scoring was silently incomplete.
+# 'regex' handles all 814.
+regex==2026.9.29
+
+# What the above depend on, resolved for Python 3.13 on amd64 and arm64.
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+certifi==2026.7.22
+click==8.5.0
+h11==0.16.0
+httpcore==1.0.9
+idna==3.20
+opentelemetry-api==1.45.0
+pydantic-core==2.46.5
+starlette==1.7.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+tzlocal==5.4.4

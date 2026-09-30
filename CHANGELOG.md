@@ -3,6 +3,140 @@
 Versions follow `MAJOR.MINOR.PATCH`. The major number only goes up for changes
 that break an existing installation.
 
+## 2.0.0
+
+A new interface, a profile builder that says how much room it will take, and
+connections that hold up behind a proxy, on a self-signed certificate and on
+every supported version of every service.
+
+### Before you upgrade
+
+* **A service whose address you change needs its API key entered again.** The
+  stored key is only ever sent to the address it was entered for. The same holds
+  for ntfy, Gotify and webhook secrets.
+* **Changes sent from another web page are refused.** The interface itself is
+  unaffected; a script that posts to the API from a page on another origin is
+  not. `/api/event`, where the services send their webhooks, is exempt.
+* The database moves to schema 6. A backup is written before the upgrade.
+
+### Added
+
+* **A new interface.** The pages are regrouped around what you come to do.
+  *Home* says in one sentence whether anything needs you. *To do* holds every
+  finding waiting for a decision, with the recommended action as the first
+  button and the service's own words under a stuck download. *Activity* shows
+  what was done, the full log and the numbers per day. *Library* shows how full
+  each disk is and when it will be full. *Profiles* offers ready profiles with
+  their price on the disk, a builder with per-resolution sources and sizes, and
+  moving titles between profiles with a preview first. *Settings* has six tabs,
+  including the summary preview with "send now" and backup and restore with a
+  preview of every change. Anything that deletes asks in a proper dialog; every
+  button shows it is working and reports back in plain words; status is only
+  refreshed while the tab is visible. On a phone, navigation moves to a bar
+  along the bottom. Old bookmarks still work.
+* **Ready profiles.** Ten presets: for films 720p compact, 1080p space-saving,
+  1080p balanced, 1080p high quality, 2160p HDR and 2160p archive; for series
+  720p, 1080p and 2160p HDR; and Anime 1080p. Each is combined with your
+  languages and opens in the full form as a starting point. Series stop
+  upgrading at the WEB-DL: fetching every season again when the Blu-ray comes
+  out costs the room once more.
+* **One resolution on its own.** Sources and a size window per resolution, a
+  codec that is required rather than preferred, and a source to stop upgrading
+  at.
+* **How much room a profile will take.** Per film, per episode and for the
+  whole library: what is there now, what it will be, which files would be
+  replaced, and whether it fits. Measured on your own files wherever there are
+  any, because the services' size settings say nothing until somebody sets
+  them — at their defaults a two-hour WEB-DL is "233 GB". Every number says what
+  it rests on.
+* **Storage outlook.** Root folders per disk (Radarr and Sonarr on one pool
+  count once), library size by resolution and quality, the largest titles, and
+  growth over the last 90 days from the services' own history. From that: when
+  the disk is full, or that the history is too short to say. Measured on a live
+  server: each service alone said six months; together it is under three.
+* **Moving titles to another profile**, with a preview of what would be
+  replaced and the size impact. Nothing is searched.
+* **`stray_files`: files in a title folder that the service does not account
+  for** — archive parts, the remains of an unpack, sample videos, other videos.
+  Measured on a live library of about five hundred films: ten folders, ninety
+  gigabytes, one of them holding another film's complete archive set. Report
+  only; subtitles, artwork, .nfo files and Plex/Jellyfin extras are left alone.
+* **Insights**: per day findings, automatic and manual actions, failures and
+  space freed; the busiest rules; how long problems stay open; every safety
+  pause.
+* **A summary, if you want one.** Daily or weekly, at an hour you choose,
+  through every notification connection: what was fixed and how much space that
+  freed, what is waiting, what failed, and whether automatic actions were
+  paused. Off by default; nothing is sent when there is nothing to say.
+* **Backup and restore** of settings, rules, services and notifications, without
+  API keys unless asked for. A restore shows what it would change first, never
+  deletes, and skips what it cannot use.
+* **Accept a self-signed certificate**, per service, off by default.
+* Supported and tested: Radarr 4–6, Sonarr 3–4, Prowlarr 1–2, SABnzbd 3–5.
+
+### Changed
+
+* **Existing profiles** show their loop risk, how many titles use them, their
+  size on disk and their expected size.
+* **A pass reads each list once**: fast pass 29 → 23 requests, deep pass
+  51 → 43, measured against a live installation.
+* **Long lists are read in full**: queue, blocklist and wanted lists were read
+  as a single page, so the stale-blocklist rule never saw an entry past the
+  500th.
+* Reads are retried on a dropped connection or a gateway error, anything is
+  retried while a service is still starting, and timeouts are never retried.
+* Every action records what came of it and how much space it gave back; actions
+  and safety pauses are kept for 90 days.
+* Every dependency is pinned and audited in CI; the image carries plain uvicorn
+  and no pip.
+* Internally, the web application is one router per area, the action handlers
+  live in a module of their own, and the interface is a set of small modules
+  without a build step. No change to the API.
+
+### Fixed
+
+* **A button on a queue finding did nothing an hour later.** Radarr 6 hands out
+  a new id for the same queue entry over time — measured: an entry blocked for
+  two days was found under one id and listed under another when its button was
+  pressed, and the removal was answered with "not found". Entries are now found
+  again by their download, and one that has really left the queue is reported as
+  gone rather than as a failure.
+* **`detached_folder` named the wrong cause.** Almost always the container's
+  download path is mapped to a different host folder than the service's — found
+  that way on a live server, where every download-folder rule had been looking
+  at an empty folder. The finding now says so and what to change.
+* Redirects are followed only for reads on the same host: the API key was sent
+  wherever a redirect pointed, and a command answered with a redirect was sent
+  again as a read.
+* A login page or reverse proxy in front of a service is named as such, not
+  reported as "did not answer with JSON".
+* On Sonarr 3 a missing custom-format endpoint stopped every rule; on Radarr 4
+  the missing and cutoff checks found nothing; SABnzbd 5's wrong-key answer was
+  reported as "403".
+* Sign-in throttling could be sidestepped with a forged forwarding header; it
+  now also counts per account. New setting `FORWARDED_ALLOW_IPS`.
+* Tokens and keys no longer reach the log, including the uvicorn access log and
+  tracebacks. The database is readable by its owner only.
+* Discord embeds stay within Discord's limits and release names no longer turn
+  into formatting; long Telegram and Pushover messages are cut between lines
+  rather than inside a tag; ntfy stays under its 4 KB limit; a short rate limit
+  is waited out once; a failed test shows the provider's own reason.
+* A schema upgrade interrupted halfway no longer loses the rest of its columns.
+  Tested against a real 1.6.0 database: every row of every table survives, and
+  the backup written before the upgrade is identical to the original file.
+* The safety limits now also apply to rules set to "as suggested". The
+  stuck-download rules, which are set to it out of the box, were counted under
+  that name rather than as the action carried out, so neither the discard
+  limit nor the re-grab guard saw them.
+* A stuck SABnzbd job that Radarr or Sonarr tracks is also found again by its
+  download when its button is pressed later.
+* A restore without keys no longer carries a stored API key to a service whose
+  address the backup changed; that service is skipped and named.
+* Insights counted the first hour of a day towards the day before once the
+  clocks had changed; days are now counted in `TZ`.
+* The summary includes findings from before its period that were dealt with by
+  hand during it.
+
 ## 1.6.0
 
 Three things: nothing that acts by itself can run away, no download sits stuck

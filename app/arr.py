@@ -6,6 +6,12 @@ movieId/seriesId). This class hides that so the rules do not have to care.
 The HTTP connection is built once per instance and kept open. Previously every
 single request created a fresh client with its own TCP and TLS handshake — with
 more than twenty requests per run on a 60 second schedule, that adds up.
+
+An instance lives for one pass, and a pass is a snapshot of one moment. What it
+reads is therefore remembered until something is changed: the per service rules
+and the rules that run once per pass asked for the same queue, profiles, formats
+and library, and a deep pass paid for eight requests twice (measured against
+live services: 51 requests before, 43 after).
 """
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from . import compat
+from . import compat, connection
 
 log = logging.getLogger(__name__)
 
@@ -42,13 +48,16 @@ class GoneError(ArrError):
 class Arr:
     def __init__(self, kind: str, url: str, api_key: str,
                  timeout: float = 30.0, name: str = "",
-                 service_id: int | None = None):
+                 service_id: int | None = None, verify: bool = True):
         if kind not in KINDS:
             raise ValueError(f"Unknown kind: {kind}")
         self.kind = kind
-        self.url = (url or "").rstrip("/")
+        self.url = connection.normalise(url)
         self.api_key = api_key
         self.timeout = timeout
+        #: False accepts a self-signed certificate. Chosen per service, never
+        #: assumed: an https address that cannot be verified is refused.
+        self.verify = verify
         self.name = name or kind.capitalize()
         #: The row this was built from. Two Radarr instances are the same
         #: *kind* and have nothing else in common: a queue id from one names a
@@ -61,6 +70,8 @@ class Arr:
         self.observed = compat.Observed()
         #: History answered once per instance, see :meth:`history`.
         self._history: dict[int, list[dict]] = {}
+        #: Everything else read in this pass, until something is changed.
+        self._read: dict[str, Any] = {}
 
     def __repr__(self) -> str:                      # never includes the key
         return f"<Arr {self.kind} {self.url}>"
@@ -69,40 +80,38 @@ class Arr:
     @property
     def client(self) -> httpx.Client:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(
-                base_url=f"{self.url}/api/v3/",
+            self._client = connection.open_client(
+                f"{self.url}/api/v3/", timeout=self.timeout, verify=self.verify,
                 headers={"X-Api-Key": self.api_key, "Accept": "application/json"},
-                timeout=httpx.Timeout(self.timeout, connect=10.0),
-                follow_redirects=True,
-                limits=httpx.Limits(max_connections=8, max_keepalive_connections=4))
+                connections=8)
         return self._client
 
     def close(self) -> None:
         if self._client is not None and not self._client.is_closed:
             self._client.close()
 
-    def _call(self, method: str, path: str, retries: int = 2,
-              **kwargs) -> Any:
+    def _call(self, method: str, path: str, **kwargs) -> Any:
         path = path.lstrip("/")
+        if method != "GET":
+            # Whatever was read before a change may be what it changed.
+            self._read.clear()
         started = time.monotonic()
         try:
-            response = self.client.request(method, path, **kwargs)
-        except httpx.TimeoutException as e:
-            raise ArrError(f"{self.name} did not answer within "
-                           f"{self.timeout:.0f}s") from e
-        except httpx.RequestError as e:
-            raise ArrError(f"{self.name} is unreachable: {e}") from e
+            client = self.client
+        except (ValueError, httpx.InvalidURL) as e:
+            raise ArrError(f"The address of {self.name} is not valid: "
+                           f"{connection.describe(e)}") from e
+        # A service that is still booting answers 503 and says so. That is
+        # not an outage, and a restart of the host otherwise produces a
+        # frightening error on every single rule at once — so it is asked
+        # again, for a change as well: 503 means the request was not taken.
+        response = connection.request(client, method, path, name=self.name,
+                                      fail=ArrError, timeout=self.timeout,
+                                      **kwargs)
         log.debug("%s %s %s -> %s in %.0fms", self.name, method, path,
                   response.status_code, (time.monotonic() - started) * 1000)
         self.observed.note(path, response.headers)
 
-        if response.status_code == compat.STARTING_UP and retries > 0:
-            # Not an outage. The service says so itself while it boots, and a
-            # restart of the host otherwise produces a frightening error on
-            # every single rule at once.
-            log.info("%s is still starting up, asking again", self.name)
-            time.sleep(2.0)
-            return self._call(method, path, retries=retries - 1, **kwargs)
         if response.status_code == compat.STARTING_UP:
             raise ArrError(f"{self.name} is still starting up")
         if response.status_code == 401:
@@ -112,20 +121,57 @@ class Arr:
                             f"is the address and version right?")
         if response.status_code >= 400:
             raise ArrError(f"{self.name} {method} {path} returned "
-                           f"{response.status_code}: {response.text[:200]}")
-        if not response.content:
-            return None
-        try:
-            return response.json()
-        except ValueError as e:
-            raise ArrError(f"{self.name} did not answer with JSON — does the "
-                           f"address really point at {self.kind}?") from e
+                           f"{response.status_code}: {connection.short_text(response)}")
+        return connection.decode(response, name=self.name,
+                                 what=self.kind.capitalize(), fail=ArrError)
+
+    def _once(self, key: str, read) -> Any:
+        """Read something at most once until the next change. See the module."""
+        if key not in self._read:
+            self._read[key] = read()
+        return self._read[key]
+
+    def _pages(self, path: str, params: dict, page_size: int,
+               most: int) -> list[dict]:
+        """Every record of a paged list, up to ``most``.
+
+        One page used to be all anybody asked for. A queue of more than a
+        thousand entries lost the rest without a word, and the blocklist —
+        newest first — never showed the old entries the stale blocklist rule
+        is looking for once there were more than five hundred.
+
+        ``most`` is there so a library with tens of thousands of wanted
+        episodes is not walked in full every ninety minutes.
+        """
+        rows: list[dict] = []
+        page = 1
+        while True:
+            data = self._call("GET", path, params={
+                **params, "page": page, "pageSize": page_size})
+            if not isinstance(data, dict):
+                return rows
+            batch = data.get("records") or []
+            rows += batch
+            try:
+                total = int(data.get("totalRecords") or 0)
+            except (TypeError, ValueError):
+                total = 0
+            if not batch or len(batch) < page_size or len(rows) >= total:
+                return rows
+            if len(rows) >= most:
+                log.info("%s has %d records under %s, read the first %d",
+                         self.name, total, path, len(rows))
+                return rows[:most]
+            page += 1
 
     def reachable(self) -> tuple[bool, str]:
         try:
             status = self._call("GET", "system/status")
         except ArrError as e:
             return False, str(e)
+        if not isinstance(status, dict):
+            return False, (f"{self.name} did not answer like "
+                           f"{self.kind.capitalize()} does")
         if status.get("version"):
             self.observed.version = str(status["version"])[:32]
         name = status.get("appName") or self.kind.capitalize()
@@ -140,23 +186,37 @@ class Arr:
         # includeEpisode is what lets a queue entry be held against the date
         # its content actually aired. Without it a Sonarr entry carries the
         # series and nothing about which episode is in the box.
-        params = {"pageSize": 1000, "includeMovie": "true", "includeSeries": "true",
+        params = {"includeMovie": "true", "includeSeries": "true",
                   "includeEpisode": "true",
                   "includeUnknownMovieItems": "true", "includeUnknownSeriesItems": "true"}
-        return (self._call("GET", "queue", params=params) or {}).get("records", [])
+        return self._once("queue", lambda: self._pages(
+            "queue", params, page_size=1000, most=5000))
 
     def health(self) -> list[dict]:
         return self._call("GET", "health") or []
 
     def profiles(self) -> list[dict]:
-        return self._call("GET", "qualityprofile") or []
+        return self._once("profiles",
+                          lambda: self._call("GET", "qualityprofile") or [])
 
     def custom_formats(self) -> list[dict]:
-        return self._call("GET", "customformat") or []
+        """The custom formats, or none on a service that has no such thing.
+
+        Sonarr 3 has no custom formats at all and answers 404. That used to
+        take the whole per service state down with it, so not one rule ran
+        against a Sonarr 3 — for want of a list that is simply empty there.
+        """
+        def read() -> list[dict]:
+            try:
+                return self._call("GET", "customformat") or []
+            except GoneError:
+                return []
+        return self._once("formats", read)
 
     def items(self) -> list[dict]:
         """All movies or all series, depending on the kind."""
-        return self._call("GET", "movie" if self.kind == "radarr" else "series") or []
+        return self._once("items", lambda: self._call(
+            "GET", "movie" if self.kind == "radarr" else "series") or [])
 
     def import_candidates(self, download_id: str | None = None,
                           folder: str | None = None) -> list[dict]:
@@ -203,24 +263,54 @@ class Arr:
     #: whole movies and ignores both parameters.
     _WANTED_EXTRAS = {"includeSeries": "true", "includeEpisodeFile": "true"}
 
-    def missing(self, page: int = 1, page_size: int = 200) -> list[dict]:
+    #: How much of the wanted lists and the blocklist a pass reads at most.
+    WANTED_MOST = 2000
+    BLOCKLIST_MOST = 5000
+
+    def missing(self) -> list[dict]:
         """Monitored titles without a file."""
-        return (self._call("GET", "wanted/missing", params={
-            "page": page, "pageSize": page_size, "monitored": "true",
-            "sortKey": "movies.sortTitle" if self.kind == "radarr" else "series.sortTitle",
-            **self._WANTED_EXTRAS,
-        }) or {}).get("records", [])
+        try:
+            return self._pages("wanted/missing", {
+                "monitored": "true",
+                "sortKey": ("movies.sortTitle" if self.kind == "radarr"
+                            else "series.sortTitle"),
+                **self._WANTED_EXTRAS,
+            }, page_size=250, most=self.WANTED_MOST)
+        except GoneError:
+            if self.kind != "radarr":
+                raise
+            return [m for m in self._library_without_wanted()
+                    if m.get("monitored") and not m.get("hasFile")
+                    ][: self.WANTED_MOST]
 
-    def below_cutoff(self, page: int = 1, page_size: int = 200) -> list[dict]:
-        return (self._call("GET", "wanted/cutoff", params={
-            "page": page, "pageSize": page_size, "monitored": "true",
-            **self._WANTED_EXTRAS,
-        }) or {}).get("records", [])
+    def below_cutoff(self) -> list[dict]:
+        try:
+            return self._pages("wanted/cutoff", {
+                "monitored": "true", **self._WANTED_EXTRAS,
+            }, page_size=250, most=self.WANTED_MOST)
+        except GoneError:
+            if self.kind != "radarr":
+                raise
+            return [m for m in self._library_without_wanted()
+                    if m.get("monitored")
+                    and (m.get("movieFile") or {}).get("qualityCutoffNotMet")
+                    ][: self.WANTED_MOST]
 
-    def blocklist(self, page_size: int = 500) -> list[dict]:
-        return (self._call("GET", "blocklist", params={
-            "pageSize": page_size, "sortKey": "date",
-            "sortDirection": "descending"}) or {}).get("records", [])
+    def _library_without_wanted(self) -> list[dict]:
+        """Radarr 4 has no wanted lists; both are in its movie list.
+
+        The wanted endpoints arrived with Radarr 5 — checked against the API
+        description Radarr publishes for 4.7. On 4 the two rules that read them
+        found nothing on every deep pass and logged a warning each time. The
+        movie list says the same thing, and a deep pass has usually read it
+        already.
+        """
+        return self.items()
+
+    def blocklist(self) -> list[dict]:
+        return self._pages("blocklist", {
+            "sortKey": "date", "sortDirection": "descending",
+        }, page_size=500, most=self.BLOCKLIST_MOST)
 
     def disk_space(self) -> list[dict]:
         return self._call("GET", "diskspace") or []
@@ -276,6 +366,35 @@ class Arr:
 
     def languages(self) -> list[dict]:
         return self._call("GET", "language") or []
+
+    def quality_definitions(self) -> list[dict]:
+        """Minimum, preferred and maximum size per quality, in MB a minute."""
+        return self._call("GET", "qualitydefinition") or []
+
+    def history_since(self, since: str) -> list[dict]:
+        """Every history entry after an ISO date, unpaged.
+
+        Not filtered by event type on the way in: the numbers behind the types
+        are not the same in both applications, so the caller picks by name.
+        """
+        return self._call("GET", "history/since", params={"date": since}) or []
+
+    def set_quality_profile(self, item_ids: list[int], profile_id: int) -> None:
+        """Put these titles on another profile, and do nothing else.
+
+        The editor moves no files and starts no search. What the new profile
+        wants is fetched the way anything is — when an indexer next offers it.
+        """
+        if not item_ids:
+            return
+        if self.kind == "radarr":
+            self._call("PUT", "movie/editor", json={
+                "movieIds": list(item_ids), "qualityProfileId": profile_id,
+                "moveFiles": False})
+        else:
+            self._call("PUT", "series/editor", json={
+                "seriesIds": list(item_ids), "qualityProfileId": profile_id,
+                "moveFiles": False})
 
     def save_custom_format(self, body: dict,
                            existing_id: int | None = None) -> dict:

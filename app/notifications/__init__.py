@@ -239,9 +239,19 @@ def redact(connection: dict, mask: str) -> dict[str, Any]:
 
 
 def restore_secrets(kind: str, incoming: dict, stored: dict, mask: str) -> dict:
-    """Put back any secret that came in unchanged as the placeholder."""
+    """Put back any secret that came in unchanged as the placeholder.
+
+    Only while the secret would still go where it went before. See
+    ``Channel.DESTINATION``.
+    """
     merged = dict(incoming)
+    stored = stored or {}
+    channel_class = KINDS.get(kind)
+    moved = channel_class is not None and any(
+        str(merged.get(key) or "").strip().rstrip("/")
+        != str(stored.get(key) or "").strip().rstrip("/")
+        for key in channel_class.DESTINATION)
     for key in secret_keys(kind):
         if merged.get(key) == mask:
-            merged[key] = (stored or {}).get(key, "")
+            merged[key] = "" if moved else stored.get(key, "")
     return merged

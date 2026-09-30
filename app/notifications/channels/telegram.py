@@ -11,10 +11,12 @@ HTML is used rather than MarkdownV2 on purpose. MarkdownV2 requires escaping
 sixteen characters, several of which turn up in release names constantly —
 dots, hyphens, brackets, plus signs. One missed escape and Telegram rejects
 the whole message.
+
+The same goes for a message cut short in the wrong place: a limit that falls
+inside ``<b>`` or ``&amp;`` is a message Telegram cannot parse, so a long one
+is shortened by whole lines.
 """
 from __future__ import annotations
-
-import httpx
 
 from ..base import Channel, ChannelError, ConfigField, Report
 
@@ -25,6 +27,11 @@ LIMIT = 4096
 def escape(text: str) -> str:
     """Telegram's HTML mode: only these three have to go."""
     return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def attribute(text: str) -> str:
+    """The same inside an attribute, where a quote would end it."""
+    return escape(text).replace('"', "&quot;")
 
 
 class Telegram(Channel):
@@ -42,20 +49,24 @@ class Telegram(Channel):
 
     # -- helpers ---------------------------------------------------------------
     def _call(self, method: str, payload: dict) -> dict:
+        # The token is part of the address. Every error text below is built
+        # without it, and the transport errors are redacted on the way out.
         url = f"{BASE}/bot{self.value('bot_token')}/{method}"
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.post(url, json=payload)
-        except httpx.RequestError as e:
-            raise ChannelError(f"Telegram is unreachable: {e}") from e
+        response = self._request(url, "Telegram", json=payload)
         try:
             body = response.json()
-        except ValueError as e:
-            raise ChannelError(f"Telegram returned {response.status_code}") from e
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise self._refused(response, "Telegram")
+        if response.status_code == 429:
+            raise self._refused(response, "Telegram")
         if not body.get("ok"):
             # Telegram's own wording is more useful than anything we could add.
-            raise ChannelError(body.get("description")
-                               or f"Telegram returned {response.status_code}")
+            if response.status_code == 404:
+                raise ChannelError("Telegram does not know this bot token")
+            raise ChannelError(str(body.get("description")
+                                   or f"Telegram returned {response.status_code}")[:200])
         return body.get("result") or {}
 
     def describe_bot(self) -> dict:
@@ -101,8 +112,9 @@ class Telegram(Channel):
 
         heading = f"<b>{escape(report.headline())}</b>"
         if report.url:
-            heading = f'<a href="{escape(report.url)}">{heading}</a>'
-        text = self._trim(f"{heading}\n\n{body}".strip(), language=report.language)
+            heading = f'<a href="{attribute(report.url)}">{heading}</a>'
+        lines = f"{heading}\n\n{body}".strip().split("\n")
+        text = self._fit(lines, language=report.language)
 
         payload = {
             "chat_id": self.value("chat_id"),
@@ -111,7 +123,8 @@ class Telegram(Channel):
             "disable_notification": bool(self.value("silent")),
             "link_preview_options": {"is_disabled": True},
         }
-        if self.value("thread_id"):
-            payload["message_thread_id"] = self.value("thread_id")
+        thread = str(self.value("thread_id") or "").strip()
+        if thread:
+            payload["message_thread_id"] = int(thread) if thread.isdigit() else thread
         self._call("sendMessage", payload)
         return True, "sent"

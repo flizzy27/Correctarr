@@ -37,13 +37,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest ruff
+          pip install pytest ruff pip-audit
 
       - name: Lint
         run: ruff check app/ tests/
 
       - name: Tests
         run: pytest -q
+
+      # Every package in the image is pinned, so the pins are exactly what
+      # ships. A known vulnerability in any of them stops the image from being
+      # built until it is raised.
+      - name: Known vulnerabilities in the dependencies
+        run: pip-audit --progress-spinner off --no-deps --disable-pip -r requirements.txt
 
       - name: No credentials in the tree
         run: |

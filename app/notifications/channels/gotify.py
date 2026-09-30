@@ -6,8 +6,6 @@ that is used here instead so the token never lands in a proxy access log.
 """
 from __future__ import annotations
 
-import httpx
-
 from ..base import Channel, ChannelError, ConfigField, Report
 
 PRIORITY = {"info": 2, "warning": 5, "error": 8}
@@ -17,8 +15,11 @@ class Gotify(Channel):
     kind = "gotify"
     LIMIT = 4000
 
+    DESTINATION = ("server",)
+
     FIELDS = (
-        ConfigField("server", "text", placeholder="https://gotify.example.com"),
+        ConfigField("server", "text", placeholder="https://gotify.example.com",
+                    schemes=("http://", "https://")),
         ConfigField("token", "secret", placeholder="A…"),
     )
 
@@ -41,15 +42,10 @@ class Gotify(Channel):
                 "client::notification": {"click": {"url": report.url}},
             }
 
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.post(f"{server}/message", json=payload,
-                                       headers={"X-Gotify-Key": self.value("token")})
-        except httpx.RequestError as e:
-            raise ChannelError(f"Gotify is unreachable: {e}") from e
+        response = self._request(f"{server}/message", "Gotify", json=payload,
+                                 headers={"X-Gotify-Key": self.value("token")})
         if response.status_code < 300:
             return True, "sent"
         if response.status_code in (401, 403):
             raise ChannelError("Gotify refused the application token")
-        raise ChannelError(f"Gotify returned {response.status_code}: "
-                           f"{response.text[:150]}")
+        raise self._refused(response, "Gotify")

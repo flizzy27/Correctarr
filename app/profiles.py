@@ -71,7 +71,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -180,6 +180,44 @@ class Wish:
     #: source now, not a switch beside the resolutions.
     allow_remux: bool = False
 
+    #: Sources for one resolution, where that rung should differ from the
+    #: rest: an old series exists at 720p only as a broadcast capture, and
+    #: letting HDTV in at 1080p as well would take captures where a WEB-DL is
+    #: out. A resolution not named here takes ``sources``.
+    ladder: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    #: A size window per resolution, as ``(resolution, min_gb, max_gb)``. One
+    #: window cannot fit two rungs: 15 GB is generous for a 1080p film and
+    #: refuses nearly every 2160p one.
+    size_limits: tuple[tuple[str, float, float], ...] = ()
+    #: Refuse the other codec rather than only preferring this one.
+    codec_required: bool = False
+    #: Stop upgrading once a file from this source has arrived at the top
+    #: resolution — keep the WEB-DL rather than fetch the film again when the
+    #: Blu-ray comes out. Empty means the top of the ladder.
+    upgrade_until: str = ""
+
+    def sources_at(self, resolution: str) -> tuple[str, ...]:
+        return dict(self.ladder).get(resolution) or self.sources
+
+    def every_source(self) -> tuple[str, ...]:
+        """Every source any rung takes, in preference order."""
+        wanted = set(self.sources)
+        for _resolution, sources in self.ladder:
+            wanted |= set(sources)
+        return tuple(s for s in SOURCES if s in wanted)
+
+    def limits_at(self, resolution: str) -> tuple[float, float]:
+        """The size window one rung ends up with, zero meaning none.
+
+        Its own window and the global one are both written, so both apply.
+        """
+        low, high = self.min_gb, self.max_gb
+        for rung, own_low, own_high in self.size_limits:
+            if rung == resolution:
+                low = max(low, own_low)
+                high = min((x for x in (high, own_high) if x), default=0.0)
+        return low, high
+
     def tidy(self) -> Wish:
         """The same wish with anything nonsensical straightened out."""
         resolutions = tuple(r for r in RESOLUTIONS if r in self.resolutions)
@@ -187,13 +225,29 @@ class Wish:
         sources = tuple(s for s in SOURCES if s in self.sources)
         if self.allow_remux and "remux" not in sources:
             sources = (*sources, "remux")
+        sources = sources or ("webdl", "bluray")
+        resolutions = resolutions or ("1080p",)
+        ladder = tuple(
+            (rung, picked) for rung, picked in (
+                (rung, tuple(s for s in SOURCES if s in dict(self.ladder)[rung]))
+                for rung in resolutions if rung in dict(self.ladder))
+            if picked and picked != sources)
+        size_limits = tuple(
+            (rung, _gb(low), _gb(high))
+            for rung, low, high in self.size_limits
+            if rung in resolutions and (_gb(low) or _gb(high)))
+        # One window per rung; a second one for the same rung was a mistake.
+        size_limits = tuple({rung: (rung, low, high)
+                             for rung, low, high in size_limits}.values())
+        codec = self.codec if self.codec in CODECS else "any"
+        top = dict(ladder).get(resolutions[-1]) or sources
         return Wish(
             name=(self.name or "Correctarr").strip()[:60],
-            resolutions=resolutions or ("1080p",),
-            sources=sources or ("webdl", "bluray"),
+            resolutions=resolutions,
+            sources=sources,
             audio=self.audio if self.audio in AUDIO_TIERS else "gut",
             surround=bool(self.surround),
-            codec=self.codec if self.codec in CODECS else "any",
+            codec=codec,
             languages=languages,
             language_required=bool(self.language_required and languages),
             colour=self.colour if self.colour in RANGES else "sdr",
@@ -206,11 +260,187 @@ class Wish:
             block_hardcoded_subs=bool(self.block_hardcoded_subs),
             block_retagged=bool(self.block_retagged),
             block_collections=bool(self.block_collections),
-            min_gb=max(0.0, min(2000.0, float(self.min_gb or 0))),
-            max_gb=max(0.0, min(2000.0, float(self.max_gb or 0))),
+            min_gb=_gb(self.min_gb),
+            max_gb=_gb(self.max_gb),
             upgrade=bool(self.upgrade),
-            allow_remux="remux" in sources,
+            allow_remux="remux" in sources or any(
+                "remux" in picked for _rung, picked in ladder),
+            ladder=ladder,
+            size_limits=size_limits,
+            codec_required=bool(self.codec_required and codec != "any"),
+            upgrade_until=(self.upgrade_until
+                           if self.upgrade and self.upgrade_until in top
+                           and self.upgrade_until != top[-1] else ""),
         )
+
+
+def _gb(value) -> float:
+    try:
+        return max(0.0, min(2000.0, float(value or 0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def wish_from(data: dict) -> Wish:
+    """A wish from the shape the interface sends and :func:`wish_as_dict` makes.
+
+    The per-rung settings travel as objects keyed by resolution, because that
+    is what a form produces; inside they are tuples so a wish stays a value.
+    """
+    known = set(Wish.__dataclass_fields__)
+    values = {k: v for k, v in data.items() if k in known}
+    for key in ("resolutions", "sources", "languages", "streamers"):
+        if key in values:
+            values[key] = tuple(values[key] or ())
+    values["ladder"] = tuple(
+        (str(rung), tuple(picked or ()))
+        for rung, picked in (data.get("ladder") or {}).items())
+    values["size_limits"] = tuple(
+        (str(rung), _gb((window or {}).get("min_gb")),
+         _gb((window or {}).get("max_gb")))
+        for rung, window in (data.get("size_limits") or {}).items())
+    return Wish(**values)
+
+
+def wish_as_dict(wish: Wish) -> dict:
+    out = asdict(wish)
+    for key in ("resolutions", "sources", "languages", "streamers"):
+        out[key] = list(out[key])
+    out["ladder"] = {rung: list(picked) for rung, picked in wish.ladder}
+    out["size_limits"] = {rung: {"min_gb": low, "max_gb": high}
+                          for rung, low, high in wish.size_limits}
+    return out
+
+
+def ladder_keys(wish: Wish) -> list[str]:
+    """What the profile takes, as ``source-resolution``, worst first.
+
+    The same order the services rank by: resolution first, then where it came
+    from. There is no 720p remux, so none is listed.
+    """
+    wish = wish.tidy()
+    keys = []
+    for rung in wish.resolutions:
+        for source in wish.sources_at(rung):
+            if source == "remux" and rung == "720p":
+                continue
+            keys.append(f"{source}-{rung}")
+    return keys
+
+
+def quality_key(name: str) -> str | None:
+    """``source-resolution`` for one of the services' quality names.
+
+    Radarr says "Remux-1080p" and Sonarr "Bluray-1080p Remux"; both are
+    ``remux-1080p`` here, so sizes and ladders from either can be compared.
+    """
+    lowered = str(name or "").lower()
+    for source, names in SOURCE_NAMES.items():
+        if lowered in (n.lower() for n in names):
+            for rung, rung_names in QUALITY_NAMES.items():
+                if lowered in (n.lower() for n in rung_names):
+                    return f"{source}-{rung}"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Ready answers
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Preset:
+    """A wish somebody has already thought through, and where it belongs.
+
+    Presets carry no language. The language is the one answer that differs
+    from one household to the next, so it is asked for on its own and put in
+    by :func:`preset_wish`.
+    """
+    id: str
+    services: tuple[str, ...]
+    wish: Wish
+    #: How long one episode of this kind runs, for the size example. A film
+    #: is two hours.
+    episode_minutes: int = 45
+
+
+# Series presets carry a lower rung and films do not. Nearly every film is
+# out at 1080p; a series from before streaming often exists at 720p only,
+# and there mostly as a broadcast capture — which is why that rung, and only
+# that one, takes HDTV.
+#
+# Series stop upgrading at the WEB-DL. Measured on one library, a 1080p
+# episode from a streaming service weighs 45 MB a minute and its Blu-ray
+# 70: fetching every season again when the disc comes out costs half as much
+# room once more, for a picture the stream already delivered well.
+#
+# Most films have a size window per rung and the series have none. A size
+# condition is compared with the release, and a series is also fetched as
+# a whole season in one release; a window sized for one episode would
+# refuse every season pack.
+#
+# Anime keeps its subtitles and forgets the group list: "subbed" is how an
+# anime release says it has subtitles at all, and the groups that are
+# trusted there are a different set of names. Fansub releases usually state
+# no source, which the services read as HDTV, so that has to be let in.
+PRESETS: tuple[Preset, ...] = (
+    Preset("film_720p", ("radarr",), Wish(
+        name="720p compact", resolutions=("720p",),
+        sources=("webrip", "webdl", "bluray"), audio="ok", surround=False,
+        size_limits=(("720p", 0.0, 6.0),))),
+    Preset("film_1080p_compact", ("radarr",), Wish(
+        name="1080p space-saving", resolutions=("1080p",),
+        sources=("webrip", "webdl", "bluray"), audio="ok", codec="x265",
+        size_limits=(("1080p", 0.0, 8.0),))),
+    Preset("film_1080p", ("radarr",), Wish(
+        name="1080p balanced", resolutions=("1080p",),
+        sources=("webdl", "bluray"), audio="gut",
+        size_limits=(("1080p", 0.0, 15.0),))),
+    Preset("film_1080p_hq", ("radarr",), Wish(
+        name="1080p high quality", resolutions=("1080p",),
+        sources=("webdl", "bluray"), audio="sehr_gut",
+        size_limits=(("1080p", 0.0, 30.0),))),
+    Preset("film_2160p_hdr", ("radarr",), Wish(
+        name="2160p HDR", resolutions=("1080p", "2160p"),
+        sources=("webdl", "bluray"), audio="sehr_gut", colour="dv",
+        size_limits=(("1080p", 0.0, 20.0), ("2160p", 0.0, 60.0)))),
+    Preset("film_2160p_archive", ("radarr",), Wish(
+        name="2160p archive", resolutions=("1080p", "2160p"),
+        sources=("webdl", "bluray", "remux"), audio="sehr_gut", colour="dv")),
+    Preset("series_720p", ("sonarr",), Wish(
+        name="Series 720p", resolutions=("720p",),
+        sources=("hdtv", "webrip", "webdl"), audio="ok", surround=False)),
+    Preset("series_1080p", ("sonarr",), Wish(
+        name="Series 1080p", resolutions=("720p", "1080p"),
+        sources=("webrip", "webdl", "bluray"), audio="gut",
+        ladder=(("720p", ("hdtv", "webrip", "webdl", "bluray")),),
+        upgrade_until="webdl")),
+    Preset("series_2160p", ("sonarr",), Wish(
+        name="Series 2160p HDR", resolutions=("1080p", "2160p"),
+        sources=("webdl", "bluray"), audio="gut", colour="hdr",
+        upgrade_until="webdl")),
+    Preset("anime_1080p", ("sonarr", "radarr"), Wish(
+        name="Anime 1080p", resolutions=("720p", "1080p"),
+        sources=("hdtv", "webrip", "webdl", "bluray"), audio="nah",
+        surround=False, good_groups=False, block_hardcoded_subs=False),
+        episode_minutes=24),
+)
+
+PRESETS_BY_ID = {preset.id: preset for preset in PRESETS}
+
+
+def preset_wish(preset: Preset, languages: tuple[str, ...] = (),
+                language_required: bool = False) -> Wish:
+    """A preset with the language put in, ready to build.
+
+    The languages go into the name as well. The profile is found again by its
+    name, so the same preset saved for German and for English would otherwise
+    be one profile overwritten by the other.
+    """
+    languages = tuple(code for code in LANGUAGES if code in languages)
+    name = preset.wish.name
+    if languages:
+        name = f"{name} ({'+'.join(code.upper() for code in languages)})"
+    return replace(preset.wish, name=name, languages=languages,
+                   language_required=language_required).tidy()
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +521,9 @@ class Blueprint:
             "cutoff_score": self.cutoff_score,
             "upgrade_step": UPGRADE_STEP,
             "resolutions": list(self.resolutions),
+            "qualities": ladder_keys(self.wish),
             "upgrade": self.wish.upgrade,
+            "upgrade_until": self.wish.upgrade_until,
             "notes": [{"key": key, "params": params} for key, params in self.notes],
         }
 
@@ -481,6 +713,12 @@ def _size(low: float, high: float) -> tuple[str, dict, bool, bool]:
     return ("SizeSpecification", {"min": low, "max": high}, False, False)
 
 
+def _resolution(rung: str) -> tuple[str, dict, bool, bool]:
+    # Both services carry the resolution as its line count: 720, 1080, 2160.
+    return ("ResolutionSpecification", {"value": int(rung.rstrip("p"))},
+            False, False)
+
+
 # ---------------------------------------------------------------------------
 # Building
 # ---------------------------------------------------------------------------
@@ -522,8 +760,7 @@ def build(wish: Wish) -> Blueprint:
     # A preference in the order the sources are listed in, rather than a
     # requirement: the ladder already refuses anything not asked for, and this
     # decides between two releases that are both acceptable.
-    for step, source in enumerate(
-            [s for s in SOURCES if s in wish.sources], start=1):
+    for step, source in enumerate(wish.every_source(), start=1):
         formats.append(Format(
             name=f"Source {source}", score=SOURCE_STEP * step,
             conditions=[_title(SOURCE_PATTERNS[source])],
@@ -621,6 +858,29 @@ def build(wish: Wish) -> Blueprint:
             name=f"Over {_tidy(wish.max_gb)} GB", score=refuse,
             conditions=[_size(wish.max_gb, 2000.0)],
             why="profiles.why.too_large", why_params={"gb": _tidy(wish.max_gb)}))
+    # A window of its own for a rung is a resolution condition and a size
+    # condition in one format. Conditions of different kinds must all match,
+    # so it refuses that size at that resolution and nowhere else.
+    for rung, low, high in wish.size_limits:
+        if low > 0:
+            formats.append(Format(
+                name=f"{rung} under {_tidy(low)} GB", score=refuse,
+                conditions=[_resolution(rung), _size(0.0, low)],
+                why="profiles.why.too_small_at",
+                why_params={"resolution": rung, "gb": _tidy(low)}))
+        if high > 0:
+            formats.append(Format(
+                name=f"{rung} over {_tidy(high)} GB", score=refuse,
+                conditions=[_resolution(rung), _size(high, 2000.0)],
+                why="profiles.why.too_large_at",
+                why_params={"resolution": rung, "gb": _tidy(high)}))
+    if wish.codec_required:
+        # Negated: it matches every name that does *not* state the codec.
+        formats.append(Format(
+            name=f"Not {wish.codec}", score=refuse,
+            conditions=[_title(CODEC_PATTERNS[wish.codec], negate=True)],
+            why="profiles.why.codec_required",
+            why_params={"codec": wish.codec}))
 
     # And the one that matters. "Keep upgrading until the file scores this."
     #
@@ -641,8 +901,11 @@ def build(wish: Wish) -> Blueprint:
                       {"language": wish.languages[0].upper()}))
     if wish.max_gb and wish.min_gb and wish.max_gb <= wish.min_gb:
         notes.append(("profiles.note.size_window", {}))
-    if "2160p" in wish.resolutions and not wish.max_gb:
+    if "2160p" in wish.resolutions and not wish.limits_at("2160p")[1]:
         notes.append(("profiles.note.big_files", {}))
+    if wish.codec_required:
+        notes.append(("profiles.note.codec_required",
+                      {"codec": wish.codec}))
     if wish.codec == "x265" and "2160p" not in wish.resolutions:
         # Widely held, and true: at 1080p the saving is small and a fair number
         # of players and televisions have to transcode it, which looks worse
@@ -709,6 +972,13 @@ def check(blueprint: Blueprint) -> list[tuple[str, dict]]:
     if wish.min_gb and wish.max_gb and wish.min_gb >= wish.max_gb:
         problems.append(("profiles.problem.impossible_size", {
             "min": _tidy(wish.min_gb), "max": _tidy(wish.max_gb)}))
+    # The global window is written as well, so both apply at once: a rung
+    # asking for 5 GB at most under a global floor of 10 GB takes nothing.
+    for rung, _low, _high in wish.size_limits:
+        low, high = wish.limits_at(rung)
+        if low and high and low >= high:
+            problems.append(("profiles.problem.impossible_size_at", {
+                "resolution": rung, "min": _tidy(low), "max": _tidy(high)}))
 
     if wish.language_required and not wish.languages:
         problems.append(("profiles.problem.language_without_one", {}))
@@ -786,8 +1056,9 @@ def custom_format_body(schemas: list[dict], entry: Format) -> dict:
 
 
 def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
-                  allow_remux: bool,
-                  sources: tuple[str, ...] = ()) -> tuple[list[dict], int | None]:
+                  allow_remux: bool, sources: tuple[str, ...] = (),
+                  *, ladder: dict[str, tuple[str, ...]] | None = None,
+                  stop_at: str = "") -> tuple[list[dict], int | None]:
     """The ladder, and the rung to stop at.
 
     Built from the ladder the service itself hands out, with everything the
@@ -797,24 +1068,34 @@ def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
 
     Two things narrow it: the resolutions, and where the picture came from. A
     disc rip and a broadcast capture at 1080p are both "1080p" and are not the
-    same thing, so asking for one without the other has to be possible.
+    same thing, so asking for one without the other has to be possible — and
+    ``ladder`` lets one rung ask for different sources than the rest.
+
+    The rung to stop at is the best one switched on, unless ``stop_at`` names
+    a source: then it is that source at the top resolution.
     """
-    allowed_sources: set[str] = set()
-    if sources:
-        for source in sources:
-            allowed_sources |= {n.lower() for n in SOURCE_NAMES.get(source, ())}
+    def source_names(picked) -> set[str]:
+        out: set[str] = set()
+        for source in picked or ():
+            out |= {n.lower() for n in SOURCE_NAMES.get(source, ())}
+        return out
 
     names: set[str] = set()
     for rung in wanted:
+        allowed_sources = source_names((ladder or {}).get(rung) or sources)
         for name in QUALITY_NAMES.get(rung, ()):
             if not allow_remux and name in REMUX_NAMES:
                 continue
             if allowed_sources and name.lower() not in allowed_sources:
                 continue
             names.add(name.lower())
+    stops = (source_names((stop_at,))
+             & {n.lower() for n in QUALITY_NAMES.get(wanted[-1], ())} & names
+             if stop_at and wanted else set())
 
     items: list[dict] = []
     best_id: int | None = None
+    stop_id: int | None = None
     for raw in schema_items:
         entry = dict(raw)
         nested = entry.get("items") or []
@@ -837,12 +1118,18 @@ def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
                     child["items"] = []
                     items.append(child)
                     if child["allowed"]:
-                        best_id = (child.get("quality") or {}).get("id", best_id)
+                        quality = child.get("quality") or {}
+                        best_id = quality.get("id", best_id)
+                        if str(quality.get("name", "")).lower() in stops:
+                            stop_id = quality.get("id", stop_id)
                 continue
             entry["items"] = children
             entry["allowed"] = all(wanted_here)
             if entry["allowed"]:
                 best_id = entry.get("id", best_id)
+                if any(str((c.get("quality") or {}).get("name", "")).lower()
+                       in stops for c in children):
+                    stop_id = entry.get("id", stop_id)
         else:
             quality = entry.get("quality") or {}
             on = str(quality.get("name", "")).lower() in names
@@ -850,8 +1137,10 @@ def quality_items(schema_items: list[dict], wanted: tuple[str, ...],
             entry["items"] = []
             if on:
                 best_id = quality.get("id", best_id)
+                if str(quality.get("name", "")).lower() in stops:
+                    stop_id = quality.get("id", stop_id)
         items.append(entry)
-    return items, best_id
+    return items, (stop_id if stop_id is not None else best_id)
 
 
 def profile_body(blueprint: Blueprint, items: list[dict], cutoff: int,
@@ -959,7 +1248,9 @@ def apply_to(arr, blueprint: Blueprint) -> dict:
     items, best = quality_items(schema.get("items") or [],
                                 blueprint.resolutions,
                                 blueprint.wish.allow_remux,
-                                blueprint.wish.sources)
+                                blueprint.wish.sources,
+                                ladder=dict(blueprint.wish.ladder),
+                                stop_at=blueprint.wish.upgrade_until)
     if best is None:
         raise ValueError("profiles.problem.no_quality")
 

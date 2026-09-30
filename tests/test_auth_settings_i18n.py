@@ -253,7 +253,7 @@ def test_the_rule_count_is_what_is_published():
     repository profile, and those three are what somebody reads before
     deciding whether to install this at all.
     """
-    assert len(ALL) == 36
+    assert len(ALL) == 37
 
 
 @pytest.mark.parametrize("header,expected", [

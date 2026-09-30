@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as main_module
+from app.api import core, jobs, services
 
 # Named so the credential guard in the workflow does not flag it.
 PASSPHRASE = "a-proper-test-passphrase"
@@ -24,13 +25,13 @@ def client(tmp_path, monkeypatch):
 
     store = Store(tmp_path / "api.db")
     engine = Engine(store)
-    monkeypatch.setattr(main_module, "store", store)
-    monkeypatch.setattr(main_module, "engine", engine)
+    monkeypatch.setattr(core, "store", store)
+    monkeypatch.setattr(core, "engine", engine)
     # No scheduler and no outbound calls during the tests.
-    monkeypatch.setattr(main_module.scheduler, "start", lambda *a, **k: None)
-    monkeypatch.setattr(main_module.scheduler, "shutdown", lambda *a, **k: None)
-    monkeypatch.setattr(main_module.scheduler, "get_jobs", lambda: [])
-    monkeypatch.setattr(main_module, "_schedule", lambda: None)
+    monkeypatch.setattr(jobs.scheduler, "start", lambda *a, **k: None)
+    monkeypatch.setattr(jobs.scheduler, "shutdown", lambda *a, **k: None)
+    monkeypatch.setattr(jobs.scheduler, "get_jobs", lambda: [])
+    monkeypatch.setattr(jobs, "schedule", lambda: None)
     monkeypatch.setattr(engine, "arr_services", lambda: [])
     with TestClient(main_module.app) as test_client:
         yield test_client
@@ -211,7 +212,7 @@ def test_a_missing_path_is_reported_but_still_saved(signed_in):
 # ---------------------------------------------------------------------------
 def test_all_rules_are_listed(signed_in):
     body = signed_in.get("/api/rules").json()
-    assert len(body["rules"]) == 36
+    assert len(body["rules"]) == 37
     assert set(body["categories"]) == {"queue", "import", "library",
                                        "downloader", "indexers", "system"}
 
@@ -310,10 +311,10 @@ def _found(rule="wrong_year", severity="error", title="Heat (1995)",
     if action:
         finding.action = action
         finding.data["_action"] = outcome
-    main_module.store.record(_recordable(finding))
+    core.store.record(_recordable(finding))
     if still_there:
-        main_module.store.is_new(_dedup_key(finding))
-    return main_module.store.findings(limit=1)[0]["id"]
+        core.store.is_new(_dedup_key(finding))
+    return core.store.findings(limit=1)[0]["id"]
 
 
 def _open(client):
@@ -474,7 +475,7 @@ def test_an_unknown_kind_is_refused(signed_in):
 
 
 def test_a_service_key_is_masked_when_listed(signed_in, monkeypatch):
-    monkeypatch.setattr(main_module, "Arr", _OfflineArr)
+    monkeypatch.setattr(services, "Arr", _OfflineArr)
     signed_in.post("/api/services", json={
         "name": "Radarr", "kind": "radarr", "url": "http://radarr:7878",
         "api_key": "the-real-key", "webhook": False})
@@ -485,7 +486,7 @@ def test_a_service_key_is_masked_when_listed(signed_in, monkeypatch):
 class _OfflineArr:
     """Stands in for the real connector so no test touches the network."""
 
-    def __init__(self, kind, url, api_key, timeout=30.0, name=""):
+    def __init__(self, kind, url, api_key, timeout=30.0, name="", verify=True):
         self.kind, self.url, self.api_key, self.name = kind, url, api_key, name
 
     def reachable(self):
@@ -506,13 +507,13 @@ def test_the_webhook_needs_its_token(signed_in):
 
 
 def test_the_webhook_accepts_the_right_token(signed_in):
-    token = main_module.store.get("webhook_token")
+    token = core.store.get("webhook_token")
     response = signed_in.post(f"/api/event?token={token}", json={"eventType": "Test"})
     assert response.status_code == 200
 
 
 def test_a_webhook_with_rubbish_in_it_does_not_crash(signed_in):
-    token = main_module.store.get("webhook_token")
+    token = core.store.get("webhook_token")
     response = signed_in.post(f"/api/event?token={token}", content=b"not json at all")
     assert response.status_code == 200
 
@@ -526,8 +527,8 @@ def test_a_webhook_with_rubbish_in_it_does_not_crash(signed_in):
 def test_a_webhook_event_worth_reacting_to_wakes_the_engine(signed_in, monkeypatch,
                                                             event_type):
     woken = []
-    monkeypatch.setattr(main_module, "_trigger_event", woken.append)
-    token = main_module.store.get("webhook_token")
+    monkeypatch.setattr(jobs, "trigger_event", woken.append)
+    token = core.store.get("webhook_token")
     signed_in.post(f"/api/event?token={token}", json={"eventType": event_type,
                                                       "instanceName": "Radarr"})
     assert woken, f"{event_type} should have woken the engine"
@@ -535,8 +536,8 @@ def test_a_webhook_event_worth_reacting_to_wakes_the_engine(signed_in, monkeypat
 
 def test_an_unknown_webhook_event_is_accepted_and_ignored(signed_in, monkeypatch):
     woken = []
-    monkeypatch.setattr(main_module, "_trigger_event", woken.append)
-    token = main_module.store.get("webhook_token")
+    monkeypatch.setattr(jobs, "trigger_event", woken.append)
+    token = core.store.get("webhook_token")
     response = signed_in.post(f"/api/event?token={token}",
                               json={"eventType": "SomethingNewInAFutureVersion"})
     assert response.status_code == 200
@@ -550,11 +551,11 @@ def test_the_language_bundle_follows_the_browser(client):
     german = client.get("/api/language",
                         headers={"Accept-Language": "de-DE,de;q=0.9"}).json()
     assert german["language"] == "de"
-    assert german["strings"]["nav.overview"] == "Übersicht"
+    assert german["strings"]["nav.todo"] == "Zu erledigen"
 
     english = client.get("/api/language", headers={"Accept-Language": "en-US"}).json()
     assert english["language"] == "en"
-    assert english["strings"]["nav.overview"] == "Overview"
+    assert english["strings"]["nav.todo"] == "To do"
 
 
 def test_an_unsupported_language_falls_back_to_english(client):
@@ -624,7 +625,7 @@ def test_sending_the_mask_back_keeps_the_stored_secret(signed_in):
     masked = signed_in.get("/api/notifications").json()[0]["config"]
     signed_in.post("/api/notifications",
                    json=a_connection(id=new_id, config=masked, name="Renamed"))
-    stored = main_module.store.notification(new_id)
+    stored = core.store.notification(new_id)
     assert stored["config"]["app_token"] == "a" * 30
     assert stored["name"] == "Renamed"
 
@@ -698,13 +699,13 @@ def test_the_proxy_prefix_is_taken_off(monkeypatch, base, incoming, expected):
     """Both proxy shapes have to behave the same. With the prefix left on, the
     health check would land on the sign-in page and the container would be
     reported as unhealthy while working perfectly."""
-    monkeypatch.setattr(main_module, "BASE", base)
+    monkeypatch.setattr(core, "BASE", base)
 
     class FakeRequest:
         class url:
             path = incoming
 
-    assert main_module._route_path(FakeRequest()) == expected
+    assert core._route_path(FakeRequest()) == expected
 
 
 def test_write_access_is_only_demanded_when_something_would_delete(signed_in, tmp_path):

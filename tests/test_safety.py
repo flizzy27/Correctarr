@@ -20,6 +20,7 @@ import pytest
 
 from app import i18n, notifications, policy, rules, safety
 from app import settings as S
+from app.api import core
 from app.arr import GoneError
 from app.engine import Engine
 from app.rules import Finding, Rule
@@ -141,6 +142,37 @@ def test_remove_without_blocklist_and_a_regrab_is_caught_too(engine, monkeypatch
     for _ in range(5):
         engine.run()
     assert len(service.removed) == 1
+
+
+def stuck_check(arr, ctx, cfg):
+    return [finding("stuck_in_queue", entry_id=entry["id"], title="Show S03E16",
+                    release=entry["title"], suggested="blocklist_and_search")
+            for entry in ctx["queue"]]
+
+
+def test_a_replacement_is_caught_when_the_rule_does_what_each_finding_suggests(
+        engine, monkeypatch):
+    """The stuck-download rules are set to "as suggested" out of the box, and
+    their suggestion is often to throw the download out."""
+    service = Regrabbing()
+    use(monkeypatch, Rule("stuck_in_queue", "queue", stuck_check,
+                          actions=("report", "as_suggested", "blocklist_and_search"),
+                          default_action="as_suggested"))
+    monkeypatch.setattr(engine, "arr_services", lambda: [service])
+    for _ in range(8):
+        result = engine.run()
+    assert len(service.removed) == 1
+    assert result["findings"][0]["data"]["_held"] == "policy.regrabbed"
+
+
+def test_a_discard_done_as_suggested_counts_towards_the_discard_limit(guard, store):
+    for number in range(30):
+        guard.note(finding("stuck_in_queue", _subject=f"t{number}",
+                           suggested="blocklist"), "as_suggested")
+    hold = guard.check(finding("stuck_in_queue", _subject="new",
+                               suggested="blocklist"), "as_suggested")
+    assert hold is not None and hold.tripped
+    assert guard.paused()["reason"] == "safety.too_many_discards"
 
 
 def test_a_title_held_for_a_regrab_is_held_for_every_rule(guard, store):
@@ -503,26 +535,26 @@ class QuietEngine:
 
 @pytest.fixture
 def events(monkeypatch):
-    from app import main as main_module
+    from app.api import jobs
     FakeTimer.made = []
-    monkeypatch.setattr(main_module.threading, "Timer", FakeTimer)
-    monkeypatch.setattr(main_module, "_last_event", 0.0)
-    monkeypatch.setattr(main_module, "_event_pending", False)
-    return main_module
+    monkeypatch.setattr(jobs.threading, "Timer", FakeTimer)
+    monkeypatch.setattr(jobs, "_last_event", 0.0)
+    monkeypatch.setattr(jobs, "_event_pending", False)
+    return jobs
 
 
 def test_a_webhook_storm_is_one_pass_now_and_one_after_the_gap(events, monkeypatch):
     """Fifteen grab events two seconds apart, as a search wave sends them."""
     engine = QuietEngine()
-    monkeypatch.setattr(events, "engine", engine)
+    monkeypatch.setattr(core, "engine", engine)
     for _ in range(15):
-        events._trigger_event("Sonarr/grab")
+        events.trigger_event("Sonarr/grab")
     assert len(FakeTimer.made) == 1 and FakeTimer.made[0].wait == 0
     FakeTimer.made[0].fire()
     assert engine.runs == ["Sonarr/grab"]
 
     for _ in range(15):
-        events._trigger_event("Sonarr/grab")
+        events.trigger_event("Sonarr/grab")
     assert len(FakeTimer.made) == 2
     assert 0 < FakeTimer.made[1].wait <= 8
 
@@ -531,11 +563,11 @@ def test_an_event_during_a_running_pass_is_kept_for_one_more(events, monkeypatch
     """The run refuses to start while another is going. The event is not
     lost — and it is not multiplied either."""
     engine = QuietEngine({"skipped": "already running"})
-    monkeypatch.setattr(events, "engine", engine)
-    events._trigger_event("Radarr/grab")
+    monkeypatch.setattr(core, "engine", engine)
+    events.trigger_event("Radarr/grab")
     FakeTimer.made[0].fire()
     for _ in range(5):
-        events._trigger_event("Radarr/grab")
+        events.trigger_event("Radarr/grab")
     assert len(FakeTimer.made) == 2
 
 
@@ -547,14 +579,15 @@ def signed_in(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from app import main as main_module
+    from app.api import jobs
     store = Store(tmp_path / "api.db")
     made = Engine(store)
-    monkeypatch.setattr(main_module, "store", store)
-    monkeypatch.setattr(main_module, "engine", made)
-    monkeypatch.setattr(main_module.scheduler, "start", lambda *a, **k: None)
-    monkeypatch.setattr(main_module.scheduler, "shutdown", lambda *a, **k: None)
-    monkeypatch.setattr(main_module.scheduler, "get_jobs", lambda: [])
-    monkeypatch.setattr(main_module, "_schedule", lambda: None)
+    monkeypatch.setattr(core, "store", store)
+    monkeypatch.setattr(core, "engine", made)
+    monkeypatch.setattr(jobs.scheduler, "start", lambda *a, **k: None)
+    monkeypatch.setattr(jobs.scheduler, "shutdown", lambda *a, **k: None)
+    monkeypatch.setattr(jobs.scheduler, "get_jobs", lambda: [])
+    monkeypatch.setattr(jobs, "schedule", lambda: None)
     monkeypatch.setattr(made, "arr_services", lambda: [])
     with TestClient(main_module.app) as client:
         answer = client.post("/api/auth/setup",

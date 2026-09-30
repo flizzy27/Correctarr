@@ -18,8 +18,11 @@ RUN apt-get update \
 
 RUN python -m venv /venv
 COPY requirements.txt /tmp/requirements.txt
+# The installer is needed to build the venv and never again. Left in, it is
+# the one part of the image with a steady stream of advisories of its own.
 RUN /venv/bin/pip install --upgrade pip setuptools wheel \
- && /venv/bin/pip install -r /tmp/requirements.txt
+ && /venv/bin/pip install -r /tmp/requirements.txt \
+ && /venv/bin/pip uninstall -y setuptools wheel pip
 
 
 FROM python:3.13-slim-trixie
@@ -49,13 +52,15 @@ ENV PATH=/venv/bin:$PATH \
     PUID=99 \
     PGID=100 \
     UMASK=022 \
+    FORWARDED_ALLOW_IPS=* \
     TZ=Etc/UTC
 
 # curl for the health check, tini as a proper init, gosu so the entrypoint can
-# drop privileges.
+# drop privileges. The base image's own pip goes for the same reason as above.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl tini gosu tzdata \
  && rm -rf /var/lib/apt/lists/* \
+ && python -m pip uninstall -y pip \
  && groupadd -g 100 -o correctarr 2>/dev/null || true \
  && useradd -u 99 -g 100 -M -d /config -s /usr/sbin/nologin correctarr 2>/dev/null || true
 

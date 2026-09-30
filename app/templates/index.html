@@ -2,7 +2,7 @@
 <html lang="en" data-theme="midnight" data-density="normal">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="robots" content="noindex, nofollow">
 <title>Correctarr</title>
@@ -17,331 +17,184 @@
     if (density) document.documentElement.dataset.density = density;
   } catch (e) { /* private window: keep the default */ }
 </script>
+<!-- Every module with the version on it. A module's own imports carry no
+     query of their own, and without this a browser that has been here before
+     would load last month's pages into this month's frame. -->
+<script type="importmap">
+{
+  "imports": {
+    "./static/js/api.js": "./static/js/api.js?v=__V__",
+    "./static/js/charts.js": "./static/js/charts.js?v=__V__",
+    "./static/js/findings.js": "./static/js/findings.js?v=__V__",
+    "./static/js/i18n.js": "./static/js/i18n.js?v=__V__",
+    "./static/js/state.js": "./static/js/state.js?v=__V__",
+    "./static/js/ui.js": "./static/js/ui.js?v=__V__",
+    "./static/js/wizard.js": "./static/js/wizard.js?v=__V__",
+    "./static/js/pages/activity.js": "./static/js/pages/activity.js?v=__V__",
+    "./static/js/pages/downloads.js": "./static/js/pages/downloads.js?v=__V__",
+    "./static/js/pages/home.js": "./static/js/pages/home.js?v=__V__",
+    "./static/js/pages/indexers.js": "./static/js/pages/indexers.js?v=__V__",
+    "./static/js/pages/library.js": "./static/js/pages/library.js?v=__V__",
+    "./static/js/pages/profiles.js": "./static/js/pages/profiles.js?v=__V__",
+    "./static/js/pages/rules.js": "./static/js/pages/rules.js?v=__V__",
+    "./static/js/pages/settings.js": "./static/js/pages/settings.js?v=__V__",
+    "./static/js/pages/todo.js": "./static/js/pages/todo.js?v=__V__"
+  }
+}
+</script>
+<script type="module" src="static/app.js?v=__V__"></script>
 </head>
 <body>
+<a class="skip-link" href="#main" data-t="nav.skip"></a>
 
 <div class="shell">
 
   <aside class="sidebar">
     <div class="brand">
-      <img class="brand-mark" src="static/icon.png" alt="" width="32" height="32">
+      <img class="brand-mark" src="static/icon.png" alt="" width="30" height="30">
       <div>
-        <div class="name">Correctarr</div>
-        <div class="version" id="version">…</div>
+        <div class="brand-name">Correctarr</div>
+        <div class="brand-version" id="version">…</div>
       </div>
     </div>
 
-    <nav class="nav">
-      <div class="nav-group" data-t="nav.group_insight"></div>
-      <button class="nav-item active" data-target="overview">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-        <span data-t="nav.overview"></span>
-      </button>
-      <button class="nav-item" data-target="fixed">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        <span data-t="nav.fixed"></span> <span class="nav-count" id="count-fixed"></span>
-      </button>
-      <button class="nav-item" data-target="findings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
-        <span data-t="nav.findings"></span> <span class="nav-count" id="count-findings"></span>
-      </button>
+    <nav class="nav" data-t-aria="nav.menu">
+      <a class="nav-item" href="#home" data-target="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        <span data-t="nav.home"></span></a>
+      <a class="nav-item" href="#todo" data-target="todo">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span data-t="nav.todo"></span><span class="nav-count" data-count-todo hidden></span></a>
+      <a class="nav-item" href="#activity" data-target="activity">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span data-t="nav.activity"></span></a>
+      <a class="nav-item" href="#downloads" data-target="downloads">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        <span data-t="nav.downloads"></span></a>
+      <a class="nav-item" href="#library" data-target="library">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg>
+        <span data-t="nav.library"></span></a>
 
-      <div class="nav-group" data-t="nav.group_operations"></div>
-      <button class="nav-item" data-target="queue">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        <span data-t="nav.queue"></span>
-      </button>
-      <button class="nav-item" data-target="rules">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-        <span data-t="nav.rules"></span> <span class="nav-count" id="count-rules"></span>
-      </button>
-      <button class="nav-item" data-target="profiles">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M2 6.5A2.5 2.5 0 014.5 4h15A2.5 2.5 0 0122 6.5v11a2.5 2.5 0 01-2.5 2.5h-15A2.5 2.5 0 012 17.5z"/><path d="M10 9l5 3-5 3z"/></svg>
-        <span data-t="nav.profiles"></span>
-      </button>
-      <button class="nav-item" data-target="indexers">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-        <span data-t="nav.indexers"></span>
-      </button>
-
-      <div class="nav-group" data-t="nav.group_configuration"></div>
-      <button class="nav-item" data-target="services">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007.5.5l3-3a5 5 0 00-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 00-7.5-.5l-3 3a5 5 0 007 7L12 19"/></svg>
-        <span data-t="nav.services"></span> <span class="nav-count" id="count-services"></span>
-      </button>
-      <button class="nav-item" data-target="notifications">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
-        <span data-t="nav.notifications"></span> <span class="nav-count" id="count-notifications"></span>
-      </button>
-      <button class="nav-item" data-target="settings">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-        <span data-t="nav.settings"></span>
-      </button>
+      <div class="nav-group" data-t="nav.group_setup"></div>
+      <a class="nav-item" href="#profiles" data-target="profiles">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/></svg>
+        <span data-t="nav.profiles"></span></a>
+      <a class="nav-item" href="#rules" data-target="rules">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+        <span data-t="nav.rules"></span></a>
+      <a class="nav-item" href="#indexers" data-target="indexers">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+        <span data-t="nav.indexers"></span></a>
+      <a class="nav-item" href="#settings" data-target="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span data-t="nav.settings"></span></a>
     </nav>
 
     <div class="sidebar-footer">
       <span class="dot" id="heartbeat"></span>
-      <span id="user">…</span>
-      <button class="btn small" id="sign-out" data-t="action.sign_out" hidden></button>
+      <span class="user" id="user">…</span>
+      <button class="btn small ghost" data-sign-out data-t="action.sign_out" hidden></button>
     </div>
   </aside>
 
   <div class="content">
     <header class="topbar">
-      <div>
+      <div class="topbar-title">
         <h1 id="title">Correctarr</h1>
-        <div class="subtitle" id="subtitle">…</div>
+        <p id="subtitle"></p>
       </div>
       <div class="topbar-actions">
-        <span class="badge warning" id="dry-run-badge" data-t="settings.dry_run.label" hidden></span>
-        <button class="btn" id="open-wizard" data-t="wizard.open"></button>
-        <button class="btn" id="check-fast" data-t="action.check_fast"></button>
-        <button class="btn primary" id="check-deep" data-t="action.check_deep"></button>
+        <a class="pill warn" id="dry-run-badge" href="#settings?tab=behaviour" hidden>
+          <span class="pill-dot" aria-hidden="true"></span><span data-t="topbar.dry_run"></span></a>
+        <button class="btn" id="open-wizard" data-t="wizard.open" hidden></button>
+        <details class="menu" id="check-menu">
+          <summary class="btn primary"><span data-t="topbar.check"></span></summary>
+          <div class="menu-list" role="menu">
+            <button type="button" role="menuitem" id="check-fast">
+              <strong data-t="action.check_fast"></strong><span data-t="topbar.check_fast_help"></span></button>
+            <button type="button" role="menuitem" id="check-deep">
+              <strong data-t="action.check_deep"></strong><span data-t="topbar.check_deep_help"></span></button>
+          </div>
+        </details>
       </div>
     </header>
 
-    <!-- Shown on every page while the safety fuse holds automatic actions. -->
-    <div class="safety-banner" id="safety-banner" role="alert" hidden>
-      <div class="safety-text">
+    <!-- On every page while the safety fuse holds automatic actions: a quiet
+         program and a stopped one look exactly alike otherwise. -->
+    <div class="banner bad" id="safety-banner" role="alert" hidden>
+      <div class="banner-text">
         <strong data-t="safety.banner_title"></strong>
         <span id="safety-reason"></span>
-        <span class="hint" data-t="safety.banner_help"></span>
+        <span class="muted" data-t="safety.banner_help"></span>
       </div>
       <button class="btn primary" id="safety-resume" data-t="safety.resume"></button>
     </div>
 
-    <main>
-      <!-- ============================================ overview -->
-      <section id="page-overview" class="page active">
-        <div class="tiles" id="tiles"></div>
-        <div class="card decisions-card" id="decisions-card">
-          <h2><span data-t="overview.decisions_title"></span>
-              <span class="badge warning" id="decisions-total" hidden></span></h2>
-          <p class="hint" data-t="overview.decisions_help"></p>
-          <div id="decisions-list"></div>
-        </div>
-        <div class="card">
-          <h2 data-t="overview.services_title"></h2>
-          <p class="hint" data-t="overview.services_help"></p>
-          <div id="services-list"></div>
-        </div>
-        <div class="card">
-          <h2 data-t="overview.paths_title"></h2>
-          <p class="hint" data-t="overview.paths_help"></p>
-          <div id="paths-list"></div>
-        </div>
-        <div class="card">
-          <h2 data-t="overview.runs_title"></h2>
-          <div class="table-wrap">
-            <table class="table stack" id="runs-table">
-              <thead><tr>
-                <th data-t="label.time"></th>
-                <th data-t="label.trigger"></th>
-                <th data-t="label.extent"></th>
-                <th class="num" data-t="label.duration"></th>
-                <th class="num" data-t="label.found"></th>
-                <th class="num" data-t="label.fixed"></th>
-                <th data-t="label.error"></th>
-              </tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================ fixed -->
-      <section id="page-fixed" class="page">
-        <div class="card">
-          <h2 data-t="fixed_page.title"></h2>
-          <p class="hint" data-t="fixed_page.help"></p>
-          <div class="toolbar">
-            <input type="search" id="fixed-search" class="grow"
-                   data-t-placeholder="label.filter_findings">
-            <button class="btn small" id="fixed-reload" data-t="action.reload"></button>
-          </div>
-          <div id="fixed-list" class="entries"></div>
-        </div>
-      </section>
-
-      <!-- ============================================ findings -->
-      <section id="page-findings" class="page">
-        <div class="card">
-          <div class="card-head">
-            <h2 data-t="findings_page.title"></h2>
-            <div class="segmented" id="findings-views" role="tablist">
-              <button type="button" role="tab" data-view="decide" class="on" aria-selected="true">
-                <span data-t="findings_page.view_decide"></span>
-                <span class="seg-count" id="decide-count" hidden></span>
-              </button>
-              <button type="button" role="tab" data-view="all" aria-selected="false"
-                      data-t="findings_page.view_all"></button>
-            </div>
-          </div>
-          <p class="hint" id="findings-help" data-t="findings_page.decide_help"></p>
-          <div class="toolbar">
-            <select id="findings-rule" class="picker wide"></select>
-            <select id="findings-severity" class="picker"></select>
-            <input type="search" id="findings-search" class="grow"
-                   data-t-placeholder="label.filter">
-            <span class="toggle-field" id="findings-fixed-field" hidden>
-              <span class="toggle"><input type="checkbox" id="findings-fixed-only"><label class="track" for="findings-fixed-only"></label></span>
-              <label for="findings-fixed-only" data-t="label.only_fixed"></label>
-            </span>
-          </div>
-          <div class="bulk" id="findings-bulk" hidden></div>
-          <div id="findings-list" class="entries"></div>
-        </div>
-      </section>
-
-      <!-- ============================================ queue -->
-      <section id="page-queue" class="page">
-        <div class="card">
-          <h2><span data-t="queue_page.title"></span>
-              <span class="muted" data-t="queue_page.subtitle"></span></h2>
-          <p class="hint" data-t="queue_page.help"></p>
-          <div class="toolbar">
-            <input type="search" id="queue-search" class="grow"
-                   data-t-placeholder="label.filter_by_title">
-            <span class="toggle-field">
-              <span class="toggle"><input type="checkbox" id="queue-problems"><label class="track" for="queue-problems"></label></span>
-              <label for="queue-problems" data-t="label.only_problems"></label>
-            </span>
-          </div>
-          <div class="table-wrap">
-            <table class="table stack" id="queue-table">
-              <thead><tr>
-                <th data-t="label.title"></th>
-                <th data-t="label.release"></th>
-                <th class="num">GB</th>
-                <th class="num">%</th>
-                <th data-t="label.state"></th>
-                <th class="num" data-t="label.then"></th>
-                <th class="num" data-t="label.now"></th>
-              </tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================ rules -->
-      <section id="page-rules" class="page">
-        <div class="card">
-          <h2 data-t="rules_page.title"></h2>
-          <p class="hint" data-t="rules_page.help" data-t-html></p>
-          <div class="toolbar">
-            <input type="search" id="rules-search" class="grow"
-                   data-t-placeholder="label.search_rules">
-            <button class="btn small" id="rules-report-only" data-t="action.report_only"></button>
-            <button class="btn small" id="rules-defaults" data-t="action.restore_defaults"></button>
-          </div>
-          <div id="rules-list"></div>
-        </div>
-      </section>
-
-      <!-- ============================================ indexers -->
-      <section id="page-indexers" class="page">
-        <div class="card">
-          <h2><span data-t="indexers_page.title"></span>
-              <span class="muted" data-t="indexers_page.subtitle"></span></h2>
-          <p class="hint" data-t="indexers_page.help" data-t-html></p>
-          <div id="indexers-content"></div>
-        </div>
-      </section>
-
-      <!-- ============================================ profiles -->
-      <section id="page-profiles" class="page">
-        <div class="card">
-          <h2 data-t="profiles_page.title"></h2>
-          <p class="hint" data-t="profiles_page.help"></p>
-          <div id="profile-form"></div>
-        </div>
-        <div class="card">
-          <h2 data-t="profiles_page.preview_title"></h2>
-          <p class="hint" data-t="profiles_page.preview_help"></p>
-          <div id="profile-preview"></div>
-        </div>
-      </section>
-
-      <!-- ============================================ services -->
-      <section id="page-services" class="page">
-        <div class="card">
-          <h2 data-t="services_page.title"></h2>
-          <p class="hint" data-t="services_page.help"></p>
-          <div id="services-editor"></div>
-          <div class="row" style="margin-top:12px">
-            <button class="btn primary" id="add-service" data-t="action.add_service"></button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================ notifications -->
-      <section id="page-notifications" class="page">
-        <div class="card">
-          <h2 data-t="notifications_page.title"></h2>
-          <p class="hint" data-t="notifications_page.help"></p>
-          <div id="notification-list"></div>
-          <div class="row" style="margin-top:12px">
-            <select id="new-channel-kind" class="picker"></select>
-            <button class="btn primary" id="add-notification"
-                    data-t="notifications_page.add"></button>
-          </div>
-        </div>
-      </section>
-
-      <!-- ============================================ settings -->
-      <section id="page-settings" class="page">
-        <div class="toolbar">
-          <span class="toggle-field">
-            <span class="toggle"><input type="checkbox" id="show-advanced"><label class="track" for="show-advanced"></label></span>
-            <label for="show-advanced" data-t="action.show_advanced"></label>
-          </span>
-        </div>
-        <div id="settings-groups"></div>
-        <div class="card">
-          <h2 data-t="label.account"></h2>
-          <div id="account"></div>
-        </div>
-        <div class="card">
-          <h2 data-t="label.maintenance"></h2>
-          <p class="hint" data-t="settings_page.group_maintenance_help"></p>
-          <div id="maintenance"></div>
-        </div>
-      </section>
+    <main id="main" tabindex="-1">
+      <section id="page-home" class="page" hidden></section>
+      <section id="page-todo" class="page" hidden></section>
+      <section id="page-activity" class="page" hidden></section>
+      <section id="page-downloads" class="page" hidden></section>
+      <section id="page-library" class="page" hidden></section>
+      <section id="page-profiles" class="page" hidden></section>
+      <section id="page-rules" class="page" hidden></section>
+      <section id="page-indexers" class="page" hidden></section>
+      <section id="page-settings" class="page" hidden></section>
     </main>
   </div>
 </div>
 
+<!-- On a phone the four places visited most sit under the thumb; the rest
+     are one press away in the sheet. -->
+<nav class="tabbar" data-t-aria="nav.menu">
+  <a class="nav-item" href="#home" data-target="home">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+    <span data-t="nav.home"></span></a>
+  <a class="nav-item" href="#todo" data-target="todo">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    <span data-t="nav.todo"></span><span class="nav-count" data-count-todo hidden></span></a>
+  <a class="nav-item" href="#activity" data-target="activity">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+    <span data-t="nav.activity"></span></a>
+  <a class="nav-item" href="#downloads" data-target="downloads">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+    <span data-t="nav.downloads"></span></a>
+  <button type="button" class="nav-item" id="more-open" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+    <span data-t="nav.more"></span></button>
+</nav>
 
-<div class="backdrop" id="wizard" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
-    <div class="modal-head">
-      <button class="modal-close" id="wizard-close" aria-label="Close">&times;</button>
-      <h2 id="wizard-title"></h2>
-      <p class="lead" id="wizard-lead"></p>
-      <div class="steps" id="wizard-steps"></div>
-    </div>
+<dialog class="sheet" id="more-sheet" data-t-aria="nav.more">
+  <div class="sheet-grip" aria-hidden="true"></div>
+  <a class="nav-item" href="#library" data-target="library"><span data-t="nav.library"></span></a>
+  <a class="nav-item" href="#profiles" data-target="profiles"><span data-t="nav.profiles"></span></a>
+  <a class="nav-item" href="#rules" data-target="rules"><span data-t="nav.rules"></span></a>
+  <a class="nav-item" href="#indexers" data-target="indexers"><span data-t="nav.indexers"></span></a>
+  <a class="nav-item" href="#settings" data-target="settings"><span data-t="nav.settings"></span></a>
+  <button class="btn ghost" data-sign-out data-t="action.sign_out" hidden></button>
+</dialog>
+
+<dialog class="modal wide wizard" id="wizard" aria-labelledby="wizard-title">
+  <div class="modal-inner">
+    <header class="modal-head">
+      <div>
+        <h2 id="wizard-title"></h2>
+        <p class="muted" id="wizard-lead"></p>
+      </div>
+      <button type="button" class="btn icon ghost" id="wizard-close" data-t-aria="action.close">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </header>
+    <ol class="steps" id="wizard-steps"></ol>
     <div class="modal-body" id="wizard-body"></div>
-    <div class="modal-foot">
-      <button class="btn" id="wizard-back" data-t="wizard.back"></button>
-      <span style="flex:1"></span>
-      <button class="btn" id="wizard-skip" data-t="wizard.skip"></button>
-      <button class="btn primary" id="wizard-next"></button>
-    </div>
+    <footer class="modal-foot">
+      <button type="button" class="btn ghost" id="wizard-back" data-t="wizard.back"></button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="wizard-skip" data-t="wizard.skip"></button>
+      <button type="button" class="btn primary" id="wizard-next"></button>
+    </footer>
   </div>
-</div>
+</dialog>
 
 <div id="toasts" aria-live="polite"></div>
-<script src="static/app.js?v=__V__"></script>
 </body>
 </html>

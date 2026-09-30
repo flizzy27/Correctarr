@@ -7,20 +7,38 @@ about the provider.
 
 The same structure is what makes routing possible. A report is assembled once,
 as data, and every channel renders it in whatever shape its provider wants —
-HTML for Pushover, an embed for Discord, MarkdownV2 for Telegram, plain text
-for ntfy. Formatting in the channel rather than in the caller is the only way
-to get that right; a single pre-rendered string always ends up wrong somewhere.
+HTML for Pushover and Telegram, an embed for Discord, plain text for ntfy.
+Formatting in the channel rather than in the caller is the only way to get that
+right; a single pre-rendered string always ends up wrong somewhere.
+
+Sending is shared as well. A provider that says "too many requests" and how
+long to wait is waited for once, if the wait is short; a connection that could
+not be opened is tried once more, because nothing was sent. Nothing else is
+repeated: a message that may have arrived is not sent a second time.
 """
 from __future__ import annotations
 
 import logging
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+import httpx
+
+from .. import connection
 from ..i18n import t
+from ..logging_setup import redact
 
 log = logging.getLogger(__name__)
+
+#: Per request. A provider that has not answered by then is not going to.
+TIMEOUT = 20.0
+
+#: The longest "retry after" that is waited out. Discord and Telegram usually
+#: ask for a second or two; anything longer means the limit is not a burst,
+#: and the run should not stand still for it.
+MOST_WAIT = 10.0
 
 # Order matters: a threshold of "warning" means warning and error.
 SEVERITIES = ("info", "warning", "error")
@@ -52,6 +70,9 @@ class ConfigField:
     default: Any = ""
     choices: tuple[str, ...] = ()
     placeholder: str = ""
+    #: For an address: the schemes it may start with. Checked when the
+    #: connection is saved, not only when the first message fails.
+    schemes: tuple[str, ...] = ()
 
     def validate(self, value: Any) -> Any:
         if self.kind == "switch":
@@ -68,6 +89,9 @@ class ConfigField:
             raise ValueError(f"error.not_a_choice|{self.key}|{', '.join(self.choices)}")
         if len(text) > 2000:
             raise ValueError(f"error.too_long|{self.key}")
+        if self.schemes and text and not text.lower().startswith(self.schemes):
+            raise ValueError("error.url_scheme_https" if self.schemes == ("https://",)
+                             else "error.url_scheme")
         return text
 
 
@@ -171,6 +195,11 @@ class Channel:
 
     kind: ClassVar[str] = ""
     FIELDS: ClassVar[tuple[ConfigField, ...]] = ()
+    #: The fields that decide where the secrets are sent. A stored secret is
+    #: only put back behind the placeholder while these stay the same —
+    #: otherwise changing the server of a saved connection and pressing "test"
+    #: would hand its token to whatever server had been typed in.
+    DESTINATION: ClassVar[tuple[str, ...]] = ()
     #: Some providers cap the message length hard and simply reject anything
     #: longer, so trimming has to happen before sending rather than after.
     LIMIT: ClassVar[int] = 4000
@@ -248,5 +277,110 @@ class Channel:
                 break
         return cut + suffix
 
+    def _fit(self, lines: list[str], limit: int | None = None,
+             language: str = "en",
+             measure: Callable[[str], int] = len) -> str:
+        """Join whole lines up to the limit, then say that some were left out.
+
+        For a body with markup :meth:`_trim` is wrong: it cuts wherever the
+        limit falls, and a cut through ``<b>`` or ``&amp;`` is a message
+        Telegram refuses outright. Every line here carries its own markup, so
+        stopping between two lines always leaves something well formed.
+        """
+        cap = limit or self.LIMIT
+        text = "\n".join(lines)
+        if measure(text) <= cap:
+            return text
+        suffix = t("notify.truncated", language)
+        kept: list[str] = []
+        for line in lines:
+            if measure("\n".join([*kept, line, suffix])) > cap:
+                break
+            kept.append(line)
+        return "\n".join([*kept, suffix])
+
     def _test_body(self, language: str) -> str:
         return t("notify.test_body", language)
+
+    def _request(self, url: str, provider: str, *, method: str = "POST",
+                 **kwargs) -> httpx.Response:
+        """Send once, and a second time only where that cannot double up."""
+        for attempt in (1, 2):
+            try:
+                with httpx.Client(timeout=TIMEOUT, follow_redirects=False) as client:
+                    response = client.request(method, url, **kwargs)
+            except httpx.ConnectError as e:
+                if attempt == 1:
+                    continue
+                raise ChannelError(connection.unreachable(provider, e)) from e
+            except httpx.TimeoutException as e:
+                raise ChannelError(f"{provider} did not answer within "
+                                   f"{TIMEOUT:.0f}s") from e
+            except httpx.RequestError as e:
+                raise ChannelError(connection.unreachable(provider, e)) from e
+            except httpx.InvalidURL as e:
+                raise ChannelError(f"The address for {provider} is not valid: "
+                                   f"{connection.describe(e)}") from e
+            if response.status_code == 429 and attempt == 1:
+                wait = retry_after(response)
+                if wait is not None and wait <= MOST_WAIT:
+                    log.info("%s asks to wait %.1fs, waiting", provider, wait)
+                    connection.sleep(wait)
+                    continue
+            return response
+        raise ChannelError(f"{provider} could not be reached")    # not reached
+
+    def _refused(self, response: httpx.Response, provider: str) -> ChannelError:
+        """The error for an answer that was not a success, in plain words."""
+        if response.status_code == 429:
+            wait = retry_after(response)
+            later = f" — try again in {wait:.0f}s" if wait else ""
+            return ChannelError(f"{provider} is limiting how often it may be "
+                                f"sent to{later}")
+        detail = explain(response)
+        return ChannelError(f"{provider} returned {response.status_code}"
+                            + (f": {detail}" if detail else ""))
+
+
+def retry_after(response: httpx.Response) -> float | None:
+    """How long a provider asked to wait, from the header or the body.
+
+    Discord sends it in both, Telegram only in the body, under ``parameters``.
+    """
+    candidates: list[Any] = [response.headers.get("retry-after")]
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        candidates.append(body.get("retry_after"))
+        candidates.append((body.get("parameters") or {}).get("retry_after"))
+    for value in candidates:
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds >= 0:
+            return seconds
+    return None
+
+
+def explain(response: httpx.Response) -> str:
+    """What the provider said went wrong, in its own words where it has any.
+
+    Every one of them has a field for it and they all call it something
+    different. Shown to whoever pressed "test", so it is worth finding.
+    """
+    try:
+        body = response.json()
+    except ValueError:
+        return connection.short_text(response, 150)
+    if isinstance(body, dict):
+        errors = body.get("errors")
+        if isinstance(errors, list) and errors:
+            return redact("; ".join(str(e) for e in errors))[:150]
+        for key in ("description", "message", "error"):
+            value = body.get(key)
+            if isinstance(value, str) and value:
+                return redact(value)[:150]
+    return connection.short_text(response, 150)

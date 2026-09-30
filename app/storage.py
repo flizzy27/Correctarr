@@ -35,7 +35,12 @@ log = logging.getLogger(__name__)
 
 _lock = threading.RLock()
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
+
+#: How long every action and every pause is kept. The safety guards look back a
+#: week at most; the insights look back this far, and cannot say more than is
+#: kept.
+ACTIONS_KEPT_DAYS = 90
 
 
 def _now() -> str:
@@ -176,12 +181,31 @@ CREATE INDEX IF NOT EXISTS idx_actions_subject ON actions(subject, at);
 CREATE INDEX IF NOT EXISTS idx_actions_at      ON actions(at);
 """
 
+# Version 6: what came of each action, and every time the safety fuse tripped.
+# The actions table only knew that something was attempted — enough for the
+# fuse, not for saying afterwards how much of it worked or how much space it
+# gave back. The fuse kept nothing but its current state, so a pause that
+# somebody resumed at breakfast had left no trace by lunch.
+_M6 = """
+CREATE TABLE IF NOT EXISTS pauses (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    at      TEXT NOT NULL,
+    reason  TEXT NOT NULL,
+    params  TEXT NOT NULL DEFAULT '{}',
+    resumed TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pauses_at ON pauses(at);
+ALTER TABLE actions ADD COLUMN state TEXT NOT NULL DEFAULT '';
+ALTER TABLE actions ADD COLUMN freed_mb REAL NOT NULL DEFAULT 0;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _M1),
     (2, _M2),
     (3, _M3),
     (4, _M4),
     (5, _M5),
+    (6, _M6),
 ]
 
 # Column mapping used when adopting a store written by a pre-release build.
@@ -274,12 +298,20 @@ class Store:
         for number, sql in pending:
             log.info("Upgrading database to schema version %d", number)
             with closing(sqlite3.connect(self.path, timeout=30)) as c:
-                try:
-                    c.executescript(sql)
-                except sqlite3.OperationalError as e:
-                    if "duplicate column name" not in str(e).lower():
-                        raise
-                    log.info("Schema version %d was already partly present: %s", number, e)
+                # One statement at a time. A script stops at its first error, so
+                # a migration that had added one of two columns before it was
+                # interrupted would skip the second for good once the first
+                # was reported as already there.
+                for statement in (s.strip() for s in sql.split(";")):
+                    if not statement:
+                        continue
+                    try:
+                        c.execute(statement)
+                    except sqlite3.OperationalError as e:
+                        if "duplicate column name" not in str(e).lower():
+                            raise
+                        log.info("Schema version %d was already partly present: %s",
+                                 number, e)
                 c.execute(f"PRAGMA user_version={number}")
                 c.commit()
         log.info("Database is at schema version %d", self.version())
@@ -706,14 +738,20 @@ class Store:
 
     # -- actions taken, for the safety guards ----------------------------------
     def note_act(self, subject: str, rule: str, action: str, identity: str = "",
-                 by_hand: bool = False, at: datetime | None = None) -> None:
-        """Write down one action that was attempted."""
+                 by_hand: bool = False, at: datetime | None = None,
+                 state: str = "", freed_mb: float = 0.0) -> None:
+        """Write down one action that was attempted.
+
+        ``state`` is what came of it — "done" or "failed" — and ``freed_mb``
+        what it gave back on disk. Neither is read by the safety guards, which
+        count attempts; both are what the insights are made of.
+        """
         moment = (at or datetime.now(UTC)).isoformat()
         with _lock, self._conn() as c:
-            c.execute("INSERT INTO actions(at,subject,rule,action,identity,by_hand) "
-                      "VALUES(?,?,?,?,?,?)",
+            c.execute("INSERT INTO actions(at,subject,rule,action,identity,by_hand,"
+                      "state,freed_mb) VALUES(?,?,?,?,?,?,?,?)",
                       (moment, subject, rule, action, identity or "",
-                       1 if by_hand else 0))
+                       1 if by_hand else 0, state or "", float(freed_mb or 0)))
 
     def acts_on(self, subject: str, since: datetime) -> list[dict]:
         """Everything done to one subject since then, automatic or not."""
@@ -743,10 +781,46 @@ class Store:
         with _lock, self._conn() as c:
             return int(c.execute(sql, params).fetchone()[0])
 
-    def prune_acts(self, days: int = 30) -> None:
+    def prune_acts(self, days: int = ACTIONS_KEPT_DAYS) -> None:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         with _lock, self._conn() as c:
             c.execute("DELETE FROM actions WHERE at < ?", (cutoff,))
+            c.execute("DELETE FROM pauses WHERE at < ?", (cutoff,))
+
+    def acts_since(self, since: datetime) -> list[dict]:
+        """Every action since then, oldest first, loops left out."""
+        with _lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM actions WHERE at>=? AND action<>'loop' "
+                             "ORDER BY at", (since.isoformat(),)).fetchall()
+        return [dict(r) for r in rows]
+
+    # -- the safety fuse, over time ---------------------------------------------
+    def note_pause(self, reason: str, params: dict | None = None) -> None:
+        with _lock, self._conn() as c:
+            c.execute("INSERT INTO pauses(at,reason,params) VALUES(?,?,?)",
+                      (_now(), reason,
+                       json.dumps(params or {}, ensure_ascii=False, default=str)))
+
+    def note_resume(self) -> None:
+        """Close every pause that is still open. There is only ever one."""
+        with _lock, self._conn() as c:
+            c.execute("UPDATE pauses SET resumed=? WHERE resumed IS NULL", (_now(),))
+
+    def pauses(self, since: datetime) -> list[dict]:
+        """Every pause that began, or was still going, since then."""
+        with _lock, self._conn() as c:
+            rows = c.execute("SELECT * FROM pauses WHERE at>=? OR resumed IS NULL "
+                             "OR resumed>=? ORDER BY at",
+                             (since.isoformat(), since.isoformat())).fetchall()
+        out = []
+        for row in rows:
+            entry = dict(row)
+            try:
+                entry["params"] = json.loads(entry.get("params") or "{}")
+            except json.JSONDecodeError:
+                entry["params"] = {}
+            out.append(entry)
+        return out
 
     # -- services --------------------------------------------------------------
     def services(self, enabled_only: bool = False) -> list[dict]:
@@ -819,6 +893,12 @@ class Store:
         with _lock, self._conn() as c:
             return {r["key"] for r in c.execute(
                 "SELECT key FROM seen WHERE last_seen >= ?", (since,)).fetchall()}
+
+    def last_seen(self) -> dict[str, str]:
+        """When each remembered finding was last come across by a pass."""
+        with _lock, self._conn() as c:
+            return {r["key"]: r["last_seen"] for r in c.execute(
+                "SELECT key, last_seen FROM seen").fetchall()}
 
     # -- dismissed findings ----------------------------------------------------
     def dismiss(self, key: str, seen_key: str = "", rule: str = "") -> None:

@@ -39,6 +39,24 @@ not exist.
 know about does not produce a polite refusal — it produces a server error with
 a stack trace, and a line in its log. What is available per application is
 written down here instead.
+
+What each version has
+---------------------
+Every endpoint and parameter in use was checked against the API description
+Radarr (4.7, 5.28, 6.4), Sonarr (4.0) and Prowlarr (1.37, 2.6) publish for
+each version, against the Sonarr 3.0.10 source, which publishes none, and
+against SABnzbd's API module for 3.7, 4.5 and the development branch. Three
+gaps turned up, and each is handled where the call is made:
+
+* Radarr 4 has no ``wanted/missing`` and no ``wanted/cutoff``. Both are read
+  from the movie list there (``Arr.missing``, ``Arr.below_cutoff``).
+* Sonarr 3 has no custom formats; ``customformat`` answers 404 and is read as
+  an empty list (``Arr.custom_formats``).
+* Sonarr 3 does not know ``skipRedownload`` and searches again after every
+  blocklisting. Unknown query parameters are ignored, so nothing fails; it
+  just cannot be prevented there.
+
+Radarr 5 and 6 describe the same API. Prowlarr 1 and 2 do as well.
 """
 from __future__ import annotations
 

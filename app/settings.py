@@ -63,6 +63,8 @@ class Field:
     choices: tuple[str, ...] = ()
     advanced: bool = False
     reschedules: bool = False   # changing it rebuilds the schedule
+    #: For an address: the schemes it may start with.
+    schemes: tuple[str, ...] = ()
 
     def validate(self, value: Any) -> Any:
         """Coerce and check. Raises ValueError carrying a translation key."""
@@ -104,6 +106,8 @@ class Field:
                 raise ValueError(f"error.not_absolute|{self.key}")
             if len(text) > 2000:
                 raise ValueError(f"error.too_long|{self.key}")
+            if self.schemes and text and not text.lower().startswith(self.schemes):
+                raise ValueError(f"error.url_scheme|{self.key}")
             return text
 
         raise ValueError(f"error.unknown_field_kind|{self.kind}")
@@ -218,6 +222,15 @@ FIELDS: tuple[Field, ...] = (
     # channel or the same finding arrives on one and not the other.
     Field("recheck_hours", "number", "notifications", 12,
           minimum=1, maximum=720, unit="unit.hours"),
+    # A summary of the day or the week, on top of the reports at the end of a
+    # pass. Off by default: it is one more message, and nobody asked for it.
+    Field("digest", "choice", "notifications", "off",
+          choices=("off", "daily", "weekly"), reschedules=True),
+    Field("digest_day", "choice", "notifications", "monday",
+          choices=("monday", "tuesday", "wednesday", "thursday", "friday",
+                   "saturday", "sunday"), reschedules=True),
+    Field("digest_hour", "number", "notifications", 8,
+          minimum=0, maximum=23, unit="unit.oclock", reschedules=True),
 
     # -- appearance ---------------------------------------------------------
     Field("language", "choice", "appearance", "auto",
@@ -226,7 +239,10 @@ FIELDS: tuple[Field, ...] = (
           choices=tuple(THEMES)),
     Field("density", "choice", "appearance", "normal",
           choices=("spacious", "normal", "compact")),
-    Field("public_url", "text", "appearance", ""),
+    # It becomes the webhook address the services call and the link in every
+    # notification, so anything but a web address is refused on the way in.
+    Field("public_url", "text", "appearance", "",
+          schemes=("http://", "https://")),
 
     # -- maintenance --------------------------------------------------------
     Field("log_keep", "number", "maintenance", 20000,

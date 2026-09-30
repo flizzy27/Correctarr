@@ -4,13 +4,12 @@ Two things that cost time the first time round:
 
   * Without ``html=1`` the ``<b>`` marks show up literally in the message.
   * The body is capped at 1024 characters and anything longer is refused
-    outright rather than truncated, so the trimming has to happen here.
+    outright rather than truncated, so the trimming has to happen here — by
+    whole lines, so it never ends inside a mark.
 """
 from __future__ import annotations
 
-import httpx
-
-from ..base import Channel, ChannelError, ConfigField, Report
+from ..base import Channel, ConfigField, Report
 
 ENDPOINT = "https://api.pushover.net/1/messages.json"
 
@@ -39,11 +38,11 @@ class Pushover(Channel):
         if report.is_test:
             body = escape(self._test_body(report.language))
         else:
-            body = "\n".join(
-                escape(line) if not line.startswith(("⚠️", "❗", "ℹ️"))
-                else _bold_heading(line)
-                for line in report.lines(per_group=4))
-        body = self._trim(body.strip(), language=report.language)
+            lines = [escape(line) if not line.startswith(("⚠️", "❗", "ℹ️"))
+                     else _bold_heading(line)
+                     for line in report.lines(per_group=4)]
+            body = self._fit("\n".join(lines).strip().split("\n"),
+                             language=report.language)
 
         payload = {
             "token": self.value("app_token"),
@@ -57,18 +56,15 @@ class Pushover(Channel):
         if self.value("devices"):
             payload["device"] = self.value("devices")
         if report.url:
-            payload["url"] = report.url
+            payload["url"] = report.url[:512]
             payload["url_title"] = "Correctarr"
 
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.post(ENDPOINT, data=payload)
-        except httpx.RequestError as e:
-            raise ChannelError(f"Pushover is unreachable: {e}") from e
+        response = self._request(ENDPOINT, "Pushover", data=payload)
         if response.status_code == 200:
             return True, "sent"
-        raise ChannelError(f"Pushover returned {response.status_code}: "
-                           f"{response.text[:150]}")
+        # Pushover names what is wrong — "application token is invalid",
+        # "user identifier is not a valid user" — under "errors".
+        raise self._refused(response, "Pushover")
 
 
 def _bold_heading(line: str) -> str:

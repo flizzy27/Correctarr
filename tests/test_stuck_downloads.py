@@ -382,7 +382,7 @@ def test_the_button_offers_the_suggestion_itself():
 
 
 def test_the_interface_gets_no_button_where_nothing_would_help():
-    from app.main import _offers
+    from app.api.findings import _offers
     rule = BY_NAME["stuck_in_queue"]
     assert _offers(rule, {"suggested": policy.REPORT}) == []
     offers = _offers(rule, {"suggested": "import"})
@@ -486,6 +486,32 @@ def test_an_encrypted_job_a_service_tracks_is_blocklisted_through_that_service()
         ("dl_encrypted", "blocklist_and_search")
     assert found.data["certain"] is True
     assert (found.service, found.entry_id, found.data["_instance"]) == ("sonarr", 55, 2)
+
+
+def test_a_tracked_job_is_found_again_by_its_download_once_its_queue_id_changed(tmp_path):
+    """Radarr 6 hands out a new queue id for the same entry over time. A
+    button pressed an hour later has to find the entry by its download, the
+    way the queue rules' findings are found — not remove a stale id and be
+    told the entry is gone while it is still sitting there."""
+    queued = {"id": 55, "downloadId": "SABnzbd_nzo_abc", "_kind": "radarr",
+              "_instance": 1, "movie": {"id": 7}}
+    [found] = sab(client(slots=[job(labels=["ENCRYPTED"])]), queues=[queued])
+
+    class Later(FakeArr):
+        def __init__(self):
+            super().__init__()
+            self.removed = []
+
+        def queue(self):
+            return [{"id": 9055, "downloadId": "SABnzbd_nzo_abc", "movieId": 7}]
+
+        def remove_from_queue(self, entry_id, blocklist=True, search_again=True):
+            self.removed.append(entry_id)
+
+    arr = Later()
+    Engine(Store(tmp_path / "e.db"))._perform(
+        "blocklist_and_search", arr, found, {"dry_run": False})
+    assert arr.removed == [9055]
 
 
 def test_an_encrypted_job_nobody_tracks_is_only_reported():

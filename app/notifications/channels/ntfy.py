@@ -3,10 +3,12 @@
 Self-hosted or ntfy.sh. Sent as JSON to the server root rather than as headers
 to the topic URL: the header form needs every value to be Latin-1, and release
 names are full of characters that are not.
+
+The message limit is 4096 **bytes**, not characters. A longer message is not
+refused — it arrives as an attachment called ``attachment.txt``, which is worse
+— and with umlauts and symbols a report of 4000 characters is well over it.
 """
 from __future__ import annotations
-
-import httpx
 
 from ..base import Channel, ChannelError, ConfigField, Report
 
@@ -15,13 +17,18 @@ TAGS = {"info": ["information_source"], "warning": ["warning"],
         "error": ["rotating_light"]}
 
 
+def _bytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
 class Ntfy(Channel):
     kind = "ntfy"
-    LIMIT = 4000
+    LIMIT = 4096
+    DESTINATION = ("server",)
 
     FIELDS = (
         ConfigField("server", "text", default="https://ntfy.sh",
-                    placeholder="https://ntfy.sh"),
+                    placeholder="https://ntfy.sh", schemes=("http://", "https://")),
         ConfigField("topic", "text", placeholder="correctarr-a1b2c3"),
         ConfigField("token", "secret", required=False,
                     placeholder="tk_… for a protected topic"),
@@ -39,7 +46,8 @@ class Ntfy(Channel):
         payload = {
             "topic": self.value("topic"),
             "title": report.headline()[:200],
-            "message": self._trim(body.strip() or "—", language=report.language),
+            "message": self._fit((body.strip() or "—").split("\n"),
+                                 language=report.language, measure=_bytes),
             "priority": PRIORITY.get(report.severity, 3),
             "tags": TAGS.get(report.severity, []),
         }
@@ -53,14 +61,10 @@ class Ntfy(Channel):
         if not headers and self.value("username"):
             auth = (self.value("username"), self.value("password"))
 
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.post(server, json=payload, headers=headers, auth=auth)
-        except httpx.RequestError as e:
-            raise ChannelError(f"ntfy is unreachable: {e}") from e
+        response = self._request(server, "ntfy", json=payload, headers=headers,
+                                 auth=auth)
         if response.status_code < 300:
             return True, "sent"
         if response.status_code in (401, 403):
             raise ChannelError("ntfy refused the credentials for this topic")
-        raise ChannelError(f"ntfy returned {response.status_code}: "
-                           f"{response.text[:150]}")
+        raise self._refused(response, "ntfy")

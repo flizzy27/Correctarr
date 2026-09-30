@@ -1,6 +1,6 @@
 [project]
 name = "correctarr"
-description = "Findet und behebt Fehler in Radarr, Sonarr, SABnzbd und Prowlarr"
+description = "Finds and fixes problems in Radarr, Sonarr, SABnzbd and Prowlarr"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 
@@ -12,15 +12,15 @@ exclude = [".venv", ".lokal", "__pycache__"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 ignore = [
-  # Die Oberfläche und die Regeln leben von langen Erklärungstexten in
-  # Zeichenketten. Die umzubrechen macht sie schlechter lesbar, nicht besser.
+  # The interface and the rules live on long explanations in strings.
+  # Wrapping them makes them harder to read, not easier.
   "E501",
-  # Lambdas als Kurzschreibweise für Abfragen sind hier Absicht.
+  # Lambdas as shorthand for lookups are intended here.
   "E731",
-  # Ein weitgefasstes except ist in den Regeln gewollt: eine einzelne Regel darf
-  # nie den ganzen Durchlauf abbrechen.
+  # A broad except is wanted in the rules: a single rule must never take the
+  # whole pass down.
   "B904",
-  # Depends(...) im Standardwert ist die vorgesehene Schreibweise von FastAPI.
+  # Depends(...) as a default value is how FastAPI is meant to be used.
   "B008",
 ]
 

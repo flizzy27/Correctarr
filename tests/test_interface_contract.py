@@ -21,14 +21,21 @@ from app.rules import ALL, CATEGORIES
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
-JS = (APP / "static" / "app.js").read_text(encoding="utf-8")
-MAIN = (APP / "main.py").read_text(encoding="utf-8")
+STATIC = APP / "static"
+#: The entry point and every module it loads. Read as one text: a key or a
+#: route is checked wherever in the interface it is used.
+MODULES = [STATIC / "app.js", *sorted((STATIC / "js").rglob("*.js"))]
+JS = "\n".join(path.read_text(encoding="utf-8") for path in MODULES)
+ENTRY = (STATIC / "app.js").read_text(encoding="utf-8")
+#: Every module that defines a route: the entry point and the routers.
+SERVER = (APP / "main.py", *sorted((APP / "api").glob("*.py")))
+MAIN = "\n".join(path.read_text(encoding="utf-8") for path in SERVER)
 ENGLISH = set(i18n.bundle("en"))
 
-# Every view the sidebar can reach. Listing one here is what makes the tests
-# below demand a page, a nav button, a loader and a pair of translations for it.
-VIEWS = ("overview", "fixed", "findings", "queue", "rules", "profiles",
-         "indexers", "services", "notifications", "settings")
+# Every view the navigation can reach. Listing one here is what makes the
+# tests below demand a page, a nav link, a loader and a pair of translations.
+VIEWS = ("home", "todo", "activity", "downloads", "library", "profiles",
+         "rules", "indexers", "settings")
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +100,39 @@ def _expected_runtime_keys() -> set[str]:
                    "nothing_safe", "suggests_otherwise",
                    "dry_run_on", "last_try_failed", "not_yet"):
         keys.add(f"policy.{reason}")
+    # The interface composes these from what the server sends: the tabs of
+    # the settings page, the filters of the log, the parts of an indexer's
+    # rating, the sections of a restore and the verdicts on room.
+    for tab in ("services", "notifications", "behaviour", "paths", "appearance", "system"):
+        keys.add(f"settings_page.tab_{tab}")
+    for show in ("all", "waiting", "done", "dry", "failed", "reported", "dismissed"):
+        keys.add(f"activity.show_{show}")
+    from app.indexers import WEIGHTS
+    for part in WEIGHTS:
+        keys.add(f"indexers_page.part_{part}")
+    for section in ("settings", "rules", "services", "notifications"):
+        keys.add(f"backup_ui.section_{section}")
+    for basis in ("profile", "measured", "service", "scaled", "reference"):
+        keys.add(f"storage.basis.{basis}")
+    for fits in ("yes", "tight", "no", "unknown"):
+        keys.add(f"storage.fits.{fits}")
+    for outlook in ("months", "steady", "shrinking", "unknown"):
+        keys.add(f"storage.outlook.{outlook}")
+    for outcome in ("kept", "replaced", "fetched", "skipped", "assumed_kept"):
+        keys.add(f"storage.outcome.{outcome}")
+    from app import profiles as vprofiles
+    for source in vprofiles.SOURCES:
+        keys.add(f"profiles_page.source_{source}")
+    for tier in vprofiles.AUDIO_TIERS:
+        keys.add(f"profiles_page.audio_{tier}")
+    for codec in vprofiles.CODECS:
+        keys.add(f"profiles_page.codec_{codec}")
+    for colour in vprofiles.RANGES:
+        keys.add(f"profiles_page.colour_{colour}")
+    for edition in vprofiles.EDITIONS:
+        keys.add(f"profiles_page.edition_{edition}")
+    for code in vprofiles.LANGUAGES:
+        keys.add(f"language.{code}")
     return keys
 
 
@@ -120,15 +160,16 @@ def _literal_keys(source: str) -> set[str]:
     return found
 
 
-def test_app_js_only_uses_keys_that_exist():
-    missing = sorted(_literal_keys(JS) - ENGLISH)
-    assert not missing, f"app.js uses keys that do not exist: {missing}"
+@pytest.mark.parametrize("module", MODULES, ids=lambda p: p.relative_to(STATIC).as_posix())
+def test_the_interface_only_uses_keys_that_exist(module):
+    missing = sorted(_literal_keys(module.read_text(encoding="utf-8")) - ENGLISH)
+    assert not missing, f"{module.name} uses keys that do not exist: {missing}"
 
 
 @pytest.mark.parametrize("template", ["index.html", "login.html", "setup.html"])
 def test_templates_only_use_keys_that_exist(template):
     html = (APP / "templates" / template).read_text(encoding="utf-8")
-    used = set(re.findall(r'data-t(?:-placeholder)?="([a-z0-9_.]+)"', html))
+    used = set(re.findall(r'data-t(?:-placeholder|-aria)?="([a-z0-9_.]+)"', html))
     used |= _literal_keys(html)
     missing = sorted(used - ENGLISH)
     assert not missing, f"{template} uses keys that do not exist: {missing}"
@@ -136,7 +177,7 @@ def test_templates_only_use_keys_that_exist(template):
 
 def test_python_only_uses_keys_that_exist():
     missing = set()
-    for module in APP.glob("*.py"):
+    for module in (*APP.glob("*.py"), *(APP / "api").glob("*.py")):
         source = module.read_text(encoding="utf-8")
         for key in _literal_keys(source):
             if key not in ENGLISH:
@@ -180,7 +221,7 @@ def test_every_placeholder_in_german_exists_in_english():
 # Routes
 # ---------------------------------------------------------------------------
 def _routes() -> set[str]:
-    return set(re.findall(r'@app\.(?:get|post|delete|put)\("([^"]+)"', MAIN))
+    return set(re.findall(r'@(?:app|router)\.(?:get|post|delete|put)\("([^"]+)"', MAIN))
 
 
 def _matches_a_route(path: str, routes: set[str]) -> bool:
@@ -200,9 +241,11 @@ def _called_paths() -> set[str]:
     # The whole literal, to its own closing mark. Stopping at the first
     # bracket instead cut `${encodeURIComponent(id)}` in half and produced a
     # path nobody had ever written.
-    for pattern in (r'\b(?:api|post)\(\s*`([^`]+)`',
-                    r'\b(?:api|post)\(\s*"([^"]+)"',
-                    r"\b(?:api|post)\(\s*'([^']+)'"):
+    for pattern in (r'\b(?:api|post|del)\(\s*`([^`]+)`',
+                    r'\b(?:api|post|del)\(\s*"([^"]+)"',
+                    r"\b(?:api|post|del)\(\s*'([^']+)'",
+                    # Links that download rather than fetch, such as a backup.
+                    r'href="(api/[^"?]+)'):
         for match in re.finditer(pattern, JS):
             path = _HOLE.sub("x", match.group(1)).split("?")[0]
             called.add("/" + path.rstrip("/"))
@@ -257,22 +300,25 @@ def _route_handlers() -> list[tuple[str, str, ast.FunctionDef]]:
     closing bracket, so a naive pattern stops reading the parameter list half
     way through and reports every guarded route as unguarded.
     """
-    tree = ast.parse(MAIN)
     out = []
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        for decorator in node.decorator_list:
-            if not isinstance(decorator, ast.Call):
+    for module in SERVER:
+        tree = ast.parse(module.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            target = decorator.func
-            if (isinstance(target, ast.Attribute)
-                    and isinstance(target.value, ast.Name)
-                    and target.value.id == "app"
-                    and target.attr in ("get", "post", "delete", "put")
-                    and decorator.args
-                    and isinstance(decorator.args[0], ast.Constant)):
-                out.append((decorator.args[0].value, target.attr, node))
+            for decorator in node.decorator_list:
+                if not isinstance(decorator, ast.Call):
+                    continue
+                target = decorator.func
+                if (isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id in ("app", "router")
+                        and target.attr in ("get", "post", "delete", "put")
+                        and decorator.args
+                        and isinstance(decorator.args[0], ast.Constant)):
+                    out.append((decorator.args[0].value, target.attr, node))
+    # Found nothing is not the same as found nothing wrong.
+    assert len(out) > 40, "the routes are no longer where this looks"
     return out
 
 
@@ -330,28 +376,88 @@ def test_every_id_the_script_uses_exists_in_the_page():
     """A renamed id turns into a silent null dereference at runtime."""
     html = (APP / "templates" / "index.html").read_text(encoding="utf-8")
     present = set(re.findall(r'id="([a-zA-Z0-9_-]+)"', html))
-    # Ids the script creates itself rather than finding. Everything the setup
-    # wizard renders is prefixed "w-", so it is covered by the prefix rule
-    # below rather than by an ever-growing list.
-    created = {"loading", "change-password", "compact", "rerun-setup",
-               "password-form", "pw-current", "pw-new", "pw-repeat",
-               "fix-all"}
     used = set(re.findall(r'\$\("#([a-zA-Z0-9_-]+)"\)', JS))
-    # "w-" belongs to the setup assistant and "p-" to the profile builder;
-    # both draw their own forms, so their ids are not in the page.
-    missing = sorted(i for i in used - present - created
-                     if not i.startswith(("w-", "p-")))
-    assert not missing, f"app.js looks for ids that are not in the page: {missing}"
+    # "w-" belongs to the setup assistant, which draws its own forms, so its
+    # ids are not in the page. Everything a page draws for itself is found
+    # through data attributes inside that page instead.
+    missing = sorted(i for i in used - present if not i.startswith("w-"))
+    assert not missing, f"the interface looks for ids that are not in the page: {missing}"
 
 
-def test_every_view_has_a_page_and_a_nav_button():
+def test_every_view_has_a_page_and_a_nav_link():
     html = (APP / "templates" / "index.html").read_text(encoding="utf-8")
     for view in VIEWS:
         assert f'id="page-{view}"' in html, f"no section for {view}"
-        assert f'data-target="{view}"' in html, f"no nav button for {view}"
-    loaders = re.search(r"const LOADERS = \{(.*?)\};", JS, re.S).group(1)
+        assert f'data-target="{view}"' in html, f"no nav link for {view}"
+        assert (STATIC / "js" / "pages" / f"{view}.js").exists(), f"no module for {view}"
+    loaders = re.search(r"const LOADERS = \{(.*?)\};", ENTRY, re.S).group(1)
     for view in VIEWS:
         assert f"{view}:" in loaders, f"no loader for {view}"
+
+
+# ---------------------------------------------------------------------------
+# Modules
+# ---------------------------------------------------------------------------
+def _import_map() -> dict[str, str]:
+    html = (APP / "templates" / "index.html").read_text(encoding="utf-8")
+    block = re.search(r'<script type="importmap">(.*?)</script>', html, re.S).group(1)
+    return json.loads(block)["imports"]
+
+
+def test_every_module_is_in_the_import_map_with_a_version():
+    """A module's own imports carry no version. Without the map, a browser
+    that has been here before loads last month's pages into this month's
+    frame — and nothing says so."""
+    mapped = _import_map()
+    for path in MODULES[1:]:
+        key = "./static/" + path.relative_to(STATIC).as_posix()
+        assert key in mapped, f"{key} is not in the import map"
+        assert mapped[key] == key + "?v=__V__", f"{key} is mapped without the version"
+    for key in mapped:
+        assert (STATIC / key.removeprefix("./static/")).exists(), f"{key} does not exist"
+
+
+def test_every_import_points_at_a_module_that_exists():
+    for path in MODULES:
+        source = path.read_text(encoding="utf-8")
+        for target in re.findall(r'^\s*(?:import|export)\b[^;]*?from\s+"([^"]+)"', source, re.M | re.S):
+            assert target.startswith("."), f"{path.name} imports {target!r}, which needs a network"
+            assert (path.parent / target).resolve().exists(), f"{path.name} imports {target}"
+
+
+def test_the_entry_is_loaded_as_a_module():
+    html = (APP / "templates" / "index.html").read_text(encoding="utf-8")
+    assert '<script type="module" src="static/app.js?v=__V__">' in html
+    # The map has to come first, or the browser has already resolved the
+    # imports without it.
+    assert html.index('type="importmap"') < html.index('type="module"')
+
+
+def test_scripts_are_served_as_javascript():
+    """A browser refuses to run a module served under any other type."""
+    from fastapi.testclient import TestClient
+
+    from app import main
+    client = TestClient(main.app)
+    for path in MODULES:
+        response = client.get("/static/" + path.relative_to(STATIC).as_posix())
+        assert response.status_code == 200, path.name
+        assert "javascript" in response.headers["content-type"], path.name
+
+
+def test_every_request_goes_through_the_one_helper():
+    """The one place a header for every request can be added."""
+    for path in MODULES:
+        if path.name == "api.js":
+            continue
+        assert "fetch(" not in path.read_text(encoding="utf-8"), f"{path.name} calls fetch itself"
+
+
+def test_nothing_asks_through_the_browsers_own_box():
+    """window.confirm is in the browser's language, cannot say what exactly is
+    about to happen, and looks the same for "hide" and "delete for good"."""
+    for name in ("confirm", "alert", "prompt"):
+        assert not re.search(rf"(?<![\w.]){name}\(", JS), f"the interface calls {name}()"
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +538,9 @@ def test_a_list_box_is_not_dressed_up_as_a_drop_down():
 # ---------------------------------------------------------------------------
 # What an action reports
 # ---------------------------------------------------------------------------
-ENGINE = (APP / "engine.py").read_text(encoding="utf-8")
+#: The engine and the actions it carries out.
+ENGINE = "\n".join((APP / name).read_text(encoding="utf-8")
+                   for name in ("engine.py", "actions.py"))
 
 
 def _outcome_keys() -> set[str]:

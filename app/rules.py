@@ -1152,7 +1152,12 @@ def check_unpack_failed(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
 def check_detached_folder(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
     """The services and this container see different download folders.
 
-    Happens when the directory on the host is deleted and recreated while a
+    Most often a path mapping: this container's download path is bound to a
+    different host folder than the service's. Found that way on a live server,
+    where the service listed twenty entries and this container an empty
+    folder — and every download-folder rule had been looking at nothing.
+
+    Also happens when the directory on the host is deleted and recreated while a
     container still holds it mounted: the container then keeps working in the
     old, detached directory. From outside that is invisible, it still occupies
     space, and on the next restart everything in it would be lost.
@@ -1908,6 +1913,193 @@ def _still_missing(item: dict) -> bool:
 
 
 # ===========================================================================
+# Category: library — what lies in a title's folder
+# ===========================================================================
+#: Folders the media servers read local extras from. Plex and Jellyfin both
+#: look in these, and a trailer kept in one of them is somebody's choice, not
+#: something a download left behind.
+EXTRAS_FOLDERS = frozenset({
+    "behind the scenes", "deleted scenes", "featurettes", "interviews",
+    "scenes", "shorts", "trailers", "other", "extras", "clips", "backdrops"})
+
+#: The same, spelled as the end of a file name: ``Film (2010)-trailer.mkv``.
+EXTRAS_SUFFIXES = ("-behindthescenes", "-deleted", "-featurette", "-interview",
+                   "-scene", "-short", "-trailer", "-other", "-extra", "-clip")
+
+#: What a download client writes while it is still working on something. Found
+#: inside a title's folder, it means a download was unpacked into the library.
+UNPACK_MARKERS = ("_unpack_", "_failed_", "__admin__")
+PARTIAL_SUFFIXES = (".partial", ".partial~", ".!qb", ".part", ".crdownload")
+
+#: Archive parts and their repair volumes. A checksum file on its own is not
+#: among them: it is a few hundred bytes, and in the live library it was all
+#: that stood between a leftover sample and a warning.
+_ARCHIVE = re.compile(r"\.(rar|r\d{2,3}|par2|zip|7z|\d{3})$", re.IGNORECASE)
+_SAMPLE = re.compile(r"(?:^|[\W_])sample(?:[\W_]|$)", re.IGNORECASE)
+
+
+def _stray_kind(relative: str) -> str | None:
+    """What one file the service does not know is, or ``None`` to leave it be.
+
+    Subtitles, artwork, ``.nfo`` files and the like are left alone: a media
+    server writes half of them itself, and none of them is worth a line. What
+    is reported is what takes space and has no business in a finished title's
+    folder.
+    """
+    parts = relative.lower().split("/")
+    name = parts[-1]
+    if any(part.startswith(UNPACK_MARKERS) for part in parts):
+        return "leftover"
+    if name.endswith(PARTIAL_SUFFIXES):
+        return "leftover"
+    if _ARCHIVE.search(name):
+        return "archive"
+    if not name.endswith(VIDEO_SUFFIXES):
+        return None
+    if any(part in EXTRAS_FOLDERS for part in parts[:-1]):
+        return None
+    if os.path.splitext(name)[0].endswith(EXTRAS_SUFFIXES):
+        return None
+    return "sample" if _SAMPLE.search(relative) else "video"
+
+
+def _local_roots(arr: Arr, ctx: dict, cfg: dict) -> dict[str, str]:
+    """Each of the service's root folders, as this container sees it.
+
+    The two do not have to be spelled the same, and measured on a live
+    install they were not: Radarr and this container both mount the films at
+    ``/movies``, while Sonarr calls its folder ``/tv`` and this container
+    calls the same one ``/series``. A root that exists here under the
+    service's own name is taken as it is; a service with exactly one root is
+    matched to the library path in the settings. Anything else is left out
+    rather than guessed at.
+    """
+    roots = {str(r.get("path") or "").rstrip("/")
+             for r in ctx.get("root_folders", []) if r.get("path")}
+    if not roots:
+        roots = {os.path.dirname(str(i.get("path") or "").rstrip("/"))
+                 for i in ctx.get("items", []) if i.get("path")}
+    roots.discard("")
+    mapping = {root: root for root in roots if os.path.isdir(root)}
+    if mapping or len(roots) != 1:
+        return mapping
+    configured = str(cfg.get("path_movies" if arr.kind == "radarr"
+                             else "path_series") or "").rstrip("/")
+    if configured and os.path.isdir(configured):
+        return {next(iter(roots)): configured}
+    return {}
+
+
+def _known_files(ctx: dict) -> dict[int, set[str] | None]:
+    """Per title, the files the service holds for it, relative to its folder.
+
+    ``None`` where the service says there are files but none arrived. That is
+    a failed request, not an empty folder, and read as an empty folder it
+    would report every episode of a series as a stranger in its own home.
+    """
+    episodes: dict[int, set[str]] = {}
+    for info in ctx.get("files", []):
+        if info.get("seriesId") and info.get("relativePath"):
+            episodes.setdefault(info["seriesId"], set()).add(
+                str(info["relativePath"]).replace("\\", "/"))
+    known: dict[int, set[str] | None] = {}
+    for item in ctx.get("items", []):
+        if not item.get("id"):
+            continue
+        movie_file = item.get("movieFile")
+        if movie_file and movie_file.get("relativePath"):
+            known[item["id"]] = {str(movie_file["relativePath"]).replace("\\", "/")}
+        elif "hasFile" in item:
+            known[item["id"]] = None if item.get("hasFile") else set()
+        else:
+            have = int((item.get("statistics") or {}).get("episodeFileCount") or 0)
+            held = episodes.get(item["id"], set())
+            known[item["id"]] = held if held or not have else None
+    return known
+
+
+def check_stray_files(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
+    """Files in a title's folder that the service knows nothing about.
+
+    The service keeps a list of the files that belong to a title and looks at
+    nothing else in its folder. Whatever else ends up in there stays for good,
+    and nothing anywhere adds it up. Measured on a live library of about five
+    hundred films: ten folders held something the service did not know about,
+    ninety gigabytes of it — one film's folder alone held a complete set of
+    archive parts for another film, three half-unpacked downloads and a box
+    set marked as failed; nine more still carried the sample video their
+    release came with.
+
+    Reporting only, and for good. Everything found here lies inside a folder
+    the service owns, the library is mounted read only on purpose, and a video
+    that is not the title's own file may well be the only copy of something
+    else. Deciding what goes is for a person who has looked.
+    """
+    roots = _local_roots(arr, ctx, cfg)
+    if not roots:
+        configured = cfg.get("path_movies" if arr.kind == "radarr" else "path_series")
+        if not configured or not ctx.get("items"):
+            return []
+        return [Finding(
+            rule="stray_files", severity="info", service=arr.kind,
+            title=t("finding.stray_files_hidden_title", "en"),
+            message="finding.stray_files_hidden",
+            params={"service": arr.name, "path": configured},
+            data={"path": configured})]
+
+    known = _known_files(ctx)
+    findings = []
+    for item in ctx.get("items", []):
+        own = known.get(item.get("id"), set())
+        path = str(item.get("path") or "").rstrip("/")
+        root = next((r for r in roots if path.startswith(r + "/")), None)
+        if own is None or root is None:
+            continue
+        local = roots[root] + path[len(root):]
+        if not os.path.isdir(local) or os.path.islink(local):
+            continue
+
+        counts: Counter = Counter()
+        sizes: list[tuple[int, str]] = []
+        for folder, _dirs, names in os.walk(local):
+            for name in names:
+                full = os.path.join(folder, name)
+                relative = os.path.relpath(full, local).replace("\\", "/")
+                if relative in own:
+                    continue
+                kind = _stray_kind(relative)
+                if kind is None:
+                    continue
+                try:
+                    size = os.path.getsize(full)
+                except OSError:
+                    size = 0
+                counts[kind] += 1
+                sizes.append((size, relative))
+        if not counts:
+            continue
+
+        total = sum(size for size, _name in sizes)
+        mb = total / 1024 ** 2
+        only_samples = set(counts) == {"sample"}
+        findings.append(Finding(
+            rule="stray_files", service=arr.kind,
+            severity="info" if only_samples else "warning",
+            title=item.get("title", "?"),
+            message="finding.stray_samples" if only_samples else "finding.stray_files",
+            params={"service": arr.name, "gb": f"{mb / 1024:.1f}",
+                    "mb": f"{mb:.0f}", "count": sum(counts.values()),
+                    "archives": counts["archive"], "videos": counts["video"],
+                    "samples": counts["sample"], "leftovers": counts["leftover"]},
+            data={"item_id": item.get("id"), "path": path,
+                  "gb": round(mb / 1024, 2), "mb": round(mb, 1),
+                  "counts": dict(counts),
+                  "examples": [name for _size, name in sorted(sizes, reverse=True)[:5]]},
+        ))
+    return findings
+
+
+# ===========================================================================
 # Category: downloader
 # ===========================================================================
 def check_downloader_warning(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
@@ -2202,8 +2394,11 @@ def check_stuck_in_downloader(arr: Arr, ctx: dict, cfg: dict) -> list[Finding]:
         """Where acting on this job has to go, and what it concerns."""
         entry = tracked.get(download)
         if entry is not None:
+            # The download goes with the queue id: the id is not kept by
+            # Radarr 6, and a button pressed later finds the entry by this.
             return {"_service": entry.get("_kind"), "_entry_id": entry.get("id"),
                     "_instance": entry.get("_instance"),
+                    "_download": entry.get("downloadId"),
                     "item_id": _item(entry).get("id")}
         grab = grabs.get(download)
         if grab is not None:
@@ -2726,6 +2921,10 @@ ALL: tuple[Rule, ...] = (
     # refusal, so it is offered rather than assumed.
     Rule("stale_blocklist", "library", check_stale_blocklist,
          actions=(policy.REPORT, "unblocklist"), deep=True),
+    # Reporting only, and for good: what it finds lies inside a folder the
+    # service owns, and this program does not write there — the library is
+    # mounted read only on purpose.
+    Rule("stray_files", "library", check_stray_files, deep=True),
 
     # -- downloader ---------------------------------------------------------
     Rule("downloader_warning", "downloader", check_downloader_warning,

@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import json
 
-import httpx
-
 from ..base import Channel, ChannelError, ConfigField, Report
 
 #: Raised whenever the payload shape changes in a way a receiver could notice.
@@ -24,9 +22,11 @@ PAYLOAD_VERSION = 1
 class Webhook(Channel):
     kind = "webhook"
     LIMIT = 100_000
+    DESTINATION = ("url",)
 
     FIELDS = (
-        ConfigField("url", "text", placeholder="https://example.com/hook"),
+        ConfigField("url", "text", placeholder="https://example.com/hook",
+                    schemes=("http://", "https://")),
         ConfigField("method", "choice", required=False, default="POST",
                     choices=("POST", "PUT")),
         ConfigField("secret_header", "text", required=False,
@@ -76,14 +76,9 @@ class Webhook(Channel):
             headers[self.value("secret_header")] = self.value("secret_value")
 
         body = json.dumps(payload, ensure_ascii=False, default=str)
-        try:
-            with httpx.Client(timeout=20) as client:
-                response = client.request(self.value("method") or "POST", url,
-                                          content=body.encode("utf-8"),
-                                          headers=headers)
-        except httpx.RequestError as e:
-            raise ChannelError(f"The endpoint is unreachable: {e}") from e
+        response = self._request(url, "The endpoint",
+                                 method=self.value("method") or "POST",
+                                 content=body.encode("utf-8"), headers=headers)
         if response.status_code < 300:
             return True, f"sent ({response.status_code})"
-        raise ChannelError(f"The endpoint returned {response.status_code}: "
-                           f"{response.text[:150]}")
+        raise self._refused(response, "The endpoint")

@@ -16,6 +16,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from . import connection
+
 log = logging.getLogger(__name__)
 
 
@@ -27,11 +29,12 @@ class Prowlarr:
     kind = "prowlarr"
 
     def __init__(self, url: str, api_key: str, timeout: float = 30.0,
-                 name: str = "Prowlarr"):
-        self.url = (url or "").rstrip("/")
+                 name: str = "Prowlarr", verify: bool = True):
+        self.url = connection.normalise(url)
         self.api_key = api_key
         self.timeout = timeout
         self.name = name
+        self.verify = verify
         self._client: httpx.Client | None = None
 
     def __repr__(self) -> str:
@@ -40,12 +43,9 @@ class Prowlarr:
     @property
     def client(self) -> httpx.Client:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.Client(
-                base_url=f"{self.url}/api/v1/",
-                headers={"X-Api-Key": self.api_key, "Accept": "application/json"},
-                timeout=httpx.Timeout(self.timeout, connect=10.0),
-                follow_redirects=True,
-                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2))
+            self._client = connection.open_client(
+                f"{self.url}/api/v1/", timeout=self.timeout, verify=self.verify,
+                headers={"X-Api-Key": self.api_key, "Accept": "application/json"})
         return self._client
 
     def close(self) -> None:
@@ -54,27 +54,27 @@ class Prowlarr:
 
     def _call(self, path: str, **params):
         try:
-            response = self.client.get(path.lstrip("/"), params=params or None)
-        except httpx.TimeoutException as e:
-            raise ProwlarrError(f"{self.name} did not answer within "
-                                f"{self.timeout:.0f}s") from e
-        except httpx.RequestError as e:
-            raise ProwlarrError(f"{self.name} is unreachable: {e}") from e
+            client = self.client
+        except (ValueError, httpx.InvalidURL) as e:
+            raise ProwlarrError(f"The address of {self.name} is not valid: "
+                                f"{connection.describe(e)}") from e
+        response = connection.request(client, "GET", path.lstrip("/"),
+                                      params=params or None, name=self.name,
+                                      fail=ProwlarrError, timeout=self.timeout)
         if response.status_code == 401:
             raise ProwlarrError(f"{self.name} rejected the API key")
         if response.status_code >= 400:
             raise ProwlarrError(f"{self.name} {path} returned {response.status_code}")
-        try:
-            return response.json()
-        except ValueError as e:
-            raise ProwlarrError(f"{self.name} did not answer with JSON — does the "
-                                f"address really point at Prowlarr?") from e
+        return connection.decode(response, name=self.name, what="Prowlarr",
+                                 fail=ProwlarrError)
 
     def reachable(self) -> tuple[bool, str]:
         try:
             status = self._call("system/status")
         except ProwlarrError as e:
             return False, str(e)
+        if not isinstance(status, dict):
+            return False, f"{self.name} did not answer like Prowlarr does"
         name = status.get("appName") or "Prowlarr"
         if name.lower() != "prowlarr":
             return False, f"{name} is running there, but this entry says Prowlarr"

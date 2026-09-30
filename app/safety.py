@@ -166,6 +166,21 @@ def identity(finding) -> str:
     return f"{release}|{where if where is not None else ''}"
 
 
+def carried_out(finding, action: str) -> str:
+    """The action that is actually done: "as suggested" is resolved here.
+
+    Counted under its own name it was none of the actions that throw
+    something away — so the discard limit and the re-grab guard never saw the
+    stuck-download rules, which are set to it out of the box and whose
+    suggestion is as often as not to blocklist and search again.
+    """
+    if action == policy.AS_SUGGESTED:
+        chosen = (finding.data or {}).get("suggested")
+        if isinstance(chosen, str) and chosen in policy.ACTIONS:
+            return chosen
+    return action
+
+
 # ---------------------------------------------------------------------------
 # The guard
 # ---------------------------------------------------------------------------
@@ -186,6 +201,7 @@ class Guard:
         state = {"since": datetime.now(UTC).isoformat(), "reason": reason,
                  "params": dict(params or {})}
         self.store.set(PAUSE_KEY, state)
+        self.store.note_pause(reason, state["params"])
         log.warning("Automatic actions paused: %s %s", reason, state["params"])
         return state
 
@@ -198,6 +214,7 @@ class Guard:
         """
         self.store.set(PAUSE_KEY, None)
         self.store.set(RESUMED_KEY, datetime.now(UTC).isoformat())
+        self.store.note_resume()
         log.info("Automatic actions resumed by hand")
 
     def _fuse_since(self, now: datetime) -> datetime:
@@ -211,6 +228,7 @@ class Guard:
         if self.paused():
             return Hold("policy.fuse_paused")
 
+        action = carried_out(finding, action)
         now = datetime.now(UTC)
         hours = self.limits.window_hours
         subj = (finding.data or {}).get("_subject") or subject(finding)
@@ -253,14 +271,40 @@ class Guard:
                 return Hold("policy.fuse_paused", tripped=True)
         return None
 
-    def note(self, finding, action: str, *, by_hand: bool = False) -> None:
-        """Count one action that was attempted. Never lets a run fail."""
+    def note(self, finding, action: str, *, by_hand: bool = False,
+             state: str = "") -> None:
+        """Count one action that was attempted. Never lets a run fail.
+
+        ``state`` is what came of it, when that is known. Only what was
+        actually removed is counted as space given back.
+        """
         try:
+            action = carried_out(finding, action)
             subj = (finding.data or {}).get("_subject") or subject(finding)
+            freed = freed_mb(finding, action) if state == "done" else 0.0
             self.store.note_act(subj, finding.rule, action, identity(finding),
-                                by_hand=by_hand)
+                                by_hand=by_hand, state=state, freed_mb=freed)
         except Exception:                                       # noqa: BLE001
             log.exception("Could not count the action on %s", finding.rule)
+
+
+def freed_mb(finding, action: str) -> float:
+    """What deleting the thing a finding is about gives back, in MB.
+
+    Only for the actions that remove data from disk. A download blocklisted
+    out of the queue is thrown away too, but it was never on the disk in full
+    and its size says nothing about space regained.
+    """
+    if action not in policy.DESTRUCTIVE:
+        return 0.0
+    data = finding.data or {}
+    for key, factor in (("mb", 1.0), ("gb", 1024.0)):
+        try:
+            if data.get(key) is not None:
+                return max(0.0, float(data[key]) * factor)
+        except (TypeError, ValueError):
+            return 0.0
+    return 0.0
 
 
 def _moment(value: Any) -> datetime | None:
